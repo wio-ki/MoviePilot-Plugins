@@ -54,7 +54,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/emby.png"
     # 插件版本
-    plugin_version = "0.9.6"
+    plugin_version = "0.9.7"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -902,6 +902,111 @@ class MediaCoverGenerator(_PluginBase):
             self._event.set()
             return True, "已发送停止停止信号，请等待当前操作清理完成"
         return True, "任务已处于停止状态或正在停止中"
+
+    @staticmethod
+    def __ui_style() -> str:
+        return (
+            "background: "
+            "radial-gradient(circle at 12% 8%, rgba(202,132,86,.14), transparent 28%), "
+            "radial-gradient(circle at 88% 0%, rgba(123,92,64,.10), transparent 30%), "
+            "linear-gradient(135deg, #f7f1e6 0%, #efe4d2 100%); "
+            "border: 1px solid rgba(111,78,55,.12); "
+            "border-radius: 22px; "
+            "box-shadow: 0 24px 70px rgba(53,45,35,.12); "
+            "padding: 18px;"
+        )
+
+    @staticmethod
+    def __ui_card_style() -> str:
+        return (
+            "background: rgba(255,252,246,.86); "
+            "border: 1px solid rgba(111,78,55,.14); "
+            "border-radius: 18px; "
+            "box-shadow: 0 16px 42px rgba(53,45,35,.08); "
+            "backdrop-filter: blur(12px); overflow: hidden;"
+        )
+
+    @staticmethod
+    def __ui_soft_card_style() -> str:
+        return (
+            "background: rgba(255,252,246,.72); "
+            "border: 1px solid rgba(111,78,55,.10); "
+            "border-radius: 16px; "
+            "box-shadow: 0 10px 26px rgba(53,45,35,.06);"
+        )
+
+    @staticmethod
+    def __ui_hero(title: str, subtitle: str, icon: str = "mdi-image-filter-vintage") -> Dict[str, Any]:
+        return {
+            "component": "VCard",
+            "props": {
+                "variant": "flat",
+                "class": "mb-4 overflow-hidden",
+                "style": MediaCoverGenerator.__ui_card_style(),
+            },
+            "content": [
+                {
+                    "component": "VCardText",
+                    "props": {"class": "pa-5"},
+                    "content": [
+                        {
+                            "component": "div",
+                            "props": {
+                                "style": "display:flex;align-items:center;gap:14px;flex-wrap:wrap;"
+                            },
+                            "content": [
+                                {
+                                    "component": "VAvatar",
+                                    "props": {
+                                        "size": 52,
+                                        "rounded": "lg",
+                                        "style": "background: linear-gradient(135deg,#c98256,#8f5f3f); color:#fff; box-shadow:0 10px 24px rgba(143,95,63,.28);",
+                                    },
+                                    "content": [{"component": "VIcon", "props": {"icon": icon, "size": 30}}],
+                                },
+                                {
+                                    "component": "div",
+                                    "props": {"style": "min-width:240px;flex:1;"},
+                                    "content": [
+                                        {
+                                            "component": "div",
+                                            "props": {
+                                                "style": "font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#a66f47;font-weight:800;margin-bottom:6px;"
+                                            },
+                                            "text": "MEDIA COVER ATELIER",
+                                        },
+                                        {
+                                            "component": "div",
+                                            "props": {
+                                                "style": "font-size:28px;line-height:1.2;font-weight:900;color:#2f261f;"
+                                            },
+                                            "text": title,
+                                        },
+                                        {
+                                            "component": "div",
+                                            "props": {
+                                                "style": "margin-top:8px;color:#715f50;line-height:1.75;font-size:13px;"
+                                            },
+                                            "text": subtitle,
+                                        },
+                                    ],
+                                },
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+
+    @staticmethod
+    def __ui_wrap(content: List[dict], title: str, subtitle: str, icon: str = "mdi-image-filter-vintage") -> List[dict]:
+        return [
+            {
+                "component": "div",
+                "props": {"class": "pa-2", "style": MediaCoverGenerator.__ui_style()},
+                "content": [MediaCoverGenerator.__ui_hero(title, subtitle, icon), *content],
+            }
+        ]
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
         """
@@ -1877,29 +1982,38 @@ class MediaCoverGenerator(_PluginBase):
         ]
 
 
-        return [
+        form_content = [
             {
                 "component": "VCard",
-                "props": {"variant": "outlined", "class": "mb-3"},
+                "props": {"variant": "flat", "class": "mb-4 overflow-hidden", "style": self.__ui_card_style()},
                 "content": [
                     {
                         "component": "VCardTitle",
-                        "props": {"class": "d-flex align-center"},
+                        "props": {"class": "px-5 pt-5 pb-2"},
                         "content": [
                             {
-                                "component": "VIcon",
-                                "props": {
-                                    "icon": "mdi-cog",
-                                    "color": "primary",
-                                    "class": "mr-2",
-                                },
-                            },
-                            {"component": "span", "text": "基础设置"},
+                                "component": "div",
+                                "props": {"style": "display:flex;align-items:center;gap:12px;"},
+                                "content": [
+                                    {
+                                        "component": "VAvatar",
+                                        "props": {"size": 38, "rounded": "lg", "style": "background:#f2dfca;color:#8f5f3f;"},
+                                        "content": [{"component": "VIcon", "props": {"icon": "mdi-cog-outline"}}],
+                                    },
+                                    {
+                                        "component": "div",
+                                        "content": [
+                                            {"component": "div", "props": {"style": "font-weight:900;color:#2f261f;"}, "text": "基础设置"},
+                                            {"component": "div", "props": {"style": "font-size:12px;color:#806d5c;font-weight:400;margin-top:2px;"}, "text": "启用、服务器、媒体库与执行计划"},
+                                        ],
+                                    },
+                                ],
+                            }
                         ],
                     },
-                    {"component": "VDivider"},
                     {
                         "component": "VCardText",
+                        "props": {"class": "px-5 pb-5 pt-2"},
                         "content": [
                             {
                                 'component': 'VForm',
@@ -2085,11 +2199,11 @@ class MediaCoverGenerator(_PluginBase):
             },
             {
                 "component": "VCard",
-                "props": {"variant": "outlined"},
+                "props": {"variant": "flat", "style": self.__ui_card_style(), "class": "overflow-hidden"},
                 "content": [
                     {
                         "component": "VTabs",
-                        "props": {"model": "tab", "grow": True, "color": "primary"},
+                        "props": {"model": "tab", "grow": True, "color": "#9a6848", "class": "px-2 pt-2", "style": "background:rgba(248,239,226,.78);"},
                         "content": [
                             {
                                 "component": "VTab",
@@ -2100,7 +2214,7 @@ class MediaCoverGenerator(_PluginBase):
                                         "props": {
                                             "icon": "mdi-palette-swatch",
                                             "start": True,
-                                            "color": "#cc76d1",
+                                            "color": "#9a6848",
                                         },
                                     },
                                     {"component": "span", "text": "封面风格"},
@@ -2115,7 +2229,7 @@ class MediaCoverGenerator(_PluginBase):
                                         "props": {
                                             "icon": "mdi-text-box-edit",
                                             "start": True,
-                                            "color": "#1976D2",
+                                            "color": "#9a6848",
                                         },
                                     },
                                     {"component": "span", "text": "封面标题"},
@@ -2130,7 +2244,7 @@ class MediaCoverGenerator(_PluginBase):
                                         "props": {
                                             "icon": "mdi-palette-swatch-variant",
                                             "start": True,
-                                            "color": "#f3afe4",
+                                            "color": "#9a6848",
                                         },
                                     },
                                     {"component": "span", "text": "更多参数"},
@@ -2171,7 +2285,13 @@ class MediaCoverGenerator(_PluginBase):
                     },
                 ],
             }
-        ], {
+        ]
+        return self.__ui_wrap(
+            form_content,
+            "封面生成工坊",
+            "把媒体库封面、标题、字体与动画参数集中在一个更安静的纸感工作台里；只改界面层，不改变原有生成逻辑。",
+            "mdi-image-filter-vintage",
+        ), {
             "enabled": True,
             "update_now": False,
             "transfer_monitor": True,
@@ -2358,30 +2478,31 @@ class MediaCoverGenerator(_PluginBase):
         if self._page_tab == "clean-tab":
             page_tab = "clean-tab"
 
-        return [
+        page_content = [
             {
                 "component": "VCard",
+                "props": {"variant": "flat", "style": self.__ui_card_style(), "class": "overflow-hidden"},
                 "content": [
                     {
                         "component": "VTabs",
-                        "props": {"grow": True, "modelValue": page_tab},
+                        "props": {"grow": True, "modelValue": page_tab, "color": "#9a6848", "class": "px-2 pt-2", "style": "background:rgba(248,239,226,.78);"},
                         "content": [
                             {
                                 "component": "VTab",
                                 "props": {"value": "generate-tab"},
-                                "text": "封面生成",
+                                "text": "生成工坊",
                                 "events": {"click": {"api": "plugin/MediaCoverGenerator/set_page_tab_generate", "method": "post"}},
                             },
                             {
                                 "component": "VTab",
                                 "props": {"value": "history-tab"},
-                                "text": "历史封面",
+                                "text": "历史归档",
                                 "events": {"click": {"api": "plugin/MediaCoverGenerator/set_page_tab_history", "method": "post"}},
                             },
                             {
                                 "component": "VTab",
                                 "props": {"value": "clean-tab"},
-                                "text": "清理缓存",
+                                "text": "缓存整理",
                                 "events": {"click": {"api": "plugin/MediaCoverGenerator/set_page_tab_clean", "method": "post"}},
                             },
                         ],
@@ -2393,7 +2514,7 @@ class MediaCoverGenerator(_PluginBase):
             [
                 {
                     "component": "VCard",
-                    "props": {"variant": "outlined", "class": "mt-3"},
+                    "props": {"variant": "flat", "class": "mt-4 overflow-hidden", "style": self.__ui_card_style()},
                     "content": [
                                     {
                                         "component": "VCardText",
@@ -2424,7 +2545,7 @@ class MediaCoverGenerator(_PluginBase):
                                                                 "component": "VBtn",
                                                                 "props": {
                                                                     "variant": "flat",
-                                                                    "color": "primary",
+                                                                    "color": "#9a6848",
                                                                     "class": "text-none mr-2 mb-2",
                                                                     "prepend-icon": "mdi-swap-horizontal",
                                                                 },
@@ -2435,7 +2556,7 @@ class MediaCoverGenerator(_PluginBase):
                                                                 "component": "VBtn",
                                                                 "props": {
                                                                     "variant": "flat",
-                                                                    "color": "primary",
+                                                                    "color": "#9a6848",
                                                                     "class": "text-none mb-2",
                                                                     "prepend-icon": "mdi-play-circle-outline",
                                                                 },
@@ -2463,7 +2584,7 @@ class MediaCoverGenerator(_PluginBase):
             [
                 {
                     "component": "VCard",
-                    "props": {"variant": "outlined", "class": "mt-3"},
+                    "props": {"variant": "flat", "class": "mt-4 overflow-hidden", "style": self.__ui_card_style()},
                     "content": [
                                     {
                                         "component": "VCardText",
@@ -2479,7 +2600,7 @@ class MediaCoverGenerator(_PluginBase):
                                                                 "component": "VBtn",
                                                                 "props": {
                                                                     "variant": "flat",
-                                                                    "color": "primary",
+                                                                    "color": "#9a6848",
                                                                     "class": "text-none mr-2 mb-2",
                                                                     "prepend-icon": "mdi-swap-horizontal",
                                                                 },
@@ -2490,7 +2611,7 @@ class MediaCoverGenerator(_PluginBase):
                                                                 "component": "VBtn",
                                                                 "props": {
                                                                     "variant": "flat",
-                                                                    "color": "primary",
+                                                                    "color": "#9a6848",
                                                                     "class": "text-none mb-2",
                                                                     "prepend-icon": "mdi-play-circle-outline",
                                                                 },
@@ -2513,7 +2634,7 @@ class MediaCoverGenerator(_PluginBase):
             [
                 {
                     "component": "VCard",
-                    "props": {"variant": "outlined", "class": "mt-3"},
+                    "props": {"variant": "flat", "class": "mt-4 overflow-hidden", "style": self.__ui_card_style()},
                     "content": [
                         {"component": "VCardTitle", "text": f"最近生成的封面（最多 {limit} 条）"},
                         {"component": "VCardText", "content": [{"component": "VRow", "content": cover_rows}]},
@@ -2523,7 +2644,7 @@ class MediaCoverGenerator(_PluginBase):
             [
                 {
                     "component": "VCard",
-                    "props": {"variant": "outlined", "class": "mt-3"},
+                    "props": {"variant": "flat", "class": "mt-4 overflow-hidden", "style": self.__ui_card_style()},
                     "content": [
                         {
                             "component": "VCardText",
@@ -2532,7 +2653,7 @@ class MediaCoverGenerator(_PluginBase):
                                             {
                                                 "component": "VBtn",
                                                 "props": {
-                                                    "color": "error",
+                                                    "color": "#b65f45",
                                                     "variant": "flat",
                                                     "size": "large",
                                                     "prepend-icon": "mdi-image-remove",
@@ -2544,7 +2665,7 @@ class MediaCoverGenerator(_PluginBase):
                                             {
                                                 "component": "VBtn",
                                                 "props": {
-                                                    "color": "error",
+                                                    "color": "#b65f45",
                                                     "variant": "flat",
                                                     "size": "large",
                                                     "prepend-icon": "mdi-format-font",
@@ -2564,6 +2685,12 @@ class MediaCoverGenerator(_PluginBase):
                 }
             ]
         )
+        return self.__ui_wrap(
+            page_content,
+            "封面控制台",
+            "快速生成、查看历史与清理缓存集中到同一个温暖纸感控制台；所有按钮仍调用原有接口。",
+            "mdi-view-dashboard-outline",
+        )
     def __build_page_style_cards(self, style_variant: str, selected_index: int) -> List[Dict[str, Any]]:
         styles = [
             {"name": "风格1", "index": 1, "src": self.__style_preview_src(1)},
@@ -2582,9 +2709,9 @@ class MediaCoverGenerator(_PluginBase):
                             "component": "VCard",
                             "props": {
                                 "variant": "flat",
-                                "elevation": 3 if style["index"] == selected_index else 1,
-                                "color": "primary" if style["index"] == selected_index else None,
-                                "class": "cursor-pointer",
+                                "elevation": 0,
+                                "class": "cursor-pointer overflow-hidden",
+                                "style": ("background:linear-gradient(135deg,#fff8ed,#f0ddc6); border:2px solid #c98256; border-radius:18px; box-shadow:0 18px 36px rgba(143,95,63,.18);" if style["index"] == selected_index else "background:rgba(255,252,246,.78); border:1px solid rgba(111,78,55,.13); border-radius:18px; box-shadow:0 10px 26px rgba(53,45,35,.07);"),
                             },
                             "events": {
                                 "click": {

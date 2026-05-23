@@ -3,11 +3,12 @@
         "name": "Emby媒体库封面生成",
         "description": "生成媒体库动态/静态封面，支持 Emby/Jellyfin",
         "labels": "Emby,动态封面,媒体库",
-        "version": "0.9.6",
+        "version": "0.9.7",
         "icon": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/emby.png",
         "author": "Kioo",
         "level": 1,
         "history": {
+            "v0.9.7": "重做插件设置页与详情页 UI，采用纸感卡片与暖色控制台样式",
             "v0.9.6": "修复依赖版本兼容、优化配置解析与插件市场来源展示",
             "v0.9.5": "优化历史封面加载速度，修复入库监控停止运行的问题",
             "v0.9.3": "修复「最新入库」排序没有新入库海报的问题",
