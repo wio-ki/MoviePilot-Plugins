@@ -907,52 +907,54 @@ class MediaCoverGenerator(_PluginBase):
     def __ui_style() -> str:
         return (
             "background: "
-            "radial-gradient(circle at 12% 8%, rgba(202,132,86,.14), transparent 28%), "
-            "radial-gradient(circle at 88% 0%, rgba(127,135,97,.15), transparent 30%), "
-            "linear-gradient(135deg, #f7f1e6 0%, #efe4d2 48%, #e7ecd8 100%); "
+            "radial-gradient(circle at 16% 10%, rgba(212,165,116,.20), transparent 30%), "
+            "radial-gradient(circle at 86% 4%, rgba(13,92,92,.13), transparent 32%), "
+            "linear-gradient(135deg, #fffff0 0%, #f4e2c6 48%, #e6f0ec 100%); "
             "border: 1px solid rgba(111,78,55,.12); "
             "border-radius: 22px; "
             "box-shadow: 0 24px 70px rgba(53,45,35,.12); "
             "padding: 18px; "
-            "--v-theme-primary: 159,118,87; --v-theme-secondary: 127,135,97; "
-            "--v-theme-info: 138,128,107; --v-theme-warning: 181,132,92; --v-theme-error: 154,82,61;"
+            "--v-theme-primary: 212,165,116; --v-theme-secondary: 13,92,92; "
+            "--v-theme-info: 13,92,92; --v-theme-warning: 139,111,71; --v-theme-error: 160,90,63;"
         )
 
     @staticmethod
     def __ui_card_style() -> str:
         return (
-            "background: rgba(255,252,246,.86); "
-            "border: 1px solid rgba(111,78,55,.14); "
+            "background: linear-gradient(135deg, rgba(255,255,240,.88), rgba(255,255,255,.62)); "
+            "border: 1px solid rgba(212,165,116,.26); "
             "border-radius: 18px; "
-            "box-shadow: 0 16px 42px rgba(53,45,35,.08); "
-            "backdrop-filter: blur(12px); overflow: hidden;"
+            "box-shadow: 0 2px 4px rgba(26,26,26,.06), 0 12px 28px rgba(13,92,92,.08), 0 24px 60px rgba(139,111,71,.10); "
+            "backdrop-filter: blur(12px) saturate(170%); overflow: hidden; "
+            "transition: all .3s cubic-bezier(.4,0,.2,1);"
         )
 
     @staticmethod
     def __ui_soft_card_style() -> str:
         return (
-            "background: rgba(255,252,246,.72); "
-            "border: 1px solid rgba(111,78,55,.10); "
+            "background: linear-gradient(135deg, rgba(212,165,116,.13), rgba(13,92,92,.08)); "
+            "border: 1px solid rgba(212,165,116,.20); "
             "border-radius: 16px; "
-            "box-shadow: 0 10px 26px rgba(53,45,35,.06);"
+            "box-shadow: 0 2px 4px rgba(26,26,26,.06), 0 10px 26px rgba(13,92,92,.10); "
+            "transition: all .3s cubic-bezier(.4,0,.2,1);"
         )
 
     @staticmethod
     def __ui_accent() -> str:
-        return "#9f7657"
+        return "#D4A574"
 
     @staticmethod
     def __ui_selected_style() -> str:
         return (
-            "background: linear-gradient(135deg, rgba(229,202,165,.96), rgba(181,132,92,.92)); "
-            "color: #2f261f; border: 1px solid rgba(128,91,61,.42); "
-            "box-shadow: inset 0 -3px 0 rgba(95,66,44,.28), 0 10px 24px rgba(95,66,44,.12); "
+            "background: linear-gradient(135deg, #D4A574 0%, #1A7F7E 52%, #8B6F47 100%); "
+            "color: #FFFFF0; border: 1px solid rgba(212,165,116,.58); "
+            "box-shadow: inset 0 -3px 0 rgba(26,26,26,.18), 0 10px 24px rgba(13,92,92,.22); "
             "border-radius: 14px; font-weight: 800;"
         )
 
     @staticmethod
     def __ui_input_style() -> str:
-        return "--v-theme-primary: 159,118,87; --v-theme-info: 138,128,107; --v-theme-error: 154,82,61;"
+        return "--v-theme-primary: 212,165,116; --v-theme-secondary: 13,92,92; --v-theme-info: 13,92,92; --v-theme-error: 160,90,63;"
 
     @classmethod
     def __ui_tone_component(cls, node: Any) -> Any:
@@ -968,17 +970,11 @@ class MediaCoverGenerator(_PluginBase):
         if isinstance(props, dict):
             color_map = {
                 "primary": cls.__ui_accent(),
-                "info": "#8a806b",
-                "warning": "#b5845c",
-                "error": "#9a523d",
-                "#1976D2": cls.__ui_accent(),
-                "#2196F3": cls.__ui_accent(),
-                "#03A9F4": cls.__ui_accent(),
-                "#cc76d1": cls.__ui_accent(),
-                "#f3afe4": cls.__ui_accent(),
-                "#9C27B0": cls.__ui_accent(),
-                "#673AB7": cls.__ui_accent(),
-                "#8B5CF6": cls.__ui_accent(),
+                "info": "#0D5C5C",
+                "warning": "#8B6F47",
+                "error": "#A05A3F",
+                "#9a6848": cls.__ui_accent(),
+                "#9f7657": cls.__ui_accent(),
             }
             for key in ("color", "baseColor", "borderColor"):
                 if props.get(key) in color_map:
@@ -986,50 +982,64 @@ class MediaCoverGenerator(_PluginBase):
             if props.get("type") in color_map:
                 alert_type = props.get("type")
                 props.pop("type", None)
-                props["color"] = color_map.get(alert_type, "#8a806b")
+                props["color"] = color_map.get(alert_type, "#0D5C5C")
             if component in {"VTextField", "VTextarea", "VSelect", "VSwitch", "VCheckbox", "VRadio", "VBtnToggle", "VTabs", "VTab", "VCronField", "VAceEditor"}:
                 props["color"] = color_map.get(props.get("color"), props.get("color") or cls.__ui_accent())
-                props["baseColor"] = color_map.get(props.get("baseColor"), props.get("baseColor") or "#b8aa9a")
+                props["baseColor"] = color_map.get(props.get("baseColor"), props.get("baseColor") or "#8B6F47")
                 style = props.get("style", "")
                 tone = cls.__ui_input_style()
                 props["style"] = f"{style}; {tone}" if style else tone
+            if component in {"VTextField", "VTextarea", "VSelect", "VCronField"}:
+                props.setdefault("variant", "outlined")
+                current_class = props.get("class", "")
+                if "custom-input" not in current_class:
+                    props["class"] = f"{current_class} custom-input".strip()
+                style = props.get("style", "")
+                input_style = (
+                    "background: rgba(255,255,255,.035); border-radius: 12px; "
+                    "transition: all .3s cubic-bezier(.4,0,.2,1);"
+                )
+                props["style"] = f"{style}; {input_style}" if style else input_style
             if component == "VAlert":
-                props["color"] = color_map.get(props.get("color"), props.get("color") or "#8a806b")
+                props["color"] = color_map.get(props.get("color"), props.get("color") or "#0D5C5C")
                 props["variant"] = "tonal"
                 style = props.get("style", "")
                 alert_style = (
-                    "background: linear-gradient(135deg, rgba(236,222,201,.78), rgba(220,194,160,.58)); "
-                    "color: #5c4738; border: 1px solid rgba(143,95,63,.16);"
+                    "background: linear-gradient(135deg, rgba(212,165,116,.16), rgba(13,92,92,.10)); "
+                    "color: #2D2D2D; border-left: 4px solid #D4A574; border-top: 1px solid rgba(212,165,116,.20); border-right: 1px solid rgba(13,92,92,.14); border-bottom: 1px solid rgba(13,92,92,.14); backdrop-filter: blur(8px);"
                 )
                 props["style"] = f"{style}; {alert_style}" if style else alert_style
             if component == "VBtn" and props.get("variant") == "flat":
                 style = props.get("style", "")
-                btn_style = "background: linear-gradient(135deg,#b98963,#8f6349); color: #fff; box-shadow: 0 10px 22px rgba(95,66,44,.16);"
-                if props.get("color") == "#9a523d":
-                    btn_style = "background: linear-gradient(135deg,#b47b5c,#8e5842); color: #fff; box-shadow: 0 10px 22px rgba(95,66,44,.16);"
+                props.setdefault("elevation", 4)
+                btn_style = "background: linear-gradient(135deg, #D4A574 0%, #8B6F47 58%, #0D5C5C 100%); color: #FFFFF0; box-shadow: 0 8px 24px rgba(212,165,116,.32); transition: all .3s cubic-bezier(.4,0,.2,1); position: relative; overflow: hidden;"
+                if props.get("color") == "#A05A3F":
+                    btn_style = "background: linear-gradient(135deg, #A05A3F 0%, #8B6F47 100%); color: #FFFFF0; box-shadow: 0 8px 24px rgba(160,90,63,.26); transition: all .3s cubic-bezier(.4,0,.2,1); position: relative; overflow: hidden;"
                 props["style"] = f"{style}; {btn_style}" if style else btn_style
             if component == "VTabs":
                 props["selectedClass"] = "mcg-tab-selected"
-                props["sliderColor"] = "#7f8761"
+                props["sliderColor"] = cls.__ui_accent()
                 props["bgColor"] = "transparent"
                 style = props.get("style", "")
                 tab_style = (
-                    "--v-theme-primary: 159,118,87; "
-                    "background: linear-gradient(135deg, rgba(253,248,239,.86), rgba(239,222,197,.76)); "
-                    "border: 1px solid rgba(111,78,55,.10); border-radius: 16px;"
+                    "--v-theme-primary: 212,165,116; --v-theme-secondary: 13,92,92; "
+                    "background: linear-gradient(135deg, rgba(255,255,240,.78), rgba(212,165,116,.16), rgba(13,92,92,.10)); "
+                    "border: 1px solid rgba(212,165,116,.22); border-radius: 16px; box-shadow: inset 0 1px 0 rgba(255,255,240,.45);"
                 )
                 props["style"] = f"{style}; {tab_style}" if style else tab_style
             if component == "VTab":
                 style = props.get("style", "")
                 tab_item_style = (
-                    "color:#5f4d40; border-radius:14px; "
-                    "border:1px solid rgba(127,135,97,.18); "
-                    "transition:background .18s ease, color .18s ease, box-shadow .18s ease;"
+                    "color:#2D2D2D; border-radius:14px; "
+                    "border:1px solid rgba(212,165,116,.18); "
+                    "transition:all .3s cubic-bezier(.4,0,.2,1);"
                 )
                 props["style"] = f"{style}; {tab_item_style}" if style else tab_item_style
 
         if component == "VIcon" and isinstance(props, dict):
             if props.get("color") in {"primary", "info", "error", "warning"}:
+                props["color"] = cls.__ui_accent()
+            elif props.get("color") in {"#9a6848", "#9f7657"}:
                 props["color"] = cls.__ui_accent()
 
         content = node.get("content")
@@ -1062,7 +1072,7 @@ class MediaCoverGenerator(_PluginBase):
                                     "props": {
                                         "size": 52,
                                         "rounded": "lg",
-                                        "style": "background: linear-gradient(135deg,#b98963,#7f8761); color:#fff; box-shadow:0 10px 24px rgba(120,88,58,.25);",
+                                        "style": "background: linear-gradient(135deg,#D4A574 0%,#0D5C5C 58%,#8B6F47 100%); color:#FFFFF0; box-shadow:0 10px 24px rgba(13,92,92,.22);",
                                     },
                                     "content": [{"component": "VIcon", "props": {"icon": icon, "size": 30}}],
                                 },
@@ -1121,13 +1131,28 @@ class MediaCoverGenerator(_PluginBase):
         # 标题配置
         title_tab = [
             {
-                'component': 'VRow',
+                'component': 'VCard',
+                'props': {
+                    'variant': 'flat',
+                    'class': 'rounded-lg overflow-hidden hover-panel',
+                    'style': '''background: linear-gradient(135deg, rgba(26,26,26,.92) 0%, rgba(13,92,92,.72) 48%, rgba(139,111,71,.68) 100%);
+                    border: 1px solid rgba(212,165,116,.34);
+                    box-shadow: 0 8px 24px rgba(13,92,92,.18), 0 18px 44px rgba(26,26,26,.24);
+                    backdrop-filter: blur(12px) saturate(180%);
+                    transition: all .3s cubic-bezier(.4,0,.2,1);'''
+                },
                 'content': [
                     {
-                        'component': 'VCol',
+                        'component': 'VCardTitle',
                         'props': {
-                            'cols': 12,
+                            'class': 'text-subtitle-1 font-weight-medium py-3',
+                            'style': 'background: linear-gradient(135deg, #D4A574 0%, #8B6F47 100%); color: #FFFFF0; letter-spacing:.04em;'
                         },
+                        'text': '📝 中英标题配置'
+                    },
+                    {
+                        'component': 'VCardText',
+                        'props': {'class': 'pa-0'},
                         'content': [
                             {
                                 'component': 'VAceEditor',
@@ -1135,8 +1160,7 @@ class MediaCoverGenerator(_PluginBase):
                                     'modelvalue': 'title_config',
                                     'lang': 'yaml',
                                     'theme': 'monokai',
-                                    'style': 'height: 30rem',
-                                    'label': '中英标题配置',
+                                    'style': 'height: 30rem; border-radius: 0; --v-theme-primary: 212,165,116;',
                                     'placeholder': '''媒体库名称:
   - 主标题
   - 副标题
@@ -1147,10 +1171,10 @@ class MediaCoverGenerator(_PluginBase):
   - MOVIES
   - 精选影片
   - "#B5845C"'''
-                                 }
-                             }
-                         ]
-                     },
+                                }
+                            }
+                        ]
+                    }
                 ]
             },
         ]
@@ -1170,7 +1194,7 @@ class MediaCoverGenerator(_PluginBase):
                             {
                                 'component': 'VAlert',
                                 'props': {
-                                    'color': '#8a806b',
+                                    'color': '#0D5C5C',
                                     'variant': 'tonal',
                                     'text': '自定义图片目录：请将图片存于与媒体库同名的子目录下，例如：/mnt/custom_images/华语电影/1.jpg，填写 /mnt/custom_images 即可。多图模式下，文件名须为 1.jpg, 2.jpg, ...9.jpg，不满足的会被重命名，不够的会随机复制填满9张'
                                 }
@@ -1296,7 +1320,7 @@ class MediaCoverGenerator(_PluginBase):
                             {
                                 'component': 'VAlert',
                                 'props': {
-                                    'color': '#8a806b',
+                                    'color': '#0D5C5C',
                                     'variant': 'tonal',
                                     'text': '字体设置为可选项。若字体无法下载，可以手动下载并填写本地路径。主标题和副标题可以使用不同的字体。'
                                 }
@@ -1574,7 +1598,7 @@ class MediaCoverGenerator(_PluginBase):
                 'props': {
                     'value': 'static',
                     'variant': 'outlined',
-                    'color': '#9f7657',
+                    'color': '#D4A574',
                     'prependIcon': 'mdi-image-outline',
                     'class': 'text-none',
                     'rounded': 'lg',
@@ -1587,7 +1611,7 @@ class MediaCoverGenerator(_PluginBase):
                 'props': {
                     'value': 'animated',
                     'variant': 'outlined',
-                    'color': '#9f7657',
+                    'color': '#D4A574',
                     'prependIcon': 'mdi-play-box-multiple-outline',
                     'class': 'text-none',
                     'rounded': 'lg',
@@ -1619,7 +1643,7 @@ class MediaCoverGenerator(_PluginBase):
                                     'props': {
                                         'variant': 'outlined',
                                         'class': 'rounded-lg overflow-hidden hover-card',
-                                        'style': f'position: relative; background-image: linear-gradient(rgba(159,118,87,0.18), rgba(159,118,87,0.18)), url({style.get("src")}); background-size: cover; background-position: center; background-repeat: no-repeat; transition: all 0.3s ease; border: 2px solid transparent;'
+                                        'style': f'position: relative; background-image: linear-gradient(135deg, rgba(212,165,116,0.22) 0%, rgba(13,92,92,0.16) 100%), url({style.get("src")}); background-size: cover; background-position: center; background-repeat: no-repeat; transition: all 0.3s cubic-bezier(0.4, 0.0, 0.2, 1); border: 1px solid rgba(212,165,116,.28); box-shadow: 0 8px 24px rgba(13,92,92,.16), 0 16px 32px rgba(26,26,26,.12); backdrop-filter: blur(8px);'
                                     },
                                     'content': [
                                         {
@@ -1634,8 +1658,8 @@ class MediaCoverGenerator(_PluginBase):
                                             'component': 'VRadio',
                                             'props': {
                                                 'value': style.get('value'),
-                                                'color': '#FFFFFF',
-                                                'baseColor': '#FFFFFF',
+                                                'color': '#D4A574',
+                                                'baseColor': '#8B6F47',
                                                 'density': 'default',
                                                 'hideDetails': True,
                                                 'class': 'position-absolute',
@@ -1655,13 +1679,13 @@ class MediaCoverGenerator(_PluginBase):
             {
                 'component': 'VAlert',
                 'props': {
-                    'color': '#8a806b',
+                    'color': '#0D5C5C',
                     'variant': 'tonal',
                     'text': '💡 先选基础样式，再选静态或动态。点击整张预览图即可切换。',
                     'class': 'mb-4',
                     'prominent': True,
                     'border': 'start',
-                    'borderColor': '#8a806b'
+                    'borderColor': '#0D5C5C'
                 }
             },
             {
@@ -1698,7 +1722,7 @@ class MediaCoverGenerator(_PluginBase):
                         'props': {
                             'elevation': 0,
                             'class': 'rounded-lg mb-3',
-                            'style': 'background: linear-gradient(135deg, rgba(var(--v-theme-surface), 0.45) 0%, rgba(var(--v-theme-surface), 0.35) 100%); border: 1px solid rgba(var(--v-border-color), 0.4); backdrop-filter: blur(8px); box-shadow: 0 4px 12px rgba(0,0,0,0.08);'
+                            'style': 'background: linear-gradient(135deg, rgba(255,255,255,.08) 0%, rgba(212,165,116,.10) 48%, rgba(13,92,92,.08) 100%); border: 1px solid rgba(212,165,116,.24); backdrop-filter: blur(12px) saturate(180%); box-shadow: 0 2px 4px rgba(26,26,26,.08), 0 8px 20px rgba(13,92,92,.10), 0 16px 40px rgba(139,111,71,.12); transition: all .3s ease;'
                         },
                         'content': [
                             {
@@ -1732,7 +1756,7 @@ class MediaCoverGenerator(_PluginBase):
                                                                 'props': {
                                                                     'value': True,
                                                                     'variant': 'outlined',
-                                                                    'color': '#9f7657',
+                                                                    'color': '#D4A574',
                                                                     'class': 'text-none'
                                                                 },
                                                                 'text': '海报图'
@@ -1742,7 +1766,7 @@ class MediaCoverGenerator(_PluginBase):
                                                                 'props': {
                                                                     'value': False,
                                                                     'variant': 'outlined',
-                                                                    'color': '#9f7657',
+                                                                    'color': '#D4A574',
                                                                     'class': 'text-none'
                                                                 },
                                                                 'text': '背景图'
@@ -1777,7 +1801,7 @@ class MediaCoverGenerator(_PluginBase):
                                                                 'props': {
                                                                     'value': True,
                                                                     'variant': 'outlined',
-                                                                    'color': '#9f7657',
+                                                                    'color': '#D4A574',
                                                                     'class': 'text-none'
                                                                 },
                                                                 'text': '模糊背景'
@@ -1788,7 +1812,7 @@ class MediaCoverGenerator(_PluginBase):
                                                                 'props': {
                                                                     'value': False,
                                                                     'variant': 'outlined',
-                                                                    'color': '#9f7657',
+                                                                    'color': '#D4A574',
                                                                     'class': 'text-none'
                                                                 },
                                                                 'text': '纯色渐变'
@@ -1920,7 +1944,7 @@ class MediaCoverGenerator(_PluginBase):
                         'props': {
                             'elevation': 0,
                             'class': 'rounded-lg',
-                            'style': 'background-color: rgba(var(--v-theme-surface), 0.32); border: 1px solid rgba(var(--v-border-color), 0.32); backdrop-filter: blur(6px);'
+                            'style': 'background: linear-gradient(135deg, rgba(255,255,255,.08) 0%, rgba(212,165,116,.10) 48%, rgba(13,92,92,.08) 100%); border: 1px solid rgba(212,165,116,.24); backdrop-filter: blur(12px) saturate(180%); box-shadow: 0 2px 4px rgba(26,26,26,.08), 0 8px 20px rgba(13,92,92,.10), 0 16px 40px rgba(139,111,71,.12); transition: all .3s ease;'
                         },
                         'content': [
                             {
@@ -2099,7 +2123,7 @@ class MediaCoverGenerator(_PluginBase):
                                 "content": [
                                     {
                                         "component": "VAvatar",
-                                        "props": {"size": 38, "rounded": "lg", "style": "background:#f2dfca;color:#8f5f3f;"},
+                                        "props": {"size": 38, "rounded": "lg", "style": "background:linear-gradient(135deg,#E8C9A0,#D4A574);color:#2D2D2D;box-shadow:0 8px 20px rgba(212,165,116,.24);"},
                                         "content": [{"component": "VIcon", "props": {"icon": "mdi-cog-outline"}}],
                                     },
                                     {
@@ -2305,7 +2329,7 @@ class MediaCoverGenerator(_PluginBase):
                 "content": [
                     {
                         "component": "VTabs",
-                        "props": {"model": "tab", "grow": True, "color": "#9a6848", "class": "px-2 pt-2", "style": "background:rgba(248,239,226,.78);"},
+                        "props": {"model": "tab", "grow": True, "color": "#D4A574", "class": "px-2 pt-2", "style": "background:rgba(248,239,226,.78);"},
                         "content": [
                             {
                                 "component": "VTab",
@@ -2316,7 +2340,7 @@ class MediaCoverGenerator(_PluginBase):
                                         "props": {
                                             "icon": "mdi-palette-swatch",
                                             "start": True,
-                                            "color": "#9a6848",
+                                            "color": "#D4A574",
                                         },
                                     },
                                     {"component": "span", "text": "封面风格"},
@@ -2324,14 +2348,14 @@ class MediaCoverGenerator(_PluginBase):
                             },
                             {
                                 "component": "VTab",
-                                "props": {"value": "title-tab", "style": "color:#5f4d40;border-radius:14px;border:1px solid rgba(127,135,97,.18);"},
+                                "props": {"value": "title-tab", "style": "color:#2D2D2D;border-radius:14px;border:1px solid rgba(212,165,116,.18);"},
                                 "content": [
                                     {
                                         "component": "VIcon",
                                         "props": {
                                             "icon": "mdi-text-box-edit",
                                             "start": True,
-                                            "color": "#9a6848",
+                                            "color": "#0D5C5C",
                                         },
                                     },
                                     {"component": "span", "text": "封面标题"},
@@ -2339,14 +2363,14 @@ class MediaCoverGenerator(_PluginBase):
                             },
                             {
                                 "component": "VTab",
-                                "props": {"value": "more-tab", "style": "color:#5f4d40;border-radius:14px;border:1px solid rgba(127,135,97,.18);"},
+                                "props": {"value": "more-tab", "style": "color:#2D2D2D;border-radius:14px;border:1px solid rgba(212,165,116,.18);"},
                                 "content": [
                                     {
                                         "component": "VIcon",
                                         "props": {
                                             "icon": "mdi-palette-swatch-variant",
                                             "start": True,
-                                            "color": "#9a6848",
+                                            "color": "#8B6F47",
                                         },
                                     },
                                     {"component": "span", "text": "更多参数"},
@@ -2539,7 +2563,7 @@ class MediaCoverGenerator(_PluginBase):
                                                                 {
                                                                     "component": "VBtn",
                                                                     "props": {
-                                                                        "color": "#9a523d",
+                                                                        "color": "#A05A3F",
                                                                         "variant": "text",
                                                                         "size": "small",
                                                                         "title": "删除",
@@ -2569,7 +2593,7 @@ class MediaCoverGenerator(_PluginBase):
                 {
                     "component": "VAlert",
                     "props": {
-                        "color": "#8a806b",
+                        "color": "#0D5C5C",
                         "variant": "tonal",
                         "density": "compact",
                     },
@@ -2587,23 +2611,23 @@ class MediaCoverGenerator(_PluginBase):
                 "content": [
                     {
                         "component": "VTabs",
-                        "props": {"grow": True, "modelValue": page_tab, "color": "#9a6848", "class": "px-2 pt-2", "style": "background:rgba(248,239,226,.78);"},
+                        "props": {"grow": True, "modelValue": page_tab, "color": "#D4A574", "class": "px-2 pt-2", "style": "background:rgba(248,239,226,.78);"},
                         "content": [
                             {
                                 "component": "VTab",
-                                "props": {"value": "generate-tab", "style": self.__ui_selected_style() if page_tab == "generate-tab" else "color:#5f4d40;border-radius:14px;border:1px solid rgba(127,135,97,.18);"},
+                                "props": {"value": "generate-tab", "style": self.__ui_selected_style() if page_tab == "generate-tab" else "color:#2D2D2D;border-radius:14px;border:1px solid rgba(212,165,116,.18);"},
                                 "text": "生成工坊",
                                 "events": {"click": {"api": "plugin/MediaCoverGenerator/set_page_tab_generate", "method": "post"}},
                             },
                             {
                                 "component": "VTab",
-                                "props": {"value": "history-tab", "style": self.__ui_selected_style() if page_tab == "history-tab" else "color:#5f4d40;border-radius:14px;border:1px solid rgba(127,135,97,.18);"},
+                                "props": {"value": "history-tab", "style": self.__ui_selected_style() if page_tab == "history-tab" else "color:#2D2D2D;border-radius:14px;border:1px solid rgba(212,165,116,.18);"},
                                 "text": "历史归档",
                                 "events": {"click": {"api": "plugin/MediaCoverGenerator/set_page_tab_history", "method": "post"}},
                             },
                             {
                                 "component": "VTab",
-                                "props": {"value": "clean-tab", "style": self.__ui_selected_style() if page_tab == "clean-tab" else "color:#5f4d40;border-radius:14px;border:1px solid rgba(127,135,97,.18);"},
+                                "props": {"value": "clean-tab", "style": self.__ui_selected_style() if page_tab == "clean-tab" else "color:#2D2D2D;border-radius:14px;border:1px solid rgba(212,165,116,.18);"},
                                 "text": "缓存整理",
                                 "events": {"click": {"api": "plugin/MediaCoverGenerator/set_page_tab_clean", "method": "post"}},
                             },
@@ -2624,7 +2648,7 @@ class MediaCoverGenerator(_PluginBase):
                                             {
                                                 "component": "VAlert",
                                                 "props": {
-                                                    "color": "#b5845c",
+                                                    "color": "#8B6F47",
                                                     "variant": "tonal",
                                                     "density": "compact",
                                                     "class": "mb-3",
@@ -2647,7 +2671,7 @@ class MediaCoverGenerator(_PluginBase):
                                                                 "component": "VBtn",
                                                                 "props": {
                                                                     "variant": "flat",
-                                                                    "color": "#9a6848",
+                                                                    "color": "#D4A574",
                                                                     "class": "text-none mr-2 mb-2",
                                                                     "prepend-icon": "mdi-swap-horizontal",
                                                                 },
@@ -2658,7 +2682,7 @@ class MediaCoverGenerator(_PluginBase):
                                                                 "component": "VBtn",
                                                                 "props": {
                                                                     "variant": "flat",
-                                                                    "color": "#9a6848",
+                                                                    "color": "#D4A574",
                                                                     "class": "text-none mb-2",
                                                                     "prepend-icon": "mdi-play-circle-outline",
                                                                 },
@@ -2702,7 +2726,7 @@ class MediaCoverGenerator(_PluginBase):
                                                                 "component": "VBtn",
                                                                 "props": {
                                                                     "variant": "flat",
-                                                                    "color": "#9a6848",
+                                                                    "color": "#D4A574",
                                                                     "class": "text-none mr-2 mb-2",
                                                                     "prepend-icon": "mdi-swap-horizontal",
                                                                 },
@@ -2713,7 +2737,7 @@ class MediaCoverGenerator(_PluginBase):
                                                                 "component": "VBtn",
                                                                 "props": {
                                                                     "variant": "flat",
-                                                                    "color": "#9a6848",
+                                                                    "color": "#D4A574",
                                                                     "class": "text-none mb-2",
                                                                     "prepend-icon": "mdi-play-circle-outline",
                                                                 },
@@ -2755,7 +2779,7 @@ class MediaCoverGenerator(_PluginBase):
                                             {
                                                 "component": "VBtn",
                                                 "props": {
-                                                    "color": "#9a523d",
+                                                    "color": "#A05A3F",
                                                     "variant": "flat",
                                                     "size": "large",
                                                     "prepend-icon": "mdi-image-remove",
@@ -2767,7 +2791,7 @@ class MediaCoverGenerator(_PluginBase):
                                             {
                                                 "component": "VBtn",
                                                 "props": {
-                                                    "color": "#9a523d",
+                                                    "color": "#A05A3F",
                                                     "variant": "flat",
                                                     "size": "large",
                                                     "prepend-icon": "mdi-format-font",
