@@ -52,13 +52,13 @@ class MediaCoverGenerator(_PluginBase):
     # 插件描述
     plugin_desc = "生成媒体库动态/静态封面，支持 Emby/Jellyfin"
     # 插件图标
-    plugin_icon = "https://raw.githubusercontent.com/justzerock/MoviePilot-Plugins/main/icons/emby.png"
+    plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/emby.png"
     # 插件版本
     plugin_version = "0.9.5"
     # 插件作者
-    plugin_author = "justzerock"
+    plugin_author = "Kioo"
     # 作者主页
-    author_url = "https://github.com/justzerock/MoviePilot-Plugins"
+    author_url = "https://github.com/wio-ki/MoviePilot-Plugins"
     # 插件配置项ID前缀
     plugin_config_prefix = "mediacovergenerator_"
     # 加载顺序
@@ -931,9 +931,15 @@ class MediaCoverGenerator(_PluginBase):
                                     'style': 'height: 30rem',
                                     'label': '中英标题配置',
                                     'placeholder': '''媒体库名称:
-- 主标题
-- 副标题
-- "#FF5722"  # 可选：背景颜色（必须加引号）'''
+  - 主标题
+  - 副标题
+  - "#FF5722"  # 可选：背景颜色（必须加引号）
+
+示例：
+电影:
+  - MOVIES
+  - 精选影片
+  - "#2196F3"'''
                                  }
                              }
                          ]
@@ -976,9 +982,12 @@ class MediaCoverGenerator(_PluginBase):
                                 'props': {
                                     'model': 'covers_input',
                                     'label': '自定义图片目录（可选）',
-                                    'prependInnerIcon': 'mdi-file-image',
+                                    'prependInnerIcon': 'mdi-folder-image',
                                     'hint': '使用你指定的图片生成封面，图片放在与媒体库同名的文件夹下',
-                                    'persistentHint': True
+                                    'persistentHint': True,
+                                    'variant': 'outlined',
+                                    'density': 'comfortable',
+                                    'clearable': True
                                 }
                             }
                         ]
@@ -996,9 +1005,12 @@ class MediaCoverGenerator(_PluginBase):
                                 'props': {
                                     'model': 'covers_output',
                                     'label': '历史封面保存目录（可选）',
-                                    'prependInnerIcon': 'mdi-file-image',
+                                    'prependInnerIcon': 'mdi-folder-image',
                                     'hint': '生成的封面默认保存在本插件数据目录下',
-                                    'persistentHint': True
+                                    'persistentHint': True,
+                                    'variant': 'outlined',
+                                    'density': 'comfortable',
+                                    'clearable': True
                                 }
                             }
                         ]
@@ -1358,6 +1370,8 @@ class MediaCoverGenerator(_PluginBase):
                     'color': 'primary',
                     'prependIcon': 'mdi-image-outline',
                     'class': 'text-none',
+                    'rounded': 'lg',
+                    'size': 'default',
                 },
                 'text': '静态'
             },
@@ -1369,6 +1383,8 @@ class MediaCoverGenerator(_PluginBase):
                     'color': 'primary',
                     'prependIcon': 'mdi-play-box-multiple-outline',
                     'class': 'text-none',
+                    'rounded': 'lg',
+                    'size': 'default',
                 },
                 'text': '动态'
             }
@@ -1394,9 +1410,9 @@ class MediaCoverGenerator(_PluginBase):
                                 {
                                     'component': 'VCard',
                                     'props': {
-                                        'variant': 'flat',
-                                        'class': 'rounded-lg overflow-hidden',
-                                        'style': f'position: relative; background-image: linear-gradient(rgba(80,80,80,0.25), rgba(80,80,80,0.25)), url({style.get("src")}); background-size: cover; background-position: center; background-repeat: no-repeat;'
+                                        'variant': 'outlined',
+                                        'class': 'rounded-lg overflow-hidden hover-card',
+                                        'style': f'position: relative; background-image: linear-gradient(rgba(var(--v-theme-primary), 0.15), rgba(var(--v-theme-primary), 0.15)), url({style.get("src")}); background-size: cover; background-position: center; background-repeat: no-repeat; transition: all 0.3s ease; border: 2px solid transparent;'
                                     },
                                     'content': [
                                         {
@@ -1434,8 +1450,11 @@ class MediaCoverGenerator(_PluginBase):
                 'props': {
                     'type': 'info',
                     'variant': 'tonal',
-                    'text': '先选基础样式，再选静态或动态。点击整张预览图即可切换。',
-                    'class': 'mb-3'
+                    'text': '💡 先选基础样式，再选静态或动态。点击整张预览图即可切换。',
+                    'class': 'mb-4',
+                    'prominent': True,
+                    'border': 'start',
+                    'borderColor': 'info'
                 }
             },
             {
@@ -1471,8 +1490,8 @@ class MediaCoverGenerator(_PluginBase):
                         'component': 'VExpansionPanel',
                         'props': {
                             'elevation': 0,
-                            'class': 'rounded-lg',
-                            'style': 'background-color: rgba(var(--v-theme-surface), 0.38); border: 1px solid rgba(var(--v-border-color), 0.35); backdrop-filter: blur(6px);'
+                            'class': 'rounded-lg mb-3',
+                            'style': 'background: linear-gradient(135deg, rgba(var(--v-theme-surface), 0.45) 0%, rgba(var(--v-theme-surface), 0.35) 100%); border: 1px solid rgba(var(--v-border-color), 0.4); backdrop-filter: blur(8px); box-shadow: 0 4px 12px rgba(0,0,0,0.08);'
                         },
                         'content': [
                             {
@@ -1555,6 +1574,7 @@ class MediaCoverGenerator(_PluginBase):
                                                                     'class': 'text-none'
                                                                 },
                                                                 'text': '模糊背景'
+                                                                , 'prependIcon': 'mdi-blur'
                                                             },
                                                             {
                                                                 'component': 'VBtn',
@@ -2596,7 +2616,7 @@ class MediaCoverGenerator(_PluginBase):
     @staticmethod
     def __style_preview_src(index: int) -> str:
         safe_index = max(1, min(4, int(index)))
-        return f"https://raw.githubusercontent.com/justzerock/MoviePilot-Plugins/main/images/style_{safe_index}.jpeg"
+        return f"https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/images/style_{safe_index}.jpeg"
 
     def __get_recent_generated_covers(self, limit: int = 20) -> List[Dict[str, Any]]:
         items: List[Dict[str, Any]] = []
@@ -3566,6 +3586,14 @@ class MediaCoverGenerator(_PluginBase):
     
     def __load_title_config(self, yaml_str: str) -> dict:
         try:
+            # 先处理转义换行，再处理真实换行
+            yaml_str = yaml_str.replace('\\r\\n', '\n')
+            yaml_str = yaml_str.replace('\\r', '\n')
+            yaml_str = yaml_str.replace('\\n', '\n')
+            yaml_str = yaml_str.replace('\r\n', '\n')
+            yaml_str = yaml_str.replace('\r', '\n')
+            yaml_str = yaml_str.replace('\n\n\n', '\n\n')
+
             # 替换全角冒号为半角
             yaml_str = yaml_str.replace("：", ":")
             # 替换制表符为两个空格，统一缩进
@@ -4252,22 +4280,22 @@ class MediaCoverGenerator(_PluginBase):
             self._zh_font_preset = "chaohei"
 
         default_font_url = {
-            "chaohei": "https://raw.githubusercontent.com/justzerock/MoviePilot-Plugins/main/fonts/chaohei.ttf",
-            "yasong": "https://raw.githubusercontent.com/justzerock/MoviePilot-Plugins/main/fonts/yasong.ttf",
-            "EmblemaOne": "https://raw.githubusercontent.com/justzerock/MoviePilot-Plugins/main/fonts/EmblemaOne.woff2",
-            "Melete": "https://raw.githubusercontent.com/justzerock/MoviePilot-Plugins/main/fonts/Melete.otf",
-            "Phosphate": "https://raw.githubusercontent.com/justzerock/MoviePilot-Plugins/main/fonts/phosphate.ttf",
-            "JosefinSans": "https://raw.githubusercontent.com/justzerock/MoviePilot-Plugins/main/fonts/josefinsans.woff2",
-            "LilitaOne": "https://raw.githubusercontent.com/justzerock/MoviePilot-Plugins/main/fonts/lilitaone.woff2",
-            "Monoton": "https://raw.githubusercontent.com/justzerock/MoviePilot-Plugins/main/fonts/Monoton.woff2",
-            "Plaster": "https://raw.githubusercontent.com/justzerock/MoviePilot-Plugins/main/fonts/Plaster.woff2",
+            "chaohei": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/chaohei.ttf",
+            "yasong": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/yasong.ttf",
+            "EmblemaOne": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/EmblemaOne.woff2",
+            "Melete": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/Melete.otf",
+            "Phosphate": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/phosphate.ttf",
+            "JosefinSans": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/josefinsans.woff2",
+            "LilitaOne": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/lilitaone.woff2",
+            "Monoton": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/Monoton.woff2",
+            "Plaster": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/Plaster.woff2",
         }
-        default_zh_url = default_font_url.get(self._zh_font_preset, "https://raw.githubusercontent.com/justzerock/MoviePilot-Plugins/main/fonts/chaohei.ttf")
+        default_zh_url = default_font_url.get(self._zh_font_preset, "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/chaohei.ttf")
 
         if not self._en_font_preset:
             self._en_font_preset = "EmblemaOne"
 
-        default_en_url = default_font_url.get(self._en_font_preset, "https://raw.githubusercontent.com/justzerock/MoviePilot-Plugins/main/fonts/EmblemaOne.woff2")
+        default_en_url = default_font_url.get(self._en_font_preset, "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/EmblemaOne.woff2")
         
         log_prefix = "默认"
         zh_custom_type = detect_string_type(self._zh_font_custom)
@@ -4437,6 +4465,7 @@ class MediaCoverGenerator(_PluginBase):
                 logger.warning("字体文件缺失，尝试重新获取")
                 self.__get_fonts()
 
+
             # 验证字体文件有效性
             if self._zh_font_path and not validate_font_file(Path(self._zh_font_path)):
                 logger.warning("主标题字体文件无效，尝试重新下载")
@@ -4492,7 +4521,7 @@ class MediaCoverGenerator(_PluginBase):
         strategies = []
 
         # 判断是否为GitHub链接
-        is_github_url = "github.com" in font_url or "raw.githubusercontent.com" in font_url
+        is_github_url = bool(re.search(r"(^|\.)github\.com$|(^|\.)raw\.githubusercontent\.com$", urlparse(font_url).hostname or ""))
 
         # 对于GitHub链接，优先使用GitHub镜像站
         if is_github_url and settings.GITHUB_PROXY:
