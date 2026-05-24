@@ -2484,7 +2484,7 @@ class MediaCoverGenerator(_PluginBase):
         ]
         return self.__ui_wrap(
             form_content,
-            "封面生成工坊",
+            "封面控制台",
             "把媒体库封面、标题、字体与动画参数集中在一个更安静的纸感工作台里；只改界面层，不改变原有生成逻辑。",
             "mdi-image-filter-vintage",
         ), {
@@ -2883,7 +2883,7 @@ class MediaCoverGenerator(_PluginBase):
         )
         return self.__ui_wrap(
             page_content,
-            "封面控制台",
+            "封面生成工坊",
             "快速生成、查看历史与清理缓存集中到同一个温暖纸感控制台；所有按钮仍调用原有接口。",
             "mdi-view-dashboard-outline",
         )
