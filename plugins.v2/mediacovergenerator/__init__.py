@@ -969,6 +969,43 @@ class MediaCoverGenerator(_PluginBase):
         )
 
     @staticmethod
+    def __title_config_template() -> str:
+        return '''国产剧:
+  - 国产剧
+  - DRAMA
+美剧:
+  - 美剧
+  - AMERICAN
+日剧:
+  - 日剧
+  - JAPANESE
+韩剧:
+  - 韩剧
+  - KOREAN
+泰剧:
+  - 泰剧
+  - THAI
+电影:
+  - 电影
+  - MOVIE
+日番:
+  - 日番
+  - ANIME
+国漫:
+  - 国漫
+  - DONGHUA
+综艺:
+  - 综艺
+  - VARIETY
+合集:
+  - 合集
+  - COLLECTION'''
+
+    @staticmethod
+    def __title_config_template_onclick() -> str:
+        return f"event => {{ title_config = `{MediaCoverGenerator.__title_config_template()}`; }}"
+
+    @staticmethod
     def __ui_theme_styles() -> Dict[str, str]:
         return {
             "component": "style",
@@ -1208,10 +1245,28 @@ class MediaCoverGenerator(_PluginBase):
                     {
                         'component': 'VCardTitle',
                         'props': {
-                            'class': 'text-subtitle-1 font-weight-medium py-3',
-                            'style': 'background: linear-gradient(135deg, #D4A574 0%, #8B6F47 100%); color: #FFFFF0; letter-spacing:.04em;'
+                            'class': 'text-subtitle-1 font-weight-medium py-3 d-flex align-center',
+                            'style': 'background: linear-gradient(135deg, #D4A574 0%, #8B6F47 100%); color: #FFFFF0; letter-spacing:.04em; gap:12px;'
                         },
-                        'text': '📝 中英标题配置'
+                        'content': [
+                            {
+                                'component': 'span',
+                                'props': {'style': 'flex:0 0 auto;'},
+                                'text': '📝 中英标题配置'
+                            },
+                            {
+                                'component': 'VBtn',
+                                'props': {
+                                    'variant': 'flat',
+                                    'size': 'small',
+                                    'class': 'text-none mcg-soft-action-btn',
+                                    'prepend-icon': 'mdi-file-import-outline',
+                                    'style': self.__ui_button_style(),
+                                    'onClick': self.__title_config_template_onclick(),
+                                },
+                                'text': '导入模板'
+                            }
+                        ]
                     },
                     {
                         'component': 'VCardText',
