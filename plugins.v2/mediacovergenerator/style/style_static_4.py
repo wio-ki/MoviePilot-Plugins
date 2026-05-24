@@ -2,7 +2,7 @@ import base64
 from io import BytesIO
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps, ImageStat
 
 from app.log import logger
 from app.plugins.mediacovergenerator.style.style_static_2 import (
@@ -79,6 +79,15 @@ def create_style_static_4(
         ratio = float(color_ratio)
         if ratio < 0 or ratio > 1:
             ratio = 0.8
+
+        img_gray = src.convert('L')
+        lum = ImageStat.Stat(img_gray).mean[0]
+        if lum > 180:
+            ratio = min(1.0, ratio * 1.15)
+            tint = darken_color(tint, 0.75)
+        elif lum < 50:
+            ratio = max(0.0, ratio * 0.85)
+            tint = darken_color(tint, 0.9)
 
         bg_np = np.array(bg, dtype=float)
         tint_np = np.array([[tint]], dtype=float)

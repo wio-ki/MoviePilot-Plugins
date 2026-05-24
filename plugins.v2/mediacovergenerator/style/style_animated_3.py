@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 from app.plugins.mediacovergenerator.utils.color_helper import ColorHelper
 
-""" 
+"""
 代码修改自 https://github.com/HappyQuQu/jellyfin-library-poster/blob/main/gen_poster.py
 """
 
@@ -104,7 +104,7 @@ def draw_text_on_image(
     draw = ImageDraw.Draw(text_layer)
     shadow_draw = ImageDraw.Draw(shadow_layer)
     font = ImageFont.truetype(font_path, font_size)
-    
+
     # 如果需要添加阴影
     if shadow:
         fill_color = (fill_color[0], fill_color[1], fill_color[2], 229)
@@ -269,13 +269,13 @@ def create_gradient_background(width, height, color=None):
     """
     创建一个从左到右的渐变背景，使用遮罩技术实现渐变效果
     左侧颜色更深，右侧颜色适中，提供更明显的渐变效果
-    
+
     参数:
         width: 背景宽度
         height: 背景高度
         color: 颜色数组或单个颜色，如果为None则随机生成
               如果是数组，会依次尝试每个颜色，跳过太黑或太淡的颜色
-        
+
     返回:
         渐变背景图像
     """
@@ -317,9 +317,9 @@ def create_gradient_background(width, height, color=None):
         r1, g1, b1 = r/255.0, g/255.0, b/255.0
         h, l, s = colorsys.rgb_to_hls(r1, g1, b1)
         return min_l <= l <= max_l
-    
+
     selected_color = None
-    
+
     # 如果传入的是颜色数组
     if isinstance(color, list) and len(color) > 0:
         # 尝试找到合适的颜色，最多尝试5个
@@ -335,7 +335,7 @@ def create_gradient_background(width, height, color=None):
             else:
                 pass
                 # logger.info(f" 海报主题色:[{color[i]}]不适合做背景,尝试做下一个颜色")
-    
+
     # 如果没有找到合适的颜色，随机生成一个颜色
     if selected_color is None:
 
@@ -367,47 +367,47 @@ def create_gradient_background(width, height, color=None):
     r = int(selected_color[0] * 0.65)  # 降低35%
     g = int(selected_color[1] * 0.65)  # 降低35%
     b = int(selected_color[2] * 0.65)  # 降低35%
-    
+
     # 确保RGB值不会小于0
     r = max(0, r)
     g = max(0, g)
     b = max(0, b)
-    
+
     # 更新颜色
     selected_color = (r, g, b, selected_color[3] if len(selected_color) > 3 else 255)
 
     # 确保selected_color包含alpha通道
     if len(selected_color) == 3:
         selected_color = (selected_color[0], selected_color[1], selected_color[2], 255)
-    
+
     # 基于selected_color自动生成浅色版本作为右侧颜色
     # 将selected_color的RGB值增加更合适的比例，使右侧颜色适中
     # 限制最大值为255
     r = min(255, int(selected_color[0] * 1.9))  # 从2.2降到1.9
     g = min(255, int(selected_color[1] * 1.9))  # 从2.2降到1.9
     b = min(255, int(selected_color[2] * 1.9))  # 从2.2降到1.9
-    
+
     # 确保至少有一定的亮度增加，但比之前小
     r = max(r, selected_color[0] + 80)  # 从100降到80
     g = max(g, selected_color[1] + 80)  # 从100降到80
     b = max(b, selected_color[2] + 80)  # 从100降到80
-    
+
     # 确保右侧颜色不会太亮
     r = min(r, 230)  # 限制最大亮度
     g = min(g, 230)  # 限制最大亮度
     b = min(b, 230)  # 限制最大亮度
-    
+
     # 创建右侧浅色
     color2 = (r, g, b, selected_color[3])
-    
+
     # 创建左右两个纯色图像
     left_image = Image.new("RGBA", (width, height), selected_color)
     right_image = Image.new("RGBA", (width, height), color2)
-    
+
     # 创建渐变遮罩（从黑到白的横向线性渐变）
     mask = Image.new("L", (width, height), 0)
     mask_data = []
-    
+
     # 生成遮罩数据，使用更加平滑的过渡
     for y in range(height):
         for x in range(width):
@@ -415,96 +415,96 @@ def create_gradient_background(width, height, color=None):
             # 使用更加非线性的渐变，使左侧深色区域更大
             mask_value = int(255.0 * (x / width) ** 0.7)  # 从0.85改为0.7
             mask_data.append(mask_value)
-    
+
     # 应用遮罩数据到遮罩图像
     mask.putdata(mask_data)
-    
+
     # 使用遮罩合成左右两个图像
     # 遮罩中黑色部分(0)显示left_image，白色部分(255)显示right_image
     gradient = Image.composite(right_image, left_image, mask)
-    
+
     return gradient
 
 
 def get_poster_primary_color(image_path):
     """
     分析图片并提取主色调
-    
+
     参数:
         image_path: 图片文件路径
-        
+
     返回:
         主色调颜色，RGBA格式
     """
     try:
         from collections import Counter
-        
+
         # 打开图片
         img = Image.open(image_path)
-        
+
         # 缩小图片尺寸以加快处理速度
         img = img.resize((100, 150), Image.LANCZOS)
-        
+
         # 确保图片为RGBA模式
         if img.mode != 'RGBA':
             img = img.convert('RGBA')
-            
+
         # 获取图片中心部分的像素数据（避免边框和角落）
         # width, height = img.size
         # center_x1 = int(width * 0.2)
         # center_y1 = int(height * 0.2)
         # center_x2 = int(width * 0.8)
         # center_y2 = int(height * 0.8)
-        
+
         # # 裁剪出中心区域
         # center_img = img.crop((center_x1, center_y1, center_x2, center_y2))
 
         # 获取所有像素
         pixels = list(img.getdata())
-        
+
         # 过滤掉接近黑色和白色的像素，以及透明度低的像素
         filtered_pixels = []
         for pixel in pixels:
             r, g, b, a = pixel
-            
+
             # 跳过透明度低的像素
             if a < 200:
                 continue
-                
+
             # 计算亮度
             brightness = (r + g + b) / 3
-            
+
             # 跳过过暗或过亮的像素
             if brightness < 30 or brightness > 220:
                 continue
-                
+
             # 添加到过滤后的列表
             filtered_pixels.append((r, g, b, 255))
-            
+
         # 如果过滤后没有像素，使用全部像素
         if not filtered_pixels:
             filtered_pixels = [(p[0], p[1], p[2], 255) for p in pixels if p[3] > 100]
-            
+
         # 如果仍然没有像素，返回默认颜色
         if not filtered_pixels:
             return (150, 100, 50, 255)
-            
+
         # 使用Counter找到出现最多的颜色
         color_counter = Counter(filtered_pixels)
         common_colors = color_counter.most_common(10)
-        
+
         # 如果找到了颜色，返回最常见的颜色
         if common_colors:
             return common_colors
-        
+
         # 如果无法找到主色调，使用平均值
         r_avg = sum(p[0] for p in filtered_pixels) // len(filtered_pixels)
         g_avg = sum(p[1] for p in filtered_pixels) // len(filtered_pixels)
         b_avg = sum(p[2] for p in filtered_pixels) // len(filtered_pixels)
-        
+
         return [(r_avg, g_avg, b_avg, 255)]
-     
-        
+
+
     except Exception as e:
         # logger.error(f"获取图片主色调时出错: {e}")
         # 返回默认颜色作为备选
@@ -513,26 +513,26 @@ def get_poster_primary_color(image_path):
 def create_blur_background(image_path, template_width, template_height, background_color, blur_size, color_ratio, lighten_gradient_strength=0.6):
     """
     创建模糊背景图像，将原始图像模糊化并与指定颜色混合，添加胶片颗粒效果
-    
+
     参数:
         image_path (str): 原始图像的路径
         template_width (int): 模板宽度
         template_height (int): 模板高度
         color (tuple or list): 背景混合颜色列表或颜色元组，包含(R,G,B,A)格式的颜色
-    
+
     返回:
         PIL.Image: 处理后的背景图像
     """
-    
+
     # 加载原始图像
     original_img = Image.open(image_path)
-    
+
     # 确保原图像有正确的模式（RGB或RGBA）
     if original_img.mode != 'RGBA':
         original_img = original_img.convert('RGBA')
-    
+
     canvas_size = (template_width, template_height)
-    
+
     # 背景处理
     bg_img = original_img.copy()
     bg_img = ImageOps.fit(bg_img, canvas_size, method=Image.LANCZOS)
@@ -541,7 +541,7 @@ def create_blur_background(image_path, template_width, template_height, backgrou
     # 2. 与指定颜色混合
     # 假设 select_suitable_color 和 darken_color 函数存在且正常工作
     actual_color = darken_color(background_color, 0.85)
-    
+
     # 确保 bg_color 是元组形式的RGB颜色
     if len(actual_color) >= 3:
         bg_color = (int(actual_color[0]), int(actual_color[1]), int(actual_color[2]))
@@ -552,18 +552,18 @@ def create_blur_background(image_path, template_width, template_height, backgrou
     # 将背景图片与背景色混合
     bg_img_array = np.array(bg_img, dtype=float)
     height, width, channels = bg_img_array.shape
-    
+
     # 创建和背景图片相同大小的颜色数组
     bg_color_array = np.zeros_like(bg_img_array)
-    
+
     # 填充RGB通道
-    for i in range(min(3, channels)):  
+    for i in range(min(3, channels)):
         bg_color_array[:, :, i] = float(bg_color[i])
-    
+
     # 如果有Alpha通道，设置为完全不透明
     if channels == 4:
         bg_color_array[:, :, 3] = 255.0
-    
+
     # 混合背景图和颜色
     blended_bg_array = bg_img_array * (1 - float(color_ratio)) + bg_color_array * float(color_ratio)
     blended_bg_array = np.clip(blended_bg_array, 0, 255).astype(np.uint8)
@@ -577,7 +577,7 @@ def create_blur_background(image_path, template_width, template_height, backgrou
 
     # 3. 从左到右颜色变浅的渐变处理
     if lighten_gradient_strength > 0:
-        gradient_mask = Image.new("L", canvas_size, 0)  
+        gradient_mask = Image.new("L", canvas_size, 0)
         draw_mask = ImageDraw.Draw(gradient_mask)
 
         for x in range(template_width):
@@ -629,7 +629,7 @@ def find_dominant_vibrant_colors(image, num_colors=5):
     从图像中提取出现次数较多的前 N 种非黑非白非灰的颜色，
     并将其调整到接近马卡龙色系。
     """
-    img = image.copy()  
+    img = image.copy()
     img.thumbnail((100, 100))
     img = img.convert('RGB')
     pixels = list(img.getdata())
@@ -670,20 +670,20 @@ def darken_color(color, factor=0.7):
 def add_film_grain(image, intensity=0.05):
     """添加胶片颗粒效果"""
     img_array = np.array(image)
-    
+
     # 创建随机噪点
     noise = np.random.normal(0, intensity * 255, img_array.shape)
-    
+
     # 应用噪点
     img_array = img_array + noise
     img_array = np.clip(img_array, 0, 255).astype(np.uint8)
-    
+
     return Image.fromarray(img_array)
 
-def create_style_animated_3(library_dir, title, font_path, font_size=(170,75), font_offset=(0,40,40), 
-                           is_blur=False, blur_size=50, color_ratio=0.8, resolution_config=None, 
-                           bg_color_config=None, animation_duration=12, animation_scroll='down', 
-                           animation_fps=15, animation_format='apng', animation_resolution='300x200', 
+def create_style_animated_3(library_dir, title, font_path, font_size=(170,75), font_offset=(0,40,40),
+                           is_blur=False, blur_size=50, color_ratio=0.8, resolution_config=None,
+                           bg_color_config=None, animation_duration=12, animation_scroll='down',
+                           animation_fps=15, animation_format='apng', animation_resolution='300x200',
                            animation_reduce_colors='strong', stop_event=None):
     """
     生成多图滚动的动图 (GIF/WebP)，通过 ffmpeg 合成
@@ -697,11 +697,11 @@ def create_style_animated_3(library_dir, title, font_path, font_size=(170,75), f
         try:
             target_w, target_h = map(int, animation_resolution.lower().split('x'))
         except:
-            target_w, target_h = 320, 180 
+            target_w, target_h = 320, 180
 
         # 2. 计算缩放比例 (基于 1080p 模板)
         scale = target_h / 1080.0
-        
+
         # 内部坐标系映射 (Scale mapping)
         def s(val): return val * scale
 
@@ -711,7 +711,7 @@ def create_style_animated_3(library_dir, title, font_path, font_size=(170,75), f
         # 调整逻辑参数
         if int(blur_size) < 0: blur_size = 50
         if float(color_ratio) < 0 or float(color_ratio) > 1: color_ratio = 0.8
-            
+
         # 缩放到目标分辨率
         zh_font_size_s = int(zh_font_size * scale)
         en_font_size_s = int(en_font_size * scale)
@@ -735,7 +735,7 @@ def create_style_animated_3(library_dir, title, font_path, font_size=(170,75), f
         cell_height = s(POSTER_GEN_CONFIG["CELL_HEIGHT"])
 
         # 3. 预处理：静态背景与文字层
-        color_img = Image.open(first_image_path).convert("RGB")        
+        color_img = Image.open(first_image_path).convert("RGB")
         vibrant_colors = find_dominant_vibrant_colors(color_img)
         selected_bg_color = None
         if bg_color_config:
@@ -763,7 +763,7 @@ def create_style_animated_3(library_dir, title, font_path, font_size=(170,75), f
         text_overlay = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
         text_shadow_color = darken_color(blur_color, 0.8)
         random_color = vibrant_colors[1] if len(vibrant_colors) > 1 else (random.randint(50, 200), random.randint(50, 200), random.randint(50, 200), 255)
-        
+
         text_overlay = draw_text_on_image(
             text_overlay, title_zh, (s(73.32), s(427.34) + zh_font_size_s * zh_font_offset), zh_font_path, "ch.ttf", zh_font_size_s,
             shadow=is_blur, shadow_color=text_shadow_color
@@ -792,13 +792,13 @@ def create_style_animated_3(library_dir, title, font_path, font_size=(170,75), f
             key=lambda x: order_map[os.path.splitext(os.path.basename(x))[0]]
         )
         if not all_posters: return None
-        
+
         # 预缩放原始图片
         processed_images = []
         extended_posters = []
         while len(extended_posters) < rows * cols: extended_posters.extend(all_posters)
         extended_posters = extended_posters[:rows * cols]
-        
+
         for p_path in extended_posters:
             try:
                 img = Image.open(p_path).convert("RGBA")
@@ -813,18 +813,18 @@ def create_style_animated_3(library_dir, title, font_path, font_size=(170,75), f
             except Exception as e:
                 logger.error(f"图片预处理识别: {e}")
                 continue
-                
+
         if not processed_images: return None
 
         # 5. 准备动画列 (保持未旋转状态)
         column_posters = [processed_images[i::cols] for i in range(cols)]
-        scroll_dist = rows * (cell_height + margin) 
-        
+        scroll_dist = rows * (cell_height + margin)
+
         # 预计算旋转视角的高度与宽度
         cos_val = max(1e-6, math.cos(math.radians(abs(rotation_angle))))
         view_h = int(target_h / cos_val * 1.6)
         view_w = int(cell_width + s(60)) # 包含投影宽度
-        
+
         rendered_strips = []
         for col_index, current_col_imgs in enumerate(column_posters):
             # [A, B, C, A, B, C, A] 七张无缝循环
@@ -832,10 +832,10 @@ def create_style_animated_3(library_dir, title, font_path, font_size=(170,75), f
             shadow_extra = int(s(60))
             col_strip_h = len(loop_posters) * cell_height + (len(loop_posters) - 1) * margin
             col_strip = Image.new("RGBA", (int(cell_width) + shadow_extra, int(col_strip_h) + shadow_extra), (0, 0, 0, 0))
-            
+
             for row_index, p_img in enumerate(loop_posters):
                 col_strip.paste(p_img, (0, int(row_index * (cell_height + margin))), p_img)
-            
+
             rendered_strips.append(col_strip)
 
         # 6. 逐帧合成
@@ -854,7 +854,7 @@ def create_style_animated_3(library_dir, title, font_path, font_size=(170,75), f
         for col_index in range(cols):
             base_cx = start_x + col_index * column_spacing
             base_cy = start_y + (rows * cell_height + (rows - 1) * margin) // 2
-            if col_index == 1: 
+            if col_index == 1:
                 base_cx += col_x_step
             elif col_index == 2:
                 base_cy += -s(155)
@@ -864,7 +864,7 @@ def create_style_animated_3(library_dir, title, font_path, font_size=(170,75), f
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             logger.info(f"正在进行帧合成 (共 {n_frames} 帧, 目标 {target_w}x{target_h})...")
-            
+
             # 强制转换为数值类型，防止字符串乘法导致的无限循环
             try:
                 safe_fps = int(animation_fps)
@@ -872,23 +872,23 @@ def create_style_animated_3(library_dir, title, font_path, font_size=(170,75), f
             except (ValueError, TypeError):
                 safe_fps = 15
                 safe_duration = 12
-                
+
             n_frames = safe_fps * safe_duration
             # 增加保护上限：动图帧数不得超过 500 帧 (约 30秒 @ 15fps)，防止意外挂起
             if n_frames > 500:
                 logger.warning(f"检测到异常帧数 {n_frames}，已强制限制为 500 帧以保护系统运行")
                 n_frames = 500
-            
+
             logger.info(f"开始生成动画帧: {n_frames} 帧, 格式: {animation_format}, 分辨率: {animation_resolution}")
-            
+
             for i in range(n_frames):
                 if stop_event and stop_event.is_set():
                     logger.info("检测到停止信号，中断动图生成 ...")
                     return False
-                
+
                 if i % 10 == 0:
                     logger.info(f"正在生成第 {i}/{n_frames} 帧...")
-                
+
                 frame = base_frame.copy()
                 progress = i / n_frames
 
@@ -920,10 +920,10 @@ def create_style_animated_3(library_dir, title, font_path, font_size=(170,75), f
                     # 裁剪垂直切片 (与老版一致)
                     dy_int = int(dy_float)
                     sub_strip = strip.crop((0, dy_int, view_w, dy_int + view_h))
-                    
+
                     # 旋转切片 (关键：在目标分辨率下旋转，开销极小)
                     rotated_piece = sub_strip.rotate(rotation_angle, resample=Image.Resampling.BILINEAR, expand=True)
-                    
+
                     bcx, bcy = base_centers[col_index]
                     pos_x = int(bcx - rotated_piece.width // 2 + cell_width // 2)
                     pos_y = int(bcy - rotated_piece.height // 2)
@@ -934,19 +934,26 @@ def create_style_animated_3(library_dir, title, font_path, font_size=(170,75), f
                 frame.convert("RGB").save(frame_file, format="BMP")
 
             # 7. ffmpeg 导出
-            output_ext = ".gif" if animation_format == 'gif' else ".png"
+            if animation_format == 'gif':
+                output_ext = ".gif"
+            elif animation_format == 'webp':
+                output_ext = ".webp"
+            else:
+                output_ext = ".png"
             output_file = tmp_path / f"output{output_ext}"
-            
+
             # 构建 ffmpeg 参数，限制线程数为 2，防卡死
             ffmpeg_common = ['ffmpeg', '-hide_banner', '-y', '-framerate', str(fps), '-i', str(tmp_path / 'frame_%04d.bmp'), '-threads', '2']
-            
+
             reduce_mode = animation_reduce_colors
             if isinstance(reduce_mode, bool): reduce_mode = 'strong' if reduce_mode else 'off'
-            
+
             if animation_format == 'gif':
                 p_colors = '64' if reduce_mode == 'strong' else ('128' if reduce_mode == 'medium' else '256')
                 p_dither = 'none' if reduce_mode == 'strong' else ('bayer:bayer_scale=3' if reduce_mode == 'medium' else 'floyd_steinberg')
                 ffmpeg_cmd = ffmpeg_common + ['-filter_complex', f'[0:v] split [a][b]; [a] palettegen=max_colors={p_colors} [p]; [b][p] paletteuse=dither={p_dither}', '-loop', '0', '-f', 'gif', str(output_file)]
+            elif animation_format == 'webp':
+                ffmpeg_cmd = ffmpeg_common + ['-vcodec', 'libwebp', '-lossless', '0', '-qscale', '80', '-preset', 'picture', '-loop', '0', '-an', '-vsync', '0', '-f', 'webp', str(output_file)]
             else: # APNG
                 if reduce_mode == 'off':
                     ffmpeg_cmd = ffmpeg_common + ['-vcodec', 'apng', '-pix_fmt', 'rgba', '-plays', '0', '-f', 'apng', str(output_file)]
@@ -965,7 +972,7 @@ def create_style_animated_3(library_dir, title, font_path, font_size=(170,75), f
                 error_msg = e.stderr.decode('utf-8', 'ignore') if e.stderr else "无详细错误信息"
                 logger.error(f"[VER_FIX_PARAMS] ffmpeg 执行失败 (状态码 {e.returncode})")
                 raise
-            
+
             with open(output_file, 'rb') as f:
                 final_data = f.read()
             logger.info(f"ffmpeg 导出成功! 最终大小: {len(final_data)/1024/1024:.2f} MB")

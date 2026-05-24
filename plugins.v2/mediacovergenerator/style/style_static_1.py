@@ -4,7 +4,7 @@ import colorsys
 from io import BytesIO
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps, ImageStat
 
 from app.log import logger
 from app.plugins.mediacovergenerator.utils.image_manager import ResolutionConfig, managed_image
@@ -31,10 +31,10 @@ def color_distance(color1, color2):
     """计算两个颜色在HSV空间中的距离"""
     h1, s1, v1 = rgb_to_hsv(color1)
     h2, s2, v2 = rgb_to_hsv(color2)
-    
+
     # 色调在环形空间中，需要特殊处理
     h_dist = min(abs(h1 - h2), 1 - abs(h1 - h2))
-    
+
     # 综合距离，给予色调更高的权重
     return h_dist * 5 + abs(s1 - s2) + abs(v1 - v2)
 
@@ -48,139 +48,126 @@ def darken_color(color, factor=0.7):
 def add_film_grain(image, intensity=0.05):
     """添加胶片颗粒效果"""
     img_array = np.array(image)
-    
+
     # 创建随机噪点
     noise = np.random.normal(0, intensity * 255, img_array.shape)
-    
+
     # 应用噪点
     img_array = img_array + noise
     img_array = np.clip(img_array, 0, 255).astype(np.uint8)
-    
+
     return Image.fromarray(img_array)
 
 def crop_to_square(img):
     """将图片裁剪为正方形"""
     width, height = img.size
     size = min(width, height)
-    
+
     left = (width - size) // 2
     top = (height - size) // 2
     right = left + size
     bottom = top + size
-    
+
     return img.crop((left, top, right, bottom))
-    
+
 def add_rounded_corners(img, radius=30):
     """
     给图片添加圆角，通过超采样技术消除锯齿
-    
+
     Args:
         img: PIL.Image对象
         radius: 圆角半径
-        
+
     Returns:
         带圆角的图片(RGBA模式)
     """
     # 超采样倍数
     factor = 2
-    
+
     # 获取原始尺寸
     width, height = img.size
-    
+
     # 创建更大尺寸的空白图像（用于超采样）
     enlarged_img = img.resize((width * factor, height * factor), Image.Resampling.LANCZOS)
     enlarged_img = enlarged_img.convert("RGBA")
-    
+
     # 创建透明蒙版，尺寸为放大后的尺寸
     mask = Image.new('L', (width * factor, height * factor), 0)
     draw = ImageDraw.Draw(mask)
-    
-    draw.rounded_rectangle([(0, 0), (width * factor, height * factor)], 
+
+    draw.rounded_rectangle([(0, 0), (width * factor, height * factor)],
                             radius=radius * factor, fill=255)
-    
+
     # 创建超采样尺寸的透明背景
     background = Image.new("RGBA", (width * factor, height * factor), (255, 255, 255, 0))
-    
+
     # 使用蒙版合成图像（在高分辨率下）
     high_res_result = Image.composite(enlarged_img, background, mask)
-    
+
     # 将结果缩小回原来的尺寸，应用抗锯齿
     result = high_res_result.resize((width, height), Image.Resampling.LANCZOS)
-    
+
     return result
 
 
 
 def add_shadow_and_rotate(canvas, img, angle, offset=(10, 10), radius=10, opacity=0.5, center_pos=None):
     """
-    先创建阴影并旋转放置，然后旋转图像并放置
-    
-    Args:
-        canvas: 目标画布
-        img: 需要处理的图像
-        angle: 旋转角度
-        offset: 阴影偏移
-        radius: 阴影模糊半径
-        opacity: 阴影透明度
-        center_pos: 放置中心位置 (x, y)
-        
-    Returns:
-        更新后的画布
+    先创建多重立体阴影并旋转放置，然后旋转图像并放置
     """
-    # 获取原图尺寸
     width, height = img.size
-    
-    # 如果没有指定中心位置，默认使用画布中心
     if center_pos is None:
         center_pos = (canvas.width // 2, canvas.height // 2)
-    
-    # 1. 创建阴影
-    # 创建一个更大的阴影画布，给阴影留足空间，避免截断
-    padding = max(radius * 4, 100)  # 为阴影提供足够的空间
+
+    # 1. 创建多重阴影 (Ambient Soft Shadows)
+    padding = max(radius * 5, 150)
     shadow_size = (width + padding * 2, height + padding * 2)
     shadow = Image.new("RGBA", shadow_size, (0, 0, 0, 0))
-    
-    # 准备阴影蒙版
+
     mask_size = (width, height)
-    shadow_mask = Image.new("L", mask_size, 255)  # 白色蒙版
-    
-    # 如果原图是RGBA模式，使用其透明通道作为蒙版
+    shadow_mask = Image.new("L", mask_size, 255)
     if img.mode == "RGBA":
-        shadow_mask = img.split()[3]  # 获取Alpha通道作为蒙版
-    
-    # 在阴影中心位置创建阴影形状
+        shadow_mask = img.split()[3]
+
     shadow_center = (padding, padding)
-    shadow.paste((0, 0, 0, int(255 * opacity)), 
-                (shadow_center[0], shadow_center[1], 
-                 shadow_center[0] + width, shadow_center[1] + height), 
+
+    # 第一层阴影：紧凑的深色阴影（表现卡片厚度）
+    tight_radius = max(2, radius // 3)
+    tight_opacity = min(1.0, opacity * 1.5)
+    shadow_tight = Image.new("RGBA", shadow_size, (0, 0, 0, 0))
+    shadow_tight.paste((0, 0, 0, int(255 * tight_opacity)),
+                (shadow_center[0], shadow_center[1],
+                 shadow_center[0] + width, shadow_center[1] + height),
                 shadow_mask)
-    
-    # 模糊阴影，使用较大的半径确保柔和效果
-    shadow = shadow.filter(ImageFilter.GaussianBlur(radius))
-    
-    # 2. 旋转阴影和图像
-    # 旋转阴影
-    rotated_shadow = rotate_image(shadow, angle)
+    shadow_tight = shadow_tight.filter(ImageFilter.GaussianBlur(tight_radius))
+
+    # 第二层阴影：弥散的浅色阴影（表现环境悬浮感）
+    loose_radius = radius * 2
+    loose_opacity = opacity * 0.6
+    shadow_loose = Image.new("RGBA", shadow_size, (0, 0, 0, 0))
+    shadow_loose.paste((0, 0, 0, int(255 * loose_opacity)),
+                (shadow_center[0], shadow_center[1],
+                 shadow_center[0] + width, shadow_center[1] + height),
+                shadow_mask)
+    shadow_loose = shadow_loose.filter(ImageFilter.GaussianBlur(loose_radius))
+
+    # 合并两层阴影
+    shadow = Image.alpha_composite(shadow_loose, shadow_tight)
+
+    # 2. 旋转阴影和图像 (Bicubic rotation)
+    rotated_shadow = shadow.rotate(angle, Image.BICUBIC, expand=True, fillcolor=(0, 0, 0, 0))
     shadow_width, shadow_height = rotated_shadow.size
-    
-    # 计算旋转后的阴影位置（考虑偏移）
+
     shadow_x = center_pos[0] - shadow_width // 2 + offset[0]
     shadow_y = center_pos[1] - shadow_height // 2 + offset[1]
-    
-    # 将阴影粘贴到画布上
     canvas.paste(rotated_shadow, (shadow_x, shadow_y), rotated_shadow)
-    
-    # 旋转原图
-    rotated_img = rotate_image(img, angle)
+
+    rotated_img = img.rotate(angle, Image.BICUBIC, expand=True, fillcolor=(0, 0, 0, 0))
     img_width, img_height = rotated_img.size
-    
-    # 计算旋转后的图片位置
     img_x = center_pos[0] - img_width // 2
     img_y = center_pos[1] - img_height // 2
-    
-    # 将图片粘贴到画布上
     canvas.paste(rotated_img, (img_x, img_y), rotated_img)
-    
+
     return canvas
 
 
@@ -263,8 +250,19 @@ def create_style_static_1(image_path, title, font_path, font_size=(170,75), font
                                 best_color = color
                         extracted_colors.append(best_color or random.choice(soft_macaron_colors))
 
-                # 处理颜色
-                bg_color = darken_color(extracted_colors[0], 0.85)  # 背景色
+                # 处理颜色与自适应亮度
+                extracted_base = extracted_colors[0]
+                img_gray = original_img.convert('L')
+                lum = ImageStat.Stat(img_gray).mean[0]
+                if lum > 180:
+                    color_ratio = min(1.0, float(color_ratio) * 1.15)
+                    bg_color = darken_color(extracted_base, 0.6)
+                elif lum < 50:
+                    color_ratio = max(0.0, float(color_ratio) * 0.85)
+                    bg_color = darken_color(extracted_base, 0.9)
+                else:
+                    bg_color = darken_color(extracted_base, 0.85)
+
 
             # 获取卡片颜色（始终从图片提取）
             card_colors_extracted = ColorHelper.extract_dominant_colors(original_img, num_colors=3, style="macaron")
@@ -276,7 +274,7 @@ def create_style_static_1(image_path, title, font_path, font_size=(170,75), font
             bg_img = ImageOps.fit(bg_img, canvas_size, method=Image.LANCZOS)
             # 使用优化的高斯模糊
             bg_img = OptimizedImageProcessor.optimized_gaussian_blur(bg_img, int(blur_size))
-        
+
             # 将背景图片与背景色混合
             bg_img_array = np.array(bg_img, dtype=float)
             bg_color_array = np.array([[bg_color]], dtype=float)
@@ -300,7 +298,7 @@ def create_style_static_1(image_path, title, font_path, font_size=(170,75), font
             # 计算卡片尺寸 (画布高度的70%)
             card_size = int(canvas_size[1] * 0.7)
             square_img = square_img.resize((card_size, card_size), Image.LANCZOS)
-        
+
             # 准备三张卡片图像
             cards = []
 
@@ -335,7 +333,7 @@ def create_style_static_1(image_path, title, font_path, font_size=(170,75), font
             center_x = int(canvas_size[0] - canvas_size[1] * 0.5)  # 稍微左移，给旋转后的卡片留出空间
             center_y = int(canvas_size[1] * 0.5)
             center_pos = (center_x, center_y)
-        
+
             # 按照需求指定旋转角度
             rotation_angles = [36, 18, 0]  # 底层、中间层、顶层的旋转角度
 
@@ -387,47 +385,47 @@ def create_style_static_1(image_path, title, font_path, font_size=(170,75), font
             shadow_color = darken_color(bg_color, 0.8) + (75,)  # 阴影颜色加透明度
             shadow_offset = 12
             shadow_alpha = 75
-        
+
         # 计算中文标题的位置
         zh_bbox = draw.textbbox((0, 0), title_zh, font=zh_font)
         zh_text_w = zh_bbox[2] - zh_bbox[0]
         zh_text_h = zh_bbox[3] - zh_bbox[1]
-        
+
         # 定义英文行间距
         en_line_spacing = int(en_font_size * 0.3)  # 英文行间距为字体大小的30%
-        
+
         # 处理英文标题（如果有）
         en_lines = []
         en_text_w = 0
         en_text_h = 0
         total_en_height = 0
-        
+
         if title_en:
             # 检查英文标题是否需要分行
             en_bbox = draw.textbbox((0, 0), title_en, font=en_font)
             en_full_width = en_bbox[2] - en_bbox[0]
-            
+
             # 如果英文标题比中文标题宽，且包含多个单词，则分行处理
             if en_full_width > zh_text_w and " " in title_en:
                 words = title_en.split(" ")
                 current_line = words[0]
-                
+
                 for word in words[1:]:
                     test_line = current_line + " " + word
                     test_bbox = draw.textbbox((0, 0), test_line, font=en_font)
                     test_width = test_bbox[2] - test_bbox[0]
-                    
+
                     # 如果添加新单词后超过中文宽度，则换行
                     if test_width > zh_text_w:
                         en_lines.append(current_line)
                         current_line = word
                     else:
                         current_line = test_line
-                
+
                 # 添加最后一行
                 if current_line:
                     en_lines.append(current_line)
-                
+
                 # 计算所有英文行的最大宽度和总高度
                 for line in en_lines:
                     line_bbox = draw.textbbox((0, 0), line, font=en_font)
@@ -435,11 +433,11 @@ def create_style_static_1(image_path, title, font_path, font_size=(170,75), font
                     line_height = line_bbox[3] - line_bbox[1]
                     en_text_w = max(en_text_w, line_width)
                     total_en_height += line_height + en_line_spacing
-                
+
                 # 减去最后一个多余的行间距
                 if en_lines:
                     total_en_height -= en_line_spacing
-                    
+
                 en_text_h = total_en_height
             else:
                 # 英文标题不需要分行
@@ -447,7 +445,7 @@ def create_style_static_1(image_path, title, font_path, font_size=(170,75), font
                 en_text_w = en_full_width
                 en_text_h = en_bbox[3] - en_bbox[1]
                 total_en_height = en_text_h
-        
+
         # 定义中英文标题间距
         title_spacing = float(title_spacing) if title_en else 0
 
@@ -465,7 +463,7 @@ def create_style_static_1(image_path, title, font_path, font_size=(170,75), font
         for offset in range(3, shadow_offset + 1, 2):
             current_shadow_color = shadow_color[:3] + (shadow_alpha,)
             shadow_draw.text((zh_x + offset, zh_y + offset), title_zh, font=zh_font, fill=current_shadow_color)
-        
+
             # 中文标题
             draw.text((zh_x, zh_y), title_zh, font=zh_font, fill=text_color)
 
@@ -524,7 +522,7 @@ def create_style_static_1(image_path, title, font_path, font_size=(170,75), font
                     raise ValueError(f"Unsupported format: {format}")
 
             return image_to_base64(combined)
-        
+
     except Exception as e:
         logger.error(f"创建单图封面时出错: {e}")
         return False
