@@ -537,9 +537,13 @@ class MediaCoverGenerator(_PluginBase):
         cache_dirs: List[Path] = []
         if self._covers_path:
             cache_dirs.append(Path(self._covers_path))
+        if self._covers_output:
+            cache_dirs.append(Path(self._covers_output))
         data_path = self.get_data_path()
         legacy_covers_dir = data_path / "covers"
         cache_dirs.append(legacy_covers_dir)
+        default_output = data_path / "output"
+        cache_dirs.append(default_output)
 
         handled = set()
         for cache_dir in cache_dirs:
@@ -561,7 +565,7 @@ class MediaCoverGenerator(_PluginBase):
                         removed += 1
                 except Exception as e:
                     logger.warning(f"清理图片失败 {entry}: {e}")
-        logger.info(f"清理图片完成（含旧版 covers 兼容目录），共清理 {removed} 项")
+        logger.info(f"清理图片完成（含所有封面输出目录），共清理 {removed} 项")
 
     def __clean_downloaded_fonts(self):
         if not self._font_path or not Path(self._font_path).exists():
@@ -4232,19 +4236,19 @@ class MediaCoverGenerator(_PluginBase):
 
             safe_server = self.__sanitize_filename(server_name) or "server"
             safe_library = self.__sanitize_filename(library_name) or "library"
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
             ext = extension.strip(".").lower() if extension else "jpg"
-            filename = f"{safe_server}_{safe_library}_{timestamp}.{ext}"
+            filename = f"{timestamp}.{ext}"
 
             file_path = os.path.join(local_path, filename)
             with open(file_path, "wb") as f:
                 f.write(image_content)
             logger.info(f"图片已保存到本地: {file_path}")
-            self.__trim_saved_cover_history(local_path, safe_server, safe_library)
+            self.__trim_saved_cover_history(local_path)
         except Exception as err:
             logger.error(f"保存图片到本地失败: {str(err)}")
 
-    def __trim_saved_cover_history(self, local_path: str, safe_server: str, safe_library: str):
+    def __trim_saved_cover_history(self, local_path: str):
         limit = self.__clamp_value(
             self._covers_history_limit_per_library,
             1,
@@ -4253,14 +4257,11 @@ class MediaCoverGenerator(_PluginBase):
             "covers_history_limit_per_library[trim]",
             int,
         )
-        pattern = f"{safe_server}_{safe_library}_"
         candidate_files: List[Path] = []
         try:
             for file_name in os.listdir(local_path):
                 lower_name = file_name.lower()
                 if not lower_name.endswith((".jpg", ".jpeg", ".png", ".gif", ".webp", ".apng")):
-                    continue
-                if not file_name.startswith(pattern):
                     continue
                 file_path = Path(local_path) / file_name
                 if file_path.is_file():
