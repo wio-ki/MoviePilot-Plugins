@@ -54,7 +54,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/emby.png"
     # 插件版本
-    plugin_version = "0.10.2"
+    plugin_version = "0.10.3"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -953,6 +953,24 @@ class MediaCoverGenerator(_PluginBase):
             "background: linear-gradient(135deg, #F5F5DC 0%, #8A9A7B 48%, #E8D7B8 100%); "
             "color: #2D2D2D; border: 1px solid rgba(138,154,123,.65); "
             "box-shadow: inset 0 2px 8px rgba(138,154,123,.35), 0 4px 12px rgba(138,154,123,.28); "
+            "border-radius: 14px; font-weight: 700; text-shadow: 0 1px 1px rgba(255,255,255,0.6);"
+        )
+
+    @staticmethod
+    def __ui_selected_style_blue() -> str:
+        return (
+            "background: linear-gradient(135deg, #E8F4F8 0%, #A8C5D1 48%, #D4E8F0 100%); "
+            "color: #2D2D2D; border: 1px solid rgba(168,197,209,.65); "
+            "box-shadow: inset 0 2px 8px rgba(168,197,209,.35), 0 4px 12px rgba(168,197,209,.28); "
+            "border-radius: 14px; font-weight: 700; text-shadow: 0 1px 1px rgba(255,255,255,0.6);"
+        )
+
+    @staticmethod
+    def __ui_selected_style_amber() -> str:
+        return (
+            "background: linear-gradient(135deg, #FFF8E1 0%, #D4A574 48%, #F5E6D3 100%); "
+            "color: #2D2D2D; border: 1px solid rgba(212,165,116,.65); "
+            "box-shadow: inset 0 2px 8px rgba(212,165,116,.35), 0 4px 12px rgba(212,165,116,.28); "
             "border-radius: 14px; font-weight: 700; text-shadow: 0 1px 1px rgba(255,255,255,0.6);"
         )
 
@@ -2353,7 +2371,7 @@ class MediaCoverGenerator(_PluginBase):
                             },
                             {
                                 "component": "VTab",
-                                "props": {"value": "title-tab", "style": self.__ui_selected_style()},
+                                "props": {"value": "title-tab", "style": "color:#2D2D2D;border-radius:14px;border:1px solid rgba(212,165,116,.18);"},
                                 "content": [
                                     {
                                         "component": "VIcon",
@@ -2368,7 +2386,7 @@ class MediaCoverGenerator(_PluginBase):
                             },
                             {
                                 "component": "VTab",
-                                "props": {"value": "more-tab", "style": self.__ui_selected_style()},
+                                "props": {"value": "more-tab", "style": "color:#2D2D2D;border-radius:14px;border:1px solid rgba(212,165,116,.18);"},
                                 "content": [
                                     {
                                         "component": "VIcon",
@@ -2626,13 +2644,13 @@ class MediaCoverGenerator(_PluginBase):
                             },
                             {
                                 "component": "VTab",
-                                "props": {"value": "history-tab", "style": self.__ui_selected_style() if page_tab == "history-tab" else "color:#2D2D2D;border-radius:14px;border:1px solid rgba(212,165,116,.18);"},
+                                "props": {"value": "history-tab", "style": self.__ui_selected_style_blue() if page_tab == "history-tab" else "color:#2D2D2D;border-radius:14px;border:1px solid rgba(168,197,209,.18);"},
                                 "text": "历史归档",
                                 "events": {"click": {"api": "plugin/MediaCoverGenerator/set_page_tab_history", "method": "post"}},
                             },
                             {
                                 "component": "VTab",
-                                "props": {"value": "clean-tab", "style": self.__ui_selected_style() if page_tab == "clean-tab" else "color:#2D2D2D;border-radius:14px;border:1px solid rgba(212,165,116,.18);"},
+                                "props": {"value": "clean-tab", "style": self.__ui_selected_style_amber() if page_tab == "clean-tab" else "color:#2D2D2D;border-radius:14px;border:1px solid rgba(212,165,116,.18);"},
                                 "text": "缓存整理",
                                 "events": {"click": {"api": "plugin/MediaCoverGenerator/set_page_tab_clean", "method": "post"}},
                             },
