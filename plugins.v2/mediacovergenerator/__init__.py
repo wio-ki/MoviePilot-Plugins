@@ -54,7 +54,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/emby.png"
     # 插件版本
-    plugin_version = "0.9.9"
+    plugin_version = "0.10.0"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -951,9 +951,9 @@ class MediaCoverGenerator(_PluginBase):
     def __ui_selected_style() -> str:
         return (
             "background: linear-gradient(135deg, #D4A574 0%, #1A7F7E 52%, #8B6F47 100%); "
-            "color: #FFFFF0; border: 1px solid rgba(212,165,116,.58); "
+            "color: #FFFFFF; border: 1px solid rgba(212,165,116,.58); "
             "box-shadow: inset 0 -3px 0 rgba(26,26,26,.18), 0 10px 24px rgba(13,92,92,.22); "
-            "border-radius: 14px; font-weight: 800;"
+            "border-radius: 14px; font-weight: 800; text-shadow: 0 1px 2px rgba(0,0,0,0.3);"
         )
 
     @staticmethod
@@ -1001,6 +1001,7 @@ class MediaCoverGenerator(_PluginBase):
                 style = props.get("style", "")
                 input_style = (
                     "background: rgba(255,255,255,.035); border-radius: 12px; "
+                    "border-width: 1px !important; "
                     "transition: all .3s cubic-bezier(.4,0,.2,1);"
                 )
                 props["style"] = f"{style}; {input_style}" if style else input_style
@@ -1016,9 +1017,9 @@ class MediaCoverGenerator(_PluginBase):
             if component == "VBtn" and props.get("variant") == "flat":
                 style = props.get("style", "")
                 props.setdefault("elevation", 4)
-                btn_style = "background: linear-gradient(135deg, #D4A574 0%, #8B6F47 58%, #0D5C5C 100%); color: #FFFFF0; box-shadow: 0 8px 24px rgba(212,165,116,.32); transition: all .3s cubic-bezier(.4,0,.2,1); position: relative; overflow: hidden;"
+                btn_style = "background: linear-gradient(135deg, #D4A574 0%, #8B6F47 58%, #0D5C5C 100%); color: #FFFFF0; box-shadow: 0 8px 24px rgba(212,165,116,.32); transition: all .3s cubic-bezier(.4,0,.2,1); position: relative; overflow: hidden; min-width: auto; padding: 8px 20px;"
                 if props.get("color") == "#A05A3F":
-                    btn_style = "background: linear-gradient(135deg, #A05A3F 0%, #8B6F47 100%); color: #FFFFF0; box-shadow: 0 8px 24px rgba(160,90,63,.26); transition: all .3s cubic-bezier(.4,0,.2,1); position: relative; overflow: hidden;"
+                    btn_style = "background: linear-gradient(135deg, #A05A3F 0%, #8B6F47 100%); color: #FFFFF0; box-shadow: 0 8px 24px rgba(160,90,63,.26); transition: all .3s cubic-bezier(.4,0,.2,1); position: relative; overflow: hidden; min-width: auto; padding: 8px 20px;"
                 props["style"] = f"{style}; {btn_style}" if style else btn_style
             if component == "VTabs":
                 props["selectedClass"] = "mcg-tab-selected"
