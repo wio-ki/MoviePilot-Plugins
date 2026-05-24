@@ -753,6 +753,15 @@ class MediaCoverGenerator(_PluginBase):
             image.save(preview_dir / f"{index}.jpg", format="JPEG", quality=90, optimize=True)
         return preview_dir
 
+    @staticmethod
+    def __safe_float(value: Any, default: float) -> float:
+        try:
+            if value is None or value == "":
+                return float(default)
+            return float(value)
+        except (ValueError, TypeError):
+            return float(default)
+
     def __build_preview_cover_base64(self) -> Tuple[str, str]:
         if not self._zh_font_path or not self._en_font_path:
             return "", "字体尚未下载或配置无效，请先保存配置并等待字体下载完成。"
@@ -764,21 +773,18 @@ class MediaCoverGenerator(_PluginBase):
             except Exception:
                 resolution_config = ResolutionConfig("480p")
 
-        try:
-            title_scale = float(self._title_scale or 1.0)
-        except (ValueError, TypeError):
-            title_scale = 1.0
-        base_zh_font_size = self._zh_font_size or 170
-        base_en_font_size = self._en_font_size or 75
+        title_scale = self.__safe_float(self._title_scale, 1.0)
+        base_zh_font_size = self.__safe_float(self._zh_font_size, 170)
+        base_en_font_size = self.__safe_float(self._en_font_size, 75)
         zh_font_size = resolution_config.get_font_size(base_zh_font_size) * title_scale
         en_font_size = resolution_config.get_font_size(base_en_font_size) * title_scale
 
         font_size = (float(zh_font_size), float(en_font_size))
         font_path = (str(self._zh_font_path), str(self._en_font_path))
 
-        zh_font_offset = float(self._zh_font_offset or 0)
-        title_spacing = float(self._title_spacing or 40) * title_scale
-        en_line_spacing = float(self._en_line_spacing or 40) * title_scale
+        zh_font_offset = self.__safe_float(self._zh_font_offset, 0)
+        title_spacing = self.__safe_float(self._title_spacing, 40) * title_scale
+        en_line_spacing = self.__safe_float(self._en_line_spacing, 40) * title_scale
         font_offset = (float(zh_font_offset), float(title_spacing), float(en_line_spacing))
 
         title = ("实时预览", "LIVE PREVIEW")
@@ -787,8 +793,8 @@ class MediaCoverGenerator(_PluginBase):
             "custom_color": self._custom_bg_color,
             "config_color": "",
         }
-        blur_size = self._blur_size or 50
-        color_ratio = self._color_ratio or 0.8
+        blur_size = self.__safe_float(self._blur_size, 50)
+        color_ratio = self.__safe_float(self._color_ratio, 0.8)
 
         base_style = self._cover_style_base or "static_1"
         if base_style not in {"static_1", "static_2", "static_3", "static_4"}:
