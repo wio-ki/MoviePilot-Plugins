@@ -330,28 +330,39 @@ def _normalize_rgb_color(input_rgb):
 def _premium_gradient_finish(image, accent_color=None):
     base = image.convert("RGBA")
     width, height = base.size
-    accent = _normalize_rgb_color(accent_color)
+    if isinstance(accent_color, list):
+        colors = [_normalize_rgb_color(item) for item in accent_color[:4]]
+    else:
+        colors = [_normalize_rgb_color(accent_color)]
+    while len(colors) < 4:
+        seed = colors[-1]
+        colors.append((min(255, int(seed[0] * 1.18 + 18)), min(255, int(seed[1] * 1.10 + 14)), min(255, int(seed[2] * 0.96 + 10))))
+
     x = np.linspace(-1, 1, width)
     y = np.linspace(-1, 1, height)
     X, Y = np.meshgrid(x, y)
-
-    warm = np.exp(-(((X + 0.72) ** 2) / 0.48 + ((Y + 0.62) ** 2) / 0.26))
-    cool = np.exp(-(((X - 0.42) ** 2) / 0.34 + ((Y - 0.18) ** 2) / 0.58))
-    center = np.exp(-(((X + 0.08) ** 2) / 1.20 + ((Y - 0.08) ** 2) / 0.90))
+    fields = [
+        np.exp(-(((X + 0.78) ** 2) / 0.36 + ((Y + 0.62) ** 2) / 0.24)),
+        np.exp(-(((X - 0.50) ** 2) / 0.30 + ((Y + 0.42) ** 2) / 0.36)),
+        np.exp(-(((X + 0.05) ** 2) / 0.70 + ((Y - 0.26) ** 2) / 0.46)),
+        np.exp(-(((X - 0.82) ** 2) / 0.52 + ((Y - 0.70) ** 2) / 0.30)),
+    ]
     vignette = np.clip((np.sqrt((X * 0.86) ** 2 + (Y * 1.06) ** 2) - 0.18) / 0.92, 0, 1)
 
-    overlay = np.zeros((height, width, 4), dtype=np.uint8)
-    overlay[..., 0] = np.clip(255 * warm + accent[0] * cool + 245 * center, 0, 255)
-    overlay[..., 1] = np.clip(226 * warm + accent[1] * cool + 218 * center, 0, 255)
-    overlay[..., 2] = np.clip(186 * warm + accent[2] * cool + 180 * center, 0, 255)
-    overlay[..., 3] = np.clip(warm * 34 + cool * 36 + center * 14, 0, 64).astype(np.uint8)
-    base = Image.alpha_composite(base, Image.fromarray(overlay, "RGBA"))
+    overlay = np.zeros((height, width, 4), dtype=np.float32)
+    for color, field in zip(colors, fields):
+        overlay[..., 0] += color[0] * field
+        overlay[..., 1] += color[1] * field
+        overlay[..., 2] += color[2] * field
+        overlay[..., 3] += 30 * field
+    overlay[..., :3] = np.clip(overlay[..., :3], 0, 255)
+    overlay[..., 3] = np.clip(overlay[..., 3], 0, 70)
+    base = Image.alpha_composite(base, Image.fromarray(overlay.astype(np.uint8), "RGBA"))
 
     shade = np.zeros((height, width, 4), dtype=np.uint8)
     shade[..., 3] = np.clip(vignette * 82, 0, 118).astype(np.uint8)
     base = Image.alpha_composite(base, Image.fromarray(shade, "RGBA"))
     return add_film_grain(base.convert("RGB"), intensity=0.012).convert("RGBA")
-
 
 def create_gradient_background(width, height, color=None):
     """
@@ -513,7 +524,7 @@ def create_gradient_background(width, height, color=None):
     # 使用遮罩合成左右两个图像
     # 遮罩中黑色部分(0)显示left_image，白色部分(255)显示right_image
     gradient = Image.composite(right_image, left_image, mask)
-    gradient = _premium_gradient_finish(gradient, selected_color)
+    gradient = _premium_gradient_finish(gradient, color if isinstance(color, list) and color else selected_color)
     
     return gradient
 
@@ -913,12 +924,14 @@ def create_style_static_3(library_dir, title, font_path, font_size=(170,75), fon
 
         # 确保至少有一张图片
         if not poster_files:
-            # logger.error(f"错误: 在 {poster_folder} 中没有找到支持的图片文件")
             return False
 
-        # 限制最多处理 rows*cols 张图片
+        # 不足 9 张时循环复用已有海报，避免多图墙留空导致高级感下降
         max_posters = rows * cols
-        poster_files = poster_files[:max_posters]
+        if len(poster_files) < max_posters:
+            poster_files = (poster_files * ((max_posters + len(poster_files) - 1) // len(poster_files)))[:max_posters]
+        else:
+            poster_files = poster_files[:max_posters]
 
         # 固定海报尺寸
         margin = int(s(margin))

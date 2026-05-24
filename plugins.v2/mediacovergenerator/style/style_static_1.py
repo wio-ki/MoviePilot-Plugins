@@ -95,6 +95,23 @@ def _polish_card(image):
     return polished
 
 
+def _adaptive_background_tone(image, bg_color, color_ratio):
+    """根据海报明暗自动调和背景混色比例与背景色。"""
+    try:
+        lum = float(np.array(image.convert("L").resize((64, 64), Image.LANCZOS)).mean())
+    except Exception:
+        lum = 128.0
+    ratio = float(color_ratio)
+    r, g, b = bg_color[:3]
+    if lum > 180:
+        ratio = min(0.94, ratio + 0.10)
+        bg_color = darken_color((r, g, b), 0.70)
+    elif lum < 55:
+        ratio = max(0.58, ratio - 0.12)
+        bg_color = tuple(min(255, int(c * 1.18 + 10)) for c in (r, g, b))
+    return bg_color, ratio
+
+
 def crop_to_square(img):
     """将图片裁剪为正方形"""
     width, height = img.size
@@ -149,77 +166,41 @@ def add_rounded_corners(img, radius=30):
 
 
 def add_shadow_and_rotate(canvas, img, angle, offset=(10, 10), radius=10, opacity=0.5, center_pos=None):
-    """
-    先创建阴影并旋转放置，然后旋转图像并放置
-    
-    Args:
-        canvas: 目标画布
-        img: 需要处理的图像
-        angle: 旋转角度
-        offset: 阴影偏移
-        radius: 阴影模糊半径
-        opacity: 阴影透明度
-        center_pos: 放置中心位置 (x, y)
-        
-    Returns:
-        更新后的画布
-    """
-    # 获取原图尺寸
+    """添加多层弥散阴影并旋转图像，营造悬浮卡片层次。"""
     width, height = img.size
-    
-    # 如果没有指定中心位置，默认使用画布中心
     if center_pos is None:
         center_pos = (canvas.width // 2, canvas.height // 2)
-    
-    # 1. 创建阴影
-    # 创建一个更大的阴影画布，给阴影留足空间，避免截断
-    padding = max(radius * 4, 100)  # 为阴影提供足够的空间
-    shadow_size = (width + padding * 2, height + padding * 2)
-    shadow = Image.new("RGBA", shadow_size, (0, 0, 0, 0))
-    
-    # 准备阴影蒙版
-    mask_size = (width, height)
-    shadow_mask = Image.new("L", mask_size, 255)  # 白色蒙版
-    
-    # 如果原图是RGBA模式，使用其透明通道作为蒙版
-    if img.mode == "RGBA":
-        shadow_mask = img.split()[3]  # 获取Alpha通道作为蒙版
-    
-    # 在阴影中心位置创建阴影形状
-    shadow_center = (padding, padding)
-    shadow.paste((0, 0, 0, int(255 * opacity)), 
-                (shadow_center[0], shadow_center[1], 
-                 shadow_center[0] + width, shadow_center[1] + height), 
-                shadow_mask)
-    
-    # 模糊阴影，使用较大的半径确保柔和效果
-    shadow = shadow.filter(ImageFilter.GaussianBlur(radius))
-    
-    # 2. 旋转阴影和图像
-    # 旋转阴影
-    rotated_shadow = rotate_image(shadow, angle)
-    shadow_width, shadow_height = rotated_shadow.size
-    
-    # 计算旋转后的阴影位置（考虑偏移）
-    shadow_x = center_pos[0] - shadow_width // 2 + offset[0]
-    shadow_y = center_pos[1] - shadow_height // 2 + offset[1]
-    
-    # 将阴影粘贴到画布上
-    canvas.paste(rotated_shadow, (shadow_x, shadow_y), rotated_shadow)
-    
-    # 旋转原图
-    rotated_img = rotate_image(img, angle)
-    img_width, img_height = rotated_img.size
-    
-    # 计算旋转后的图片位置
-    img_x = center_pos[0] - img_width // 2
-    img_y = center_pos[1] - img_height // 2
-    
-    # 将图片粘贴到画布上
-    canvas.paste(rotated_img, (img_x, img_y), rotated_img)
-    
-    return canvas
 
+    if img.mode == "RGBA":
+        shadow_mask = img.split()[3]
+    else:
+        shadow_mask = Image.new("L", (width, height), 255)
+
+    shadow_layers = [
+        (max(1, radius // 3), (max(1, offset[0] // 3), max(1, offset[1] // 3)), min(0.22, opacity * 0.55)),
+        (radius, offset, opacity * 0.55),
+        (int(radius * 2.4), (int(offset[0] * 1.55), int(offset[1] * 1.70)), opacity * 0.22),
+    ]
+
+    for blur_radius, layer_offset, layer_opacity in shadow_layers:
+        padding = max(abs(layer_offset[0]), abs(layer_offset[1])) + blur_radius * 3
+        shadow = Image.new("RGBA", (width + padding * 2, height + padding * 2), (0, 0, 0, 0))
+        shadow.paste(
+            (0, 0, 0, int(255 * layer_opacity)),
+            (padding, padding, padding + width, padding + height),
+            shadow_mask,
+        )
+        shadow = shadow.filter(ImageFilter.GaussianBlur(blur_radius))
+        rotated_shadow = rotate_image(shadow, angle)
+        shadow_x = center_pos[0] - rotated_shadow.width // 2 + layer_offset[0]
+        shadow_y = center_pos[1] - rotated_shadow.height // 2 + layer_offset[1]
+        canvas.paste(rotated_shadow, (shadow_x, shadow_y), rotated_shadow)
+
+    rotated_img = rotate_image(img, angle)
+    img_x = center_pos[0] - rotated_img.width // 2
+    img_y = center_pos[1] - rotated_img.height // 2
+    canvas.paste(rotated_img, (img_x, img_y), rotated_img)
+    return canvas
 
 def rotate_image(img, angle, bg_color=(0, 0, 0, 0)):
     """旋转图片并确保不会截断图片内容"""
@@ -302,6 +283,8 @@ def create_style_static_1(image_path, title, font_path, font_size=(170,75), font
 
                 # 处理颜色
                 bg_color = darken_color(extracted_colors[0], 0.85)  # 背景色
+
+            bg_color, color_ratio = _adaptive_background_tone(original_img, bg_color, color_ratio)
 
             # 获取卡片颜色（始终从图片提取）
             card_colors_extracted = ColorHelper.extract_dominant_colors(original_img, num_colors=3, style="macaron")

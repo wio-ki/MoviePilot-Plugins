@@ -129,6 +129,22 @@ def _polish_foreground(image):
     return ImageEnhance.Sharpness(polished).enhance(1.06)
 
 
+def _adaptive_background_tone(image, bg_color, color_ratio):
+    try:
+        lum = float(np.array(image.convert("L").resize((64, 64), Image.LANCZOS)).mean())
+    except Exception:
+        lum = 128.0
+    ratio = float(color_ratio)
+    r, g, b = bg_color[:3]
+    if lum > 180:
+        ratio = min(0.95, ratio + 0.10)
+        bg_color = darken_color((r, g, b), 0.68)
+    elif lum < 55:
+        ratio = max(0.56, ratio - 0.14)
+        bg_color = tuple(min(255, int(c * 1.16 + 12)) for c in (r, g, b))
+    return bg_color, ratio
+
+
 
 def align_image_right(img, canvas_size):
     """
@@ -310,7 +326,8 @@ def create_style_static_2(image_path, title, font_path, font_size=(170,75), font
             bg_color = vibrant_colors[0]
         else:
             bg_color = random.choice(soft_colors) # 默认橙色
-        shadow_color = darken_color(bg_color, 0.5)  # 加深阴影颜色到50%
+        bg_color, color_ratio = _adaptive_background_tone(fg_img_original, bg_color, color_ratio)
+        shadow_color = darken_color(bg_color, 0.46)
         
         # 加载背景图片
         bg_img_original = Image.open(image_path).convert("RGB")
