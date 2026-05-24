@@ -308,12 +308,7 @@ def create_style_animated_2(
                 frame_file = tmp_path / f"frame_{f:04d}.bmp"
                 frame.convert("RGB").save(frame_file, format="BMP")
 
-            if animation_format == "gif":
-                output_ext = ".gif"
-            elif animation_format == "webp":
-                output_ext = ".webp"
-            else:
-                output_ext = ".png"
+            output_ext = ".gif" if animation_format == "gif" else ".png"
             output_file = tmp_path / f"output{output_ext}"
 
             ffmpeg_common = [
@@ -334,21 +329,7 @@ def create_style_animated_2(
                 p_dither = "none" if reduce_mode == "strong" else ("bayer:bayer_scale=3" if reduce_mode == "medium" else "floyd_steinberg")
                 ffmpeg_cmd = ffmpeg_common + [
                     "-filter_complex", f"[0:v] split [a][b]; [a] palettegen=max_colors={p_colors} [p]; [b][p] paletteuse=dither={p_dither}",
-                    "-f",
-                    "gif",
-                    str(output_file),
-                ]
-            elif animation_format == "webp":
-                ffmpeg_cmd = ffmpeg_common + [
-                    "-vcodec", "libwebp",
-                    "-lossless", "0",
-                    "-qscale", "80",
-                    "-preset", "picture",
-                    "-loop", "0",
-                    "-an",
-                    "-vsync", "0",
-                    "-f", "webp",
-                    str(output_file),
+                    "-loop", "0", "-f", "gif", str(output_file),
                 ]
             else:
                 if reduce_mode == "off":

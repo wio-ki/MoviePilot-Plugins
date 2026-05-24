@@ -683,12 +683,7 @@ def create_style_animated_1(
                 logger.info("检测到停止信号，跳过 ffmpeg 导出")
                 return False
 
-            if animation_format == "gif":
-                output_ext = ".gif"
-            elif animation_format == "webp":
-                output_ext = ".webp"
-            else:
-                output_ext = ".png"
+            output_ext = ".gif" if animation_format == "gif" else ".png"
             output_file = tmp_path / f"output{output_ext}"
 
             generated_frames = list(tmp_path.glob("frame_*.bmp"))
@@ -723,18 +718,6 @@ def create_style_animated_1(
                     "0",
                     "-f",
                     "gif",
-                    str(output_file),
-                ]
-            elif animation_format == "webp":
-                ffmpeg_cmd = ffmpeg_common + [
-                    "-vcodec", "libwebp",
-                    "-lossless", "0",
-                    "-qscale", "80",  # 设置压缩质量 0-100
-                    "-preset", "picture",
-                    "-loop", "0",
-                    "-an",
-                    "-vsync", "0",
-                    "-f", "webp",
                     str(output_file),
                 ]
             else:

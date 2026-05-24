@@ -318,96 +318,204 @@ def draw_color_block(image, position, size, color):
     return img_copy
 
 
+def _normalize_rgb_color(input_rgb):
+    if isinstance(input_rgb, tuple):
+        if len(input_rgb) == 2 and isinstance(input_rgb[0], tuple):
+            return _normalize_rgb_color(input_rgb[0])
+        if len(input_rgb) >= 3 and all(isinstance(v, (int, float)) for v in input_rgb[:3]):
+            return tuple(int(max(0, min(255, v))) for v in input_rgb[:3])
+    return (158, 104, 72)
+
+
+def _premium_gradient_finish(image, accent_color=None):
+    base = image.convert("RGBA")
+    width, height = base.size
+    accent = _normalize_rgb_color(accent_color)
+    x = np.linspace(-1, 1, width)
+    y = np.linspace(-1, 1, height)
+    X, Y = np.meshgrid(x, y)
+
+    warm = np.exp(-(((X + 0.72) ** 2) / 0.48 + ((Y + 0.62) ** 2) / 0.26))
+    cool = np.exp(-(((X - 0.42) ** 2) / 0.34 + ((Y - 0.18) ** 2) / 0.58))
+    center = np.exp(-(((X + 0.08) ** 2) / 1.20 + ((Y - 0.08) ** 2) / 0.90))
+    vignette = np.clip((np.sqrt((X * 0.86) ** 2 + (Y * 1.06) ** 2) - 0.18) / 0.92, 0, 1)
+
+    overlay = np.zeros((height, width, 4), dtype=np.uint8)
+    overlay[..., 0] = np.clip(255 * warm + accent[0] * cool + 245 * center, 0, 255)
+    overlay[..., 1] = np.clip(226 * warm + accent[1] * cool + 218 * center, 0, 255)
+    overlay[..., 2] = np.clip(186 * warm + accent[2] * cool + 180 * center, 0, 255)
+    overlay[..., 3] = np.clip(warm * 34 + cool * 36 + center * 14, 0, 64).astype(np.uint8)
+    base = Image.alpha_composite(base, Image.fromarray(overlay, "RGBA"))
+
+    shade = np.zeros((height, width, 4), dtype=np.uint8)
+    shade[..., 3] = np.clip(vignette * 82, 0, 118).astype(np.uint8)
+    base = Image.alpha_composite(base, Image.fromarray(shade, "RGBA"))
+    return add_film_grain(base.convert("RGB"), intensity=0.012).convert("RGBA")
+
+
 def create_gradient_background(width, height, color=None):
     """
-    创建一个流体弥散渐变（Mesh / Aurora Gradients）背景，代替死板的线性渐变
+    创建一个从左到右的渐变背景，使用遮罩技术实现渐变效果
+    左侧颜色更深，右侧颜色适中，提供更明显的渐变效果
+    
+    参数:
+        width: 背景宽度
+        height: 背景高度
+        color: 颜色数组或单个颜色，如果为None则随机生成
+              如果是数组，会依次尝试每个颜色，跳过太黑或太淡的颜色
+        
+    返回:
+        渐变背景图像
     """
     width = int(max(1, round(float(width))))
     height = int(max(1, round(float(height))))
 
     def _normalize_rgb(input_rgb):
+        """
+        将各种可能的输入格式，统一提取成 (r, g, b) 三元组。
+        支持：
+        - (r, g, b)
+        - (r, g, b, a)
+        - ((r, g, b), idx) or ((r, g, b, a), idx)
+        """
         if isinstance(input_rgb, tuple):
+            # 情况 3: ((r,g,b,a), idx) 或 ((r,g,b), idx)
             if len(input_rgb) == 2 and isinstance(input_rgb[0], tuple):
                 return _normalize_rgb(input_rgb[0])
+            # 情况 2: RGBA
             if len(input_rgb) == 4 and all(isinstance(v, (int, float)) for v in input_rgb):
                 return input_rgb[:3]
+            # 情况 1: RGB
             if len(input_rgb) == 3 and all(isinstance(v, (int, float)) for v in input_rgb):
                 return input_rgb
         raise ValueError(f"无法识别的颜色格式: {input_rgb!r}")
 
-    def _is_mid_bright_hsl(input_rgb, min_l=0.3, max_l=0.7):
+    def _is_mid_bright(input_rgb, min_lum=80, max_lum=200):
+        """
+        基于相对亮度判断：不过暗（>=min_lum）也不过白（<=max_lum）。
+        input_rgb 可为多种格式，函数内部会 normalize。
+        """
         r, g, b = _normalize_rgb(input_rgb)
+        lum = 0.299*r + 0.587*g + 0.114*b
+        return min_lum <= lum <= max_lum
+    # 定义用于判断颜色是否合适的函数
+    def _is_mid_bright_hsl(input_rgb, min_l=0.3, max_l=0.7):
+        """
+        基于 HSL Lightness 判断。Lightness 在 [0,1]。
+        """
+        r, g, b = _normalize_rgb(input_rgb)
+        # 归一到 [0,1]
         r1, g1, b1 = r/255.0, g/255.0, b/255.0
         h, l, s = colorsys.rgb_to_hls(r1, g1, b1)
         return min_l <= l <= max_l
     
     selected_color = None
+    
+    # 如果传入的是颜色数组
     if isinstance(color, list) and len(color) > 0:
+        # 尝试找到合适的颜色，最多尝试5个
         for i in range(min(10, len(color))):
             if _is_mid_bright_hsl(color[i]):
+                # 如果是(color_tuple, count)格式，提取颜色元组
                 if isinstance(color[i], tuple) and len(color[i]) == 2 and isinstance(color[i][0], tuple):
                     selected_color = color[i][0]
                 else:
                     selected_color = color[i]
+                # logger.info(f" 海报主题色:[{selected_color}]适合做背景")
                 break
+            else:
+                pass
+                # logger.info(f" 海报主题色:[{color[i]}]不适合做背景,尝试做下一个颜色")
     
+    # 如果没有找到合适的颜色，随机生成一个颜色
     if selected_color is None:
-        def random_hsl_to_rgb():
-            h = random.uniform(0, 1.0)
-            s = random.uniform(0.5, 1.0)
-            l = random.uniform(0.5, 0.8)
+
+        def random_hsl_to_rgb(
+            hue_range=(0, 360),
+            sat_range=(0.5, 1.0),
+            light_range=(0.5, 0.8)
+        ):
+            """
+            hue_range: 色相范围，取值 0~360
+            sat_range: 饱和度范围，取值 0~1
+            light_range: 明度范围，取值 0~1
+            返回值：RGB 三元组，每个通道 0~255
+            """
+            h = random.uniform(hue_range[0]/360.0, hue_range[1]/360.0)
+            s = random.uniform(sat_range[0], sat_range[1])
+            l = random.uniform(light_range[0], light_range[1])
+            # colorsys.hls_to_rgb 接受 H, L, S (注意顺序) 都是 0~1
             r, g, b = colorsys.hls_to_rgb(h, l, s)
+            # 转回 0~255
             return (int(r*255), int(g*255), int(b*255))
+
+        # 生成颜色示例
         selected_color = random_hsl_to_rgb()
+        # logger.info(f"海报所有主题色不适合做背景，随机生成一个颜色[{selected_color}]。")
 
-    r, g, b = _normalize_rgb(selected_color)
+    # 如果是已经提供的颜色，将其加深
+    # 降低各通道的亮度，使颜色更深
+    r = int(selected_color[0] * 0.65)  # 降低35%
+    g = int(selected_color[1] * 0.65)  # 降低35%
+    b = int(selected_color[2] * 0.65)  # 降低35%
+    
+    # 确保RGB值不会小于0
+    r = max(0, r)
+    g = max(0, g)
+    b = max(0, b)
+    
+    # 更新颜色
+    selected_color = (r, g, b, selected_color[3] if len(selected_color) > 3 else 255)
 
-    # 提取基准色与两种高光色
-    base_r, base_g, base_b = max(0, int(r * 0.35)), max(0, int(g * 0.35)), max(0, int(b * 0.35))
+    # 确保selected_color包含alpha通道
+    if len(selected_color) == 3:
+        selected_color = (selected_color[0], selected_color[1], selected_color[2], 255)
     
-    h1_r = min(255, int(r * 1.5 + 40))
-    h1_g = min(255, int(g * 1.2 + 20))
-    h1_b = min(255, int(b * 1.8 + 50))
+    # 基于selected_color自动生成浅色版本作为右侧颜色
+    # 将selected_color的RGB值增加更合适的比例，使右侧颜色适中
+    # 限制最大值为255
+    r = min(255, int(selected_color[0] * 1.9))  # 从2.2降到1.9
+    g = min(255, int(selected_color[1] * 1.9))  # 从2.2降到1.9
+    b = min(255, int(selected_color[2] * 1.9))  # 从2.2降到1.9
     
-    h2_r = min(255, int(r * 1.2 + 30))
-    h2_g = min(255, int(g * 1.6 + 40))
-    h2_b = min(255, int(b * 1.3 + 20))
+    # 确保至少有一定的亮度增加，但比之前小
+    r = max(r, selected_color[0] + 80)  # 从100降到80
+    g = max(g, selected_color[1] + 80)  # 从100降到80
+    b = max(b, selected_color[2] + 80)  # 从100降到80
     
-    # 缩小渲染比例，提高速度，最后再放大
-    scale_down = 4
-    sw, sh = width // scale_down, height // scale_down
+    # 确保右侧颜色不会太亮
+    r = min(r, 230)  # 限制最大亮度
+    g = min(g, 230)  # 限制最大亮度
+    b = min(b, 230)  # 限制最大亮度
     
-    x = np.linspace(0, 1, sw)
-    y = np.linspace(0, 1, sh)
-    X, Y = np.meshgrid(x, y)
+    # 创建右侧浅色
+    color2 = (r, g, b, selected_color[3])
     
-    canvas_r = np.full((sh, sw), base_r, dtype=float)
-    canvas_g = np.full((sh, sw), base_g, dtype=float)
-    canvas_b = np.full((sh, sw), base_b, dtype=float)
+    # 创建左右两个纯色图像
+    left_image = Image.new("RGBA", (width, height), selected_color)
+    right_image = Image.new("RGBA", (width, height), color2)
     
-    def add_glow(cx, cy, radius, r_val, g_val, b_val, intensity=1.0):
-        dist = np.sqrt((X - cx)**2 + (Y - cy)**2)
-        weight = np.exp(- (dist**2) / (2 * radius**2)) * intensity
-        canvas_r[:] += r_val * weight
-        canvas_g[:] += g_val * weight
-        canvas_b[:] += b_val * weight
-
-    # 添加三个漫反射光源点
-    add_glow(0.8, 0.2, 0.6, h1_r, h1_g, h1_b, 0.85)
-    add_glow(0.2, 0.9, 0.7, h2_r, h2_g, h2_b, 0.75)
-    add_glow(0.9, 0.7, 0.5, r, g, b, 0.6)
+    # 创建渐变遮罩（从黑到白的横向线性渐变）
+    mask = Image.new("L", (width, height), 0)
+    mask_data = []
     
-    canvas_r = np.clip(canvas_r, 0, 255).astype(np.uint8)
-    canvas_g = np.clip(canvas_g, 0, 255).astype(np.uint8)
-    canvas_b = np.clip(canvas_b, 0, 255).astype(np.uint8)
+    # 生成遮罩数据，使用更加平滑的过渡
+    for y in range(height):
+        for x in range(width):
+            # 计算从左到右的渐变值 (0-255)
+            # 使用更加非线性的渐变，使左侧深色区域更大
+            mask_value = int(255.0 * (x / width) ** 0.7)  # 从0.85改为0.7
+            mask_data.append(mask_value)
     
-    rgb_array = np.dstack((canvas_r, canvas_g, canvas_b))
-    small_img = Image.fromarray(rgb_array, 'RGB')
+    # 应用遮罩数据到遮罩图像
+    mask.putdata(mask_data)
     
-    # 放大以得到平滑的渐变，并加上微弱胶片噪点
-    final_img = small_img.resize((width, height), Image.BICUBIC)
+    # 使用遮罩合成左右两个图像
+    # 遮罩中黑色部分(0)显示left_image，白色部分(255)显示right_image
+    gradient = Image.composite(right_image, left_image, mask)
+    gradient = _premium_gradient_finish(gradient, selected_color)
     
-    return final_img.convert("RGBA")
+    return gradient
 
 
 def get_poster_primary_color(image_path):
@@ -993,8 +1101,7 @@ def create_style_static_3(library_dir, title, font_path, font_size=(170,75), fon
         library_ch_name = title_zh  # 默认使用输入的name作为中文名
         library_eng_name = title_en  # 默认英文名为空
 
-        text_shadow_color = darken_color(blur_color, 0.8)
-        text_shadow_color = darken_color(blur_color, 0.8)
+        text_shadow_color = darken_color(blur_color, 0.58)
         zh_font_size = float(zh_font_size) * scale
         result = draw_text_on_image(
             result, library_ch_name, (s(73.32), s(427.34) + zh_font_size * zh_font_offset), zh_font_path, "ch.ttf", int(max(1, round(zh_font_size))),
@@ -1020,10 +1127,10 @@ def create_style_static_3(library_dir, title, font_path, font_size=(170,75), fon
                 # 字体大小与文本长度成反比
                 scale_factor = (10 / max(max_chars_per_line, word_count * 3)) ** 0.8
                 # 限制缩小比例，防止过小
-                scale_factor = max(scale_factor, 0.4) 
-                
+                scale_factor = max(scale_factor, 0.46)
+
                 font_size = base_font_size * scale_factor
-                
+
                 # 设置最小字体大小限制，确保文字不会太小
                 font_size = max(font_size, 30)
             else:

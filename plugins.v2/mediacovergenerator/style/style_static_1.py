@@ -4,7 +4,7 @@ import colorsys
 from io import BytesIO
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps, ImageStat
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps, ImageEnhance
 
 from app.log import logger
 from app.plugins.mediacovergenerator.utils.image_manager import ResolutionConfig, managed_image
@@ -57,6 +57,43 @@ def add_film_grain(image, intensity=0.05):
     img_array = np.clip(img_array, 0, 255).astype(np.uint8)
     
     return Image.fromarray(img_array)
+
+def _premium_finish(image, accent_color=None, vignette_strength=0.28, glow_strength=0.20):
+    """为背景增加柔和高光、暗角和纸感层次。"""
+    base = image.convert("RGBA")
+    width, height = base.size
+    if accent_color is None:
+        accent_color = (220, 170, 112)
+    accent = tuple(int(max(0, min(255, c))) for c in accent_color[:3])
+
+    x = np.linspace(-1, 1, width)
+    y = np.linspace(-1, 1, height)
+    X, Y = np.meshgrid(x, y)
+
+    glow_a = np.exp(-(((X + 0.58) ** 2) / 0.42 + ((Y + 0.52) ** 2) / 0.25))
+    glow_b = np.exp(-(((X - 0.42) ** 2) / 0.32 + ((Y - 0.36) ** 2) / 0.34))
+    vignette = np.clip((np.sqrt((X * 0.86) ** 2 + (Y * 1.05) ** 2) - 0.18) / 0.95, 0, 1)
+
+    overlay = np.zeros((height, width, 4), dtype=np.uint8)
+    overlay[..., 0] = np.clip(255 * glow_a + accent[0] * glow_b, 0, 255)
+    overlay[..., 1] = np.clip(238 * glow_a + accent[1] * glow_b, 0, 255)
+    overlay[..., 2] = np.clip(205 * glow_a + accent[2] * glow_b, 0, 255)
+    overlay[..., 3] = np.clip((glow_a * 54 + glow_b * 42) * glow_strength, 0, 58).astype(np.uint8)
+    base = Image.alpha_composite(base, Image.fromarray(overlay, "RGBA"))
+
+    shade = np.zeros((height, width, 4), dtype=np.uint8)
+    shade[..., 3] = np.clip(vignette * 255 * vignette_strength, 0, 120).astype(np.uint8)
+    base = Image.alpha_composite(base, Image.fromarray(shade, "RGBA"))
+    return base.convert("RGB")
+
+
+def _polish_card(image):
+    """轻微增强卡片质感，避免过锐或发灰。"""
+    polished = ImageEnhance.Color(image.convert("RGB")).enhance(1.06)
+    polished = ImageEnhance.Contrast(polished).enhance(1.04)
+    polished = ImageEnhance.Sharpness(polished).enhance(1.08)
+    return polished
+
 
 def crop_to_square(img):
     """将图片裁剪为正方形"""
@@ -113,59 +150,72 @@ def add_rounded_corners(img, radius=30):
 
 def add_shadow_and_rotate(canvas, img, angle, offset=(10, 10), radius=10, opacity=0.5, center_pos=None):
     """
-    先创建多重立体阴影并旋转放置，然后旋转图像并放置
+    先创建阴影并旋转放置，然后旋转图像并放置
+    
+    Args:
+        canvas: 目标画布
+        img: 需要处理的图像
+        angle: 旋转角度
+        offset: 阴影偏移
+        radius: 阴影模糊半径
+        opacity: 阴影透明度
+        center_pos: 放置中心位置 (x, y)
+        
+    Returns:
+        更新后的画布
     """
+    # 获取原图尺寸
     width, height = img.size
+    
+    # 如果没有指定中心位置，默认使用画布中心
     if center_pos is None:
         center_pos = (canvas.width // 2, canvas.height // 2)
     
-    # 1. 创建多重阴影 (Ambient Soft Shadows)
-    padding = max(radius * 5, 150)
+    # 1. 创建阴影
+    # 创建一个更大的阴影画布，给阴影留足空间，避免截断
+    padding = max(radius * 4, 100)  # 为阴影提供足够的空间
     shadow_size = (width + padding * 2, height + padding * 2)
     shadow = Image.new("RGBA", shadow_size, (0, 0, 0, 0))
     
+    # 准备阴影蒙版
     mask_size = (width, height)
-    shadow_mask = Image.new("L", mask_size, 255)
+    shadow_mask = Image.new("L", mask_size, 255)  # 白色蒙版
+    
+    # 如果原图是RGBA模式，使用其透明通道作为蒙版
     if img.mode == "RGBA":
-        shadow_mask = img.split()[3]
+        shadow_mask = img.split()[3]  # 获取Alpha通道作为蒙版
     
+    # 在阴影中心位置创建阴影形状
     shadow_center = (padding, padding)
-    
-    # 第一层阴影：紧凑的深色阴影（表现卡片厚度）
-    tight_radius = max(2, radius // 3)
-    tight_opacity = min(1.0, opacity * 1.5)
-    shadow_tight = Image.new("RGBA", shadow_size, (0, 0, 0, 0))
-    shadow_tight.paste((0, 0, 0, int(255 * tight_opacity)), 
+    shadow.paste((0, 0, 0, int(255 * opacity)), 
                 (shadow_center[0], shadow_center[1], 
                  shadow_center[0] + width, shadow_center[1] + height), 
                 shadow_mask)
-    shadow_tight = shadow_tight.filter(ImageFilter.GaussianBlur(tight_radius))
     
-    # 第二层阴影：弥散的浅色阴影（表现环境悬浮感）
-    loose_radius = radius * 2
-    loose_opacity = opacity * 0.6
-    shadow_loose = Image.new("RGBA", shadow_size, (0, 0, 0, 0))
-    shadow_loose.paste((0, 0, 0, int(255 * loose_opacity)), 
-                (shadow_center[0], shadow_center[1], 
-                 shadow_center[0] + width, shadow_center[1] + height), 
-                shadow_mask)
-    shadow_loose = shadow_loose.filter(ImageFilter.GaussianBlur(loose_radius))
+    # 模糊阴影，使用较大的半径确保柔和效果
+    shadow = shadow.filter(ImageFilter.GaussianBlur(radius))
     
-    # 合并两层阴影
-    shadow = Image.alpha_composite(shadow_loose, shadow_tight)
-    
-    # 2. 旋转阴影和图像 (Bicubic rotation)
-    rotated_shadow = shadow.rotate(angle, Image.BICUBIC, expand=True, fillcolor=(0, 0, 0, 0))
+    # 2. 旋转阴影和图像
+    # 旋转阴影
+    rotated_shadow = rotate_image(shadow, angle)
     shadow_width, shadow_height = rotated_shadow.size
     
+    # 计算旋转后的阴影位置（考虑偏移）
     shadow_x = center_pos[0] - shadow_width // 2 + offset[0]
     shadow_y = center_pos[1] - shadow_height // 2 + offset[1]
+    
+    # 将阴影粘贴到画布上
     canvas.paste(rotated_shadow, (shadow_x, shadow_y), rotated_shadow)
     
-    rotated_img = img.rotate(angle, Image.BICUBIC, expand=True, fillcolor=(0, 0, 0, 0))
+    # 旋转原图
+    rotated_img = rotate_image(img, angle)
     img_width, img_height = rotated_img.size
+    
+    # 计算旋转后的图片位置
     img_x = center_pos[0] - img_width // 2
     img_y = center_pos[1] - img_height // 2
+    
+    # 将图片粘贴到画布上
     canvas.paste(rotated_img, (img_x, img_y), rotated_img)
     
     return canvas
@@ -250,19 +300,8 @@ def create_style_static_1(image_path, title, font_path, font_size=(170,75), font
                                 best_color = color
                         extracted_colors.append(best_color or random.choice(soft_macaron_colors))
 
-                # 处理颜色与自适应亮度
-                extracted_base = extracted_colors[0]
-                img_gray = original_img.convert('L')
-                lum = ImageStat.Stat(img_gray).mean[0]
-                if lum > 180:
-                    color_ratio = min(1.0, float(color_ratio) * 1.15)
-                    bg_color = darken_color(extracted_base, 0.6)
-                elif lum < 50:
-                    color_ratio = max(0.0, float(color_ratio) * 0.85)
-                    bg_color = darken_color(extracted_base, 0.9)
-                else:
-                    bg_color = darken_color(extracted_base, 0.85)
-
+                # 处理颜色
+                bg_color = darken_color(extracted_colors[0], 0.85)  # 背景色
 
             # 获取卡片颜色（始终从图片提取）
             card_colors_extracted = ColorHelper.extract_dominant_colors(original_img, num_colors=3, style="macaron")
@@ -284,8 +323,9 @@ def create_style_static_1(image_path, title, font_path, font_size=(170,75), font
             blended_bg = np.clip(blended_bg, 0, 255).astype(np.uint8)
             blended_bg_img = Image.fromarray(blended_bg)
 
-            # 添加胶片颗粒效果增强纹理感
-            blended_bg_img = add_film_grain(blended_bg_img, intensity=0.03)
+            # 添加柔和高光、暗角与细颗粒，提升背景层次
+            blended_bg_img = _premium_finish(blended_bg_img, bg_color, vignette_strength=0.26, glow_strength=0.80)
+            blended_bg_img = add_film_grain(blended_bg_img, intensity=0.018)
 
             # 创建最终画布
             canvas = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
@@ -298,6 +338,7 @@ def create_style_static_1(image_path, title, font_path, font_size=(170,75), font
             # 计算卡片尺寸 (画布高度的70%)
             card_size = int(canvas_size[1] * 0.7)
             square_img = square_img.resize((card_size, card_size), Image.LANCZOS)
+            square_img = _polish_card(square_img)
         
             # 准备三张卡片图像
             cards = []
@@ -339,9 +380,9 @@ def create_style_static_1(image_path, title, font_path, font_size=(170,75), font
 
             # 阴影配置
             shadow_configs = [
-                {'offset': (10, 16), 'radius': 12, 'opacity': 0.4},  # 底层卡片阴影配置
-                {'offset': (15, 22), 'radius': 15, 'opacity': 0.5},  # 中间层卡片阴影配置
-                {'offset': (20, 26), 'radius': 18, 'opacity': 0.6},  # 顶层卡片阴影配置
+                {'offset': (12, 20), 'radius': 22, 'opacity': 0.30},  # 底层：更柔和的环境阴影
+                {'offset': (16, 26), 'radius': 26, 'opacity': 0.38},  # 中间层：加大扩散半径
+                {'offset': (20, 30), 'radius': 30, 'opacity': 0.48},  # 顶层：保留重点但不过脏
             ]
 
             # 创建一个临时画布，用于叠加卡片和阴影效果
@@ -381,10 +422,10 @@ def create_style_static_1(image_path, title, font_path, font_size=(170,75), font
             en_font = ImageFont.truetype(en_font_path, int(en_font_size))
 
             # 文字颜色和阴影颜色
-            text_color = (255, 255, 255, 229)  # 85% 不透明度
-            shadow_color = darken_color(bg_color, 0.8) + (75,)  # 阴影颜色加透明度
-            shadow_offset = 12
-            shadow_alpha = 75
+            text_color = (255, 250, 238, 238)
+            shadow_color = darken_color(bg_color, 0.58) + (96,)
+            shadow_offset = 14
+            shadow_alpha = 72
         
         # 计算中文标题的位置
         zh_bbox = draw.textbbox((0, 0), title_zh, font=zh_font)

@@ -5,7 +5,7 @@ from collections import Counter
 from io import BytesIO
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps, ImageStat
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps, ImageEnhance
 
 from app.log import logger
 from app.plugins.mediacovergenerator.utils.color_helper import ColorHelper
@@ -95,6 +95,39 @@ def add_film_grain(image, intensity=0.05):
     img_array = np.clip(img_array, 0, 255).astype(np.uint8)
     
     return Image.fromarray(img_array)
+
+def _premium_finish(image, accent_color=None, vignette_strength=0.30, glow_strength=0.22):
+    """增加柔和光晕与暗角，让斜切构图更有纵深。"""
+    base = image.convert("RGBA")
+    width, height = base.size
+    if accent_color is None:
+        accent_color = (220, 170, 112)
+    accent = tuple(int(max(0, min(255, c))) for c in accent_color[:3])
+
+    x = np.linspace(-1, 1, width)
+    y = np.linspace(-1, 1, height)
+    X, Y = np.meshgrid(x, y)
+    glow_left = np.exp(-(((X + 0.68) ** 2) / 0.35 + ((Y + 0.25) ** 2) / 0.62))
+    glow_right = np.exp(-(((X - 0.35) ** 2) / 0.48 + ((Y - 0.50) ** 2) / 0.30))
+    vignette = np.clip((np.sqrt((X * 0.9) ** 2 + (Y * 1.05) ** 2) - 0.15) / 0.95, 0, 1)
+
+    overlay = np.zeros((height, width, 4), dtype=np.uint8)
+    overlay[..., 0] = np.clip(255 * glow_left + accent[0] * glow_right, 0, 255)
+    overlay[..., 1] = np.clip(240 * glow_left + accent[1] * glow_right, 0, 255)
+    overlay[..., 2] = np.clip(210 * glow_left + accent[2] * glow_right, 0, 255)
+    overlay[..., 3] = np.clip((glow_left * 48 + glow_right * 36) * glow_strength, 0, 54).astype(np.uint8)
+    base = Image.alpha_composite(base, Image.fromarray(overlay, "RGBA"))
+
+    shade = np.zeros((height, width, 4), dtype=np.uint8)
+    shade[..., 3] = np.clip(vignette * 255 * vignette_strength, 0, 128).astype(np.uint8)
+    return Image.alpha_composite(base, Image.fromarray(shade, "RGBA")).convert("RGB")
+
+
+def _polish_foreground(image):
+    polished = ImageEnhance.Color(image.convert("RGB")).enhance(1.04)
+    polished = ImageEnhance.Contrast(polished).enhance(1.05)
+    return ImageEnhance.Sharpness(polished).enhance(1.06)
+
 
 
 def align_image_right(img, canvas_size):
@@ -251,7 +284,7 @@ def create_style_static_2(image_path, title, font_path, font_size=(170,75), font
         # 加载前景图片并处理
         fg_img_original = Image.open(image_path).convert("RGB")
         # 以画面四分之三处为中心处理前景图
-        fg_img = align_image_right(fg_img_original, canvas_size)
+        fg_img = align_image_right(_polish_foreground(fg_img_original), canvas_size)
         
         # 获取前景图中最鲜明的颜色
         vibrant_colors = find_dominant_vibrant_colors(fg_img)
@@ -277,18 +310,7 @@ def create_style_static_2(image_path, title, font_path, font_size=(170,75), font
             bg_color = vibrant_colors[0]
         else:
             bg_color = random.choice(soft_colors) # 默认橙色
-        
-        # 处理自适应背景对比度
-        img_gray = fg_img_original.convert('L')
-        lum = ImageStat.Stat(img_gray).mean[0]
-        if lum > 180:
-            color_ratio = min(1.0, float(color_ratio) * 1.15)
-            shadow_color = darken_color(bg_color, 0.4)
-        elif lum < 50:
-            color_ratio = max(0.0, float(color_ratio) * 0.85)
-            shadow_color = darken_color(bg_color, 0.7)
-        else:
-            shadow_color = darken_color(bg_color, 0.5)  # 加深阴影颜色到50%
+        shadow_color = darken_color(bg_color, 0.5)  # 加深阴影颜色到50%
         
         # 加载背景图片
         bg_img_original = Image.open(image_path).convert("RGB")
@@ -307,8 +329,9 @@ def create_style_static_2(image_path, title, font_path, font_size=(170,75), font
         blended_bg = np.clip(blended_bg, 0, 255).astype(np.uint8)
         blended_bg_img = Image.fromarray(blended_bg)
         
-        # 添加胶片颗粒效果增强纹理感
-        blended_bg_img = add_film_grain(blended_bg_img, intensity=0.05)
+        # 添加高级感光晕、暗角与更克制的颗粒
+        blended_bg_img = _premium_finish(blended_bg_img, bg_color, vignette_strength=0.28, glow_strength=0.90)
+        blended_bg_img = add_film_grain(blended_bg_img, intensity=0.018)
         
         # 创建斜线分割的蒙版
         diagonal_mask = create_diagonal_mask(canvas_size, split_top, split_bottom)
@@ -317,7 +340,7 @@ def create_style_static_2(image_path, title, font_path, font_size=(170,75), font
         canvas = fg_img.copy()
         
         # 创建阴影蒙版 - 使用加深的背景色作为阴影颜色，减小阴影距离
-        shadow_mask = create_shadow_mask(canvas_size, split_top, split_bottom, feather_size=30)
+        shadow_mask = create_shadow_mask(canvas_size, split_top, split_bottom, feather_size=46)
         
         # 创建阴影层 - 使用更加深的背景色
         shadow_layer = Image.new('RGB', canvas_size, shadow_color)
@@ -355,9 +378,9 @@ def create_style_static_2(image_path, title, font_path, font_size=(170,75), font
             
         # 文字颜色和阴影颜色
         text_color = (255, 255, 255, 229)  # 85% 不透明度
-        shadow_color = darken_color(bg_color, 0.8) + (75,)  # 阴影颜色加透明度
-        shadow_offset = 12
-        shadow_alpha = 75
+        shadow_color = darken_color(bg_color, 0.58) + (96,)
+        shadow_offset = 14
+        shadow_alpha = 72
         
         # 计算中文标题的位置
         zh_bbox = draw.textbbox((0, 0), title_zh, font=zh_font)

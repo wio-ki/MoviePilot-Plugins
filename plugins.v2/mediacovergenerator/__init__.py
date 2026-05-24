@@ -54,7 +54,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/emby.png"
     # 插件版本
-    plugin_version = "0.10.5"
+    plugin_version = "0.10.6"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -140,7 +140,7 @@ class MediaCoverGenerator(_PluginBase):
 
     def init_plugin(self, config: dict = None):
         self.mschain = MediaServerChain()
-        self.mediaserver_helper = MediaServerHelper()
+        self.mediaserver_helper = MediaServerHelper()   
         data_path = self.get_data_path()
         (data_path / 'fonts').mkdir(parents=True, exist_ok=True)
         (data_path / 'input').mkdir(parents=True, exist_ok=True)
@@ -213,7 +213,9 @@ class MediaCoverGenerator(_PluginBase):
             except (ValueError, TypeError):
                 self._animation_fps = 12
             self._animation_format = config.get("animation_format", "apng")
-            if self._animation_format not in ["apng", "gif", "webp"]:
+            if self._animation_format == "webp":
+                self._animation_format = "gif"
+            if self._animation_format not in ["apng", "gif"]:
                 self._animation_format = "apng"
             self._animation_resolution = config.get("animation_resolution", "320x180")
             animation_reduce_colors = config.get("animation_reduce_colors", "medium")
@@ -285,7 +287,7 @@ class MediaCoverGenerator(_PluginBase):
                     logger.info(f"媒体服务器 {server} 未连接")
         else:
             logger.info("未选择媒体服务器")
-
+        
         # 停止现有任务
         self.stop_service()
 
@@ -697,134 +699,7 @@ class MediaCoverGenerator(_PluginBase):
             {"path": "set_page_tab_clean", "endpoint": self.api_set_page_tab_clean, "auth": "bear", "methods": ["POST"], "summary": "切换到清理页(兼容)"},
             {"path": "/saved_cover_image", "endpoint": self.api_saved_cover_image, "methods": ["GET"], "summary": "获取已保存封面图片"},
             {"path": "saved_cover_image", "endpoint": self.api_saved_cover_image, "methods": ["GET"], "summary": "获取已保存封面图片(兼容)"},
-            {"path": "/preview_cover", "endpoint": self.api_preview_cover, "auth": "bear", "methods": ["POST", "GET"], "summary": "获取实时预览海报Base64"},
-            {"path": "preview_cover", "endpoint": self.api_preview_cover, "auth": "bear", "methods": ["POST", "GET"], "summary": "获取实时预览海报Base64(兼容)"},
         ]
-
-    def __ensure_preview_source_image(self) -> Path:
-        preview_dir = self.get_data_path() / "preview"
-        preview_dir.mkdir(parents=True, exist_ok=True)
-        source_path = preview_dir / "preview_source.jpg"
-        if source_path.exists() and source_path.stat().st_size > 0:
-            return source_path
-
-        from PIL import Image, ImageDraw, ImageFilter
-
-        width, height = 960, 540
-        image = Image.new("RGB", (width, height), "#D6A06F")
-        draw = ImageDraw.Draw(image, "RGBA")
-        for y in range(height):
-            ratio = y / max(1, height - 1)
-            r = int(214 * (1 - ratio) + 62 * ratio)
-            g = int(160 * (1 - ratio) + 93 * ratio)
-            b = int(111 * (1 - ratio) + 89 * ratio)
-            draw.line((0, y, width, y), fill=(r, g, b, 255))
-        draw.ellipse((-160, -120, 420, 360), fill=(255, 241, 210, 92))
-        draw.ellipse((560, 20, 1120, 520), fill=(48, 121, 112, 80))
-        draw.rounded_rectangle((250, 90, 710, 450), radius=38, fill=(255, 250, 240, 54), outline=(255, 255, 255, 80), width=3)
-        image = image.filter(ImageFilter.GaussianBlur(radius=0.4))
-        image.save(source_path, format="JPEG", quality=92, optimize=True)
-        return source_path
-
-    def __ensure_preview_library_dir(self) -> Path:
-        preview_dir = self.get_data_path() / "preview" / "library"
-        preview_dir.mkdir(parents=True, exist_ok=True)
-        existing = [preview_dir / f"{index}.jpg" for index in range(1, 10)]
-        if all(path.exists() and path.stat().st_size > 0 for path in existing):
-            return preview_dir
-
-        from PIL import Image, ImageDraw, ImageEnhance
-
-        base = Image.open(self.__ensure_preview_source_image()).convert("RGB")
-        poster = base.resize((420, 630))
-        palette = [
-            (190, 111, 78), (216, 159, 93), (88, 132, 121),
-            (132, 99, 76), (199, 138, 112), (92, 110, 138),
-            (164, 128, 82), (116, 145, 106), (176, 105, 96),
-        ]
-        for index, color in enumerate(palette, 1):
-            image = ImageEnhance.Color(poster).enhance(0.75 + index * 0.06)
-            image = ImageEnhance.Brightness(image).enhance(0.86 + index * 0.025)
-            overlay = Image.new("RGB", image.size, color)
-            image = Image.blend(image, overlay, 0.18)
-            draw = ImageDraw.Draw(image, "RGBA")
-            draw.rectangle((0, 0, image.width, image.height), outline=(255, 255, 255, 82), width=8)
-            draw.text((24, 24), f"{index}", fill=(255, 255, 255, 210))
-            image.save(preview_dir / f"{index}.jpg", format="JPEG", quality=90, optimize=True)
-        return preview_dir
-
-    @staticmethod
-    def __safe_float(value: Any, default: float) -> float:
-        try:
-            if value is None or value == "":
-                return float(default)
-            return float(value)
-        except (ValueError, TypeError):
-            return float(default)
-
-    def __build_preview_cover_base64(self) -> Tuple[str, str]:
-        if not self._zh_font_path or not self._en_font_path:
-            return "", "字体尚未下载或配置无效，请先保存配置并等待字体下载完成。"
-
-        resolution_config = self._resolution_config
-        if not resolution_config:
-            try:
-                resolution_config = ResolutionConfig(self._resolution or "480p")
-            except Exception:
-                resolution_config = ResolutionConfig("480p")
-
-        title_scale = self.__safe_float(self._title_scale, 1.0)
-        base_zh_font_size = self.__safe_float(self._zh_font_size, 170)
-        base_en_font_size = self.__safe_float(self._en_font_size, 75)
-        zh_font_size = resolution_config.get_font_size(base_zh_font_size) * title_scale
-        en_font_size = resolution_config.get_font_size(base_en_font_size) * title_scale
-
-        font_size = (float(zh_font_size), float(en_font_size))
-        font_path = (str(self._zh_font_path), str(self._en_font_path))
-
-        zh_font_offset = self.__safe_float(self._zh_font_offset, 0)
-        title_spacing = self.__safe_float(self._title_spacing, 40) * title_scale
-        en_line_spacing = self.__safe_float(self._en_line_spacing, 40) * title_scale
-        font_offset = (float(zh_font_offset), float(title_spacing), float(en_line_spacing))
-
-        title = ("实时预览", "LIVE PREVIEW")
-        bg_color_config = {
-            "mode": self._bg_color_mode,
-            "custom_color": self._custom_bg_color,
-            "config_color": "",
-        }
-        blur_size = self.__safe_float(self._blur_size, 50)
-        color_ratio = self.__safe_float(self._color_ratio, 0.8)
-
-        base_style = self._cover_style_base or "static_1"
-        if base_style not in {"static_1", "static_2", "static_3", "static_4"}:
-            _, style_index = self.__get_cover_style_parts()
-            base_style = f"static_{style_index}"
-
-        image_path = str(self.__ensure_preview_source_image())
-        if base_style == "static_1":
-            data = create_style_static_1(image_path, title, font_path, font_size=font_size, font_offset=font_offset, blur_size=blur_size, color_ratio=color_ratio, resolution_config=resolution_config, bg_color_config=bg_color_config)
-        elif base_style == "static_2":
-            data = create_style_static_2(image_path, title, font_path, font_size=font_size, font_offset=font_offset, blur_size=blur_size, color_ratio=color_ratio, resolution_config=resolution_config, bg_color_config=bg_color_config)
-        elif base_style == "static_3":
-            data = create_style_static_3(str(self.__ensure_preview_library_dir()), title, font_path, font_size=font_size, font_offset=font_offset, is_blur=self._multi_1_blur, blur_size=blur_size, color_ratio=color_ratio, resolution_config=resolution_config, bg_color_config=bg_color_config)
-        else:
-            data = create_style_static_4(image_path, title, font_path, font_size=font_size, font_offset=font_offset, blur_size=blur_size, color_ratio=color_ratio, resolution_config=resolution_config, bg_color_config=bg_color_config)
-
-        if not data:
-            return "", "预览生成失败，请检查字体、分辨率或样式参数。"
-        return "data:image/png;base64," + data, ""
-
-    def api_preview_cover(self):
-        try:
-            logger.info("【MediaCoverGenerator】收到实时预览请求，生成预览图片...")
-            preview_src, error_msg = self.__build_preview_cover_base64()
-            if preview_src:
-                return {"code": 0, "msg": "成功", "data": preview_src}
-            return {"code": 1, "msg": error_msg or "预览生成失败"}
-        except Exception as e:
-            logger.error(f"【MediaCoverGenerator】预览失败: {e}", exc_info=True)
-            return {"code": 1, "msg": f"预览生成失败: {e}"}
 
     def api_clean_images(self):
         try:
@@ -1011,7 +886,7 @@ class MediaCoverGenerator(_PluginBase):
                 "func": self.__update_all_libraries,
                 "kwargs": {}
             })
-
+        
         # 总是显示停止按钮，以便中断长时间运行的任务
         services.append({
             "id": "StopMediaCoverGenerator",
@@ -1351,7 +1226,7 @@ class MediaCoverGenerator(_PluginBase):
         """
         # 每次用户打开插件设置页面时，强制重置回封面生成页签，满足不记忆页签的需求
         self._page_tab = "generate-tab"
-
+        
         zh_font_items, en_font_items, _, _ = self.__get_font_presets()
         # 标题配置
         title_tab = [
@@ -1424,7 +1299,7 @@ class MediaCoverGenerator(_PluginBase):
 
         # 其他设置标签
         others_tab = [
-
+            
             {
                 'component': 'VRow',
                 'content': [
@@ -1547,7 +1422,7 @@ class MediaCoverGenerator(_PluginBase):
                     }
                 ]
             },
-
+            
         ]
         # 更多参数标签
         single_tab = [
@@ -2245,8 +2120,7 @@ class MediaCoverGenerator(_PluginBase):
                                                             'label': '输出格式',
                                                             'items': [
                                                                 {'title': 'APNG', 'value': 'apng'},
-                                                                {'title': 'GIF', 'value': 'gif'},
-                                                                {'title': 'WEBP', 'value': 'webp'}
+                                                                {'title': 'GIF', 'value': 'gif'}
                                                             ],
                                                             'prependInnerIcon': 'mdi-file-video'
                                                         }
@@ -2342,7 +2216,7 @@ class MediaCoverGenerator(_PluginBase):
                                             }
                                         ]
                                     },
-
+ 
                                 ]
                             }
                         ]
@@ -2528,7 +2402,7 @@ class MediaCoverGenerator(_PluginBase):
                                                     }
                                                 ]
                                             },
-
+                                            
                                         ]
                                     },
                                     {
@@ -2560,7 +2434,7 @@ class MediaCoverGenerator(_PluginBase):
                                             },
                                         ]
                                     }
-
+                                    
                                 ]
                             },
                         ]
@@ -2740,8 +2614,6 @@ class MediaCoverGenerator(_PluginBase):
         )
         style_variant, style_index = self.__get_cover_style_parts()
         style_preview_cards = self.__build_page_style_cards(style_variant=style_variant, selected_index=style_index)
-        preview_src, preview_error = self.__build_preview_cover_base64()
-        preview_card = self.__build_live_preview_card(preview_src, preview_error, style_variant, style_index)
         setup_warnings: List[str] = []
         if not self._enabled:
             setup_warnings.append("插件未启用，请先在设置页启用插件并保存。")
@@ -2752,7 +2624,7 @@ class MediaCoverGenerator(_PluginBase):
 
         # 永远默认首先访问封面生成页，不记忆用户的最后一次Tab选择，以提升开启速度
         page_tab = "generate-tab"
-
+        
         # 仅当明确切换到了历史封面页时，才执行耗时的图片加载逻辑
         cover_rows = []
         if self._page_tab == "history-tab":
@@ -2853,7 +2725,7 @@ class MediaCoverGenerator(_PluginBase):
                     "text": "未发现最近生成的封面文件。请先执行一次封面生成，或检查“封面另存目录”是否已配置。",
                 }
             )
-
+            
         if self._page_tab == "clean-tab":
             page_tab = "clean-tab"
 
@@ -2955,7 +2827,6 @@ class MediaCoverGenerator(_PluginBase):
                                     "component": "VRow",
                                     "content": style_preview_cards,
                                 },
-                                preview_card,
                             ],
                         }
                     ],
@@ -3006,7 +2877,6 @@ class MediaCoverGenerator(_PluginBase):
                                     "component": "VRow",
                                     "content": style_preview_cards,
                                 },
-                                preview_card,
                             ],
                         }
                     ],
@@ -3121,58 +2991,6 @@ class MediaCoverGenerator(_PluginBase):
             )
         return cards
 
-    def __build_live_preview_card(self, preview_src: str, error_msg: str, style_variant: str, style_index: int) -> Dict[str, Any]:
-        style_label = f"{'静态' if style_variant == 'static' else '动态'}风格 {style_index}"
-        preview_content: List[Dict[str, Any]]
-        if preview_src:
-            preview_content = [
-                {
-                    "component": "VImg",
-                    "props": {
-                        "src": preview_src,
-                        "aspect-ratio": "16/9",
-                        "cover": True,
-                        "class": "rounded-lg",
-                    },
-                }
-            ]
-        else:
-            preview_content = [
-                {
-                    "component": "VAlert",
-                    "props": {"color": "#A05A3F", "variant": "tonal", "density": "compact"},
-                    "text": error_msg or "预览暂不可用，请先保存配置并确认字体已下载。",
-                }
-            ]
-        return {
-            "component": "VCard",
-            "props": {"variant": "flat", "class": "mt-4 overflow-hidden", "style": self.__ui_card_style()},
-            "content": [
-                {
-                    "component": "VCardTitle",
-                    "props": {"class": "d-flex align-center justify-space-between flex-wrap"},
-                    "content": [
-                        {"component": "span", "text": "实时预览"},
-                        {
-                            "component": "VChip",
-                            "props": {"size": "small", "variant": "tonal", "color": "#8B6F47"},
-                            "text": style_label,
-                        },
-                    ],
-                },
-                {
-                    "component": "VCardText",
-                    "content": preview_content + [
-                        {
-                            "component": "div",
-                            "props": {"class": "text-caption text-medium-emphasis mt-2"},
-                            "text": "预览使用内置示例图和当前已保存参数生成；修改设置后请先保存再刷新详情页。动态风格使用对应静态版快速预览。",
-                        }
-                    ],
-                },
-            ],
-        }
-
     @staticmethod
     def __style_preview_src(index: int) -> str:
         safe_index = max(1, min(4, int(index)))
@@ -3205,29 +3023,29 @@ class MediaCoverGenerator(_PluginBase):
                     continue
                 try:
                     stat = file_path.stat()
-
+                    
                     try:
                         from PIL import Image
                         from io import BytesIO
                         import base64
-
+                        
                         # 动态生成缩略图进行 Base64 传输
                         # 1. 彻底绕开 /api/v1/plugin 外部接口存在的 401 鉴权问题
                         # 2. 将几十 MB 的动图压缩为了几十 KB 的缩略图，解决前端加载卡死问题
                         with Image.open(file_path) as img:
                             if hasattr(img, 'is_animated') and img.is_animated:
                                 img.seek(0)
-
+                                
                             thumb = img.copy()
                             if thumb.mode != 'RGB':
                                 thumb = thumb.convert('RGB')
-
+                                
                             thumb.thumbnail((480, 270))
                             buf = BytesIO()
                             thumb.save(buf, format="JPEG", quality=75)
                             image_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
                             image_src = f"data:image/jpeg;base64,{image_b64}"
-
+                            
                     except Exception as img_err:
                         logger.debug(f"生成缩略图失败 {file_path}: {img_err}")
                         continue
@@ -3332,12 +3150,12 @@ class MediaCoverGenerator(_PluginBase):
             return
         if not self._transfer_monitor:
             return
-
-        event_data = event.event_data
+        
+        event_data = event.event_data    
         if not event_data:
             return
-
-        # transfer: TransferInfo = event_data.get("transferinfo")
+        
+        # transfer: TransferInfo = event_data.get("transferinfo")        
         # Event data
         mediainfo: MediaInfo = event_data.get("mediainfo")
 
@@ -3347,7 +3165,7 @@ class MediaCoverGenerator(_PluginBase):
         # logger.info(f"监控到的媒体信息：{mediainfo}")
         if not mediainfo:
             return
-
+            
         # 开始前清理可能遗留的停止信号，防止阻塞监控
         self._event.clear()
 
@@ -3355,7 +3173,7 @@ class MediaCoverGenerator(_PluginBase):
         if self._delay:
             logger.info(f"延迟 {self._delay} 秒后开始更新封面")
             time.sleep(int(self._delay))
-
+            
         # Query the item in media server
         existsinfo = self.mschain.media_exists(mediainfo=mediainfo)
         if not existsinfo or not existsinfo.itemid:
@@ -3364,14 +3182,14 @@ class MediaCoverGenerator(_PluginBase):
             if not existsinfo:
                 logger.warning(f"{mediainfo.title_year} 不存在媒体库中，可能服务器还未扫描完成，建议设置合适的延迟时间")
                 return
-
+        
         # Get item details including backdrop
         iteminfo = self.mschain.iteminfo(server=existsinfo.server, item_id=existsinfo.itemid)
         # logger.info(f"获取到媒体项 {mediainfo.title_year} 详情：{iteminfo}")
         if not iteminfo:
             logger.warning(f"获取 {mediainfo.title_year} 详情失败")
             return
-
+            
         # Try to get library ID
         library_id = None
         library = {}
@@ -3383,11 +3201,11 @@ class MediaCoverGenerator(_PluginBase):
         if libraries and not library_id:
             library = next(
                 (library
-                 for library in libraries if library.get('Locations', [])
+                 for library in libraries if library.get('Locations', []) 
                  and any(iteminfo.path.startswith(path) for path in library.get('Locations', []))),
                 None
             )
-
+        
         if not library:
             logger.warning(f"找不到 {mediainfo.title_year} 所在媒体库")
             return
@@ -3414,7 +3232,7 @@ class MediaCoverGenerator(_PluginBase):
         if latest_item and str(latest_item.get("item_id")) == str(item_id):
             logger.info(f"媒体 {mediainfo.title_year} 在库中是最新记录，不更新封面图")
             return
-
+        
         # 安全地获取字体和翻译
         try:
             self.__get_fonts()
@@ -3422,8 +3240,8 @@ class MediaCoverGenerator(_PluginBase):
             logger.error(f"初始化字体或翻译时出错: {e}")
             # 继续执行，但可能会影响封面生成质量
         new_history = self.update_cover_history(
-            server=server,
-            library_id=library_id,
+            server=server, 
+            library_id=library_id, 
             item_id=item_id
         )
         # logger.info(f"最新数据： {new_history}")
@@ -3434,7 +3252,7 @@ class MediaCoverGenerator(_PluginBase):
             self._current_updating_items.remove(update_key)
             logger.info(f"媒体库 {server}：{library['Name']} 封面更新成功")
 
-
+    
     def __update_all_libraries(self):
         """
         更新所有媒体库封面
@@ -3495,7 +3313,7 @@ class MediaCoverGenerator(_PluginBase):
         tips = f"媒体库封面更新任务结束，成功 {success_count} 个，失败 {fail_count} 个"
         logger.info(tips)
         return tips
-
+                 
 
     def __update_library(self, service, library):
         library_name = library['Name']
@@ -3534,7 +3352,7 @@ class MediaCoverGenerator(_PluginBase):
             for f in os.listdir(library_dir)
             if f.lower().endswith((".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp"))
         ])
-
+        
         return images if images else None  # 或改为 return images if images else False
 
     @memory_efficient_operation
@@ -3566,7 +3384,7 @@ class MediaCoverGenerator(_PluginBase):
             base_zh_font_size = float(self._zh_font_size) if self._zh_font_size else 170
         except ValueError:
             base_zh_font_size = 170
-
+            
         try:
             base_en_font_size = float(self._en_font_size) if self._en_font_size else 75
         except ValueError:
@@ -3670,14 +3488,14 @@ class MediaCoverGenerator(_PluginBase):
             # 动态封面强制使用 320x180 分辨率以保证性能
             anim_res = '320x180'
             logger.info(f"强制动图生成分辨率为: {anim_res}")
-
+            
             # 动态封面逻辑，类似于 multi_1
             safe_library_name = self.__sanitize_filename(library_name)
             if image_path:
                 library_dir = Path(self._covers_input) / safe_library_name
             else:
                 library_dir = Path(self._covers_path) / safe_library_name
-
+            
             logger.info(f"正在准备库图片目录: {library_dir}")
             if self.prepare_library_images(library_dir, required_items=9):
                 logger.info("库图片准备完成，开始调用 create_style_animated_3")
@@ -3789,25 +3607,25 @@ class MediaCoverGenerator(_PluginBase):
                                                     image_count=animated_2_image_count,
                                                     stop_event=self._event)
         return image_data
-
+    
     def __generate_from_server(self, service, library, title):
 
         logger.info(f"媒体库 {service.name}：{library['Name']} 开始筛选媒体项")
         required_items = self.__get_required_items()
-
+        
         # 获取项目集合
         items = []
         offset = 0
         batch_size = 50  # 每次获取的项目数量
         max_attempts = 20  # 最大尝试次数，防止无限循环
-
+        
         library_type = library.get('CollectionType')
         if service.type == 'emby':
             library_id = library.get("Id")
         else:
             library_id = library.get("ItemId")
         parent_id = library_id
-
+        
         # 处理合集类型的特殊情况
         if library_type == "boxsets":
             return self.__handle_boxset_library(service, library, title)
@@ -3836,24 +3654,24 @@ class MediaCoverGenerator(_PluginBase):
             if self._event.is_set():
                 logger.info("检测到停止信号，中断媒体项获取 ...")
                 return False
-
+                
             batch_items = self.__get_items_batch(service, parent_id,
                                               offset=offset, limit=batch_size,
                                               include_types=include_types)
-
+            
             if not batch_items:
                 break  # 没有更多项目可获取
-
+                
             # 筛选有效项目（有所需图片的项目）
             valid_items = self.__filter_valid_items(batch_items)
             items.extend(valid_items)
-
+            
             # 如果已经有足够的有效项目，则停止获取
             if len(items) >= required_items:
                 break
-
+                
             offset += batch_size
-
+        
         # 使用获取到的有效项目更新封面
         if len(items) > 0:
             logger.info(f"媒体库 {service.name}：{library['Name']} 找到 {len(items)} 个有效项目")
@@ -3864,7 +3682,7 @@ class MediaCoverGenerator(_PluginBase):
         else:
             logger.warning(f"媒体库 {service.name}：{library['Name']} 无法找到有效的图片项目 (筛选类型: {include_types})")
             return False
-
+        
     def __handle_boxset_library(self, service, library, title):
 
         include_types = 'BoxSet,Movie'
@@ -3875,33 +3693,33 @@ class MediaCoverGenerator(_PluginBase):
         parent_id = library_id
         boxsets = self.__get_items_batch(service, parent_id,
                                       include_types=include_types)
-
+        
         required_items = self.__get_required_items()
         valid_items = []
-
+        
         # 首先检查BoxSet本身是否有合适的图片
         self._seen_keys = set()
 
         valid_boxsets = self.__filter_valid_items(boxsets)
         valid_items.extend(valid_boxsets)
-
+        
         # 如果BoxSet本身没有足够的图片，则获取其中的电影
         if len(valid_items) < required_items:
             for boxset in boxsets:
                 if len(valid_items) >= required_items:
                     break
-
+                    
                 # 获取此BoxSet中的电影
                 movies = self.__get_items_batch(service,
-                                             parent_id=boxset['Id'],
+                                             parent_id=boxset['Id'], 
                                              include_types=include_types)
-
+                
                 valid_movies = self.__filter_valid_items(movies)
                 valid_items.extend(valid_movies)
-
+                
                 if len(valid_items) >= required_items:
                     break
-
+        
         # 使用获取到的有效项目更新封面
         if len(valid_items) > 0:
             if self.__is_single_image_style():
@@ -3911,10 +3729,10 @@ class MediaCoverGenerator(_PluginBase):
         else:
             print(f"媒体库 {service.name}：{library['Name']} 无法找到有效的图片项目")
             return False
-
+        
     def __handle_playlist_library(self, service, library, title):
-        """
-        播放列表图片获取
+        """ 
+        播放列表图片获取 
         """
         include_types = 'Playlist,Movie,Series,Episode,Audio'
         if service.type == 'emby':
@@ -3924,33 +3742,33 @@ class MediaCoverGenerator(_PluginBase):
         parent_id = library_id
         playlists = self.__get_items_batch(service, parent_id,
                                       include_types=include_types)
-
+        
         required_items = self.__get_required_items()
         valid_items = []
-
+        
         # 首先检查 playlist 本身是否有合适的图片
         self._seen_keys = set()
 
         valid_playlists = self.__filter_valid_items(playlists)
         valid_items.extend(valid_playlists)
-
+        
         # 如果 playlist 本身没有足够的图片，则获取其中的电影
         if len(valid_items) < required_items:
             for playlist in playlists:
                 if len(valid_items) >= required_items:
                     break
-
+                    
                 # 获取此 playlist 中的电影
                 movies = self.__get_items_batch(service,
-                                             parent_id=playlist['Id'],
+                                             parent_id=playlist['Id'], 
                                              include_types=include_types)
-
+                
                 valid_movies = self.__filter_valid_items(movies)
                 valid_items.extend(valid_movies)
-
+                
                 if len(valid_items) >= required_items:
                     break
-
+        
         # 使用获取到的有效项目更新封面
         if len(valid_items) > 0:
             if self.__is_single_image_style():
@@ -3960,13 +3778,13 @@ class MediaCoverGenerator(_PluginBase):
         else:
             print(f"警告: 无法为播放列表 {service.name}：{library['Name']} 找到有效的图片项目")
             return False
-
+        
     def __get_items_batch(self, service, parent_id, offset=0, limit=20, include_types=None):
         # 调用API获取项目
         try:
             if not service:
                 return []
-
+            
             try:
                 if not self._sort_by:
                     sort_by = 'Random'
@@ -3991,11 +3809,11 @@ class MediaCoverGenerator(_PluginBase):
             except Exception as err:
                 logger.error(f"获取媒体项失败：{str(err)}")
             return []
-
+                
         except Exception as err:
             logger.error(f"Failed to get latest items: {str(err)}")
             return []
-
+        
     def __filter_valid_items(self, items):
         """筛选有效的项目（包含所需图片的项目），并按图片标签去重"""
         valid_items = []
@@ -4069,7 +3887,7 @@ class MediaCoverGenerator(_PluginBase):
             return f"img:{image_url}"
 
 
-
+    
     def __update_single_image(self, service, library, title, item):
         """更新单图封面"""
         logger.info(f"媒体库 {service.name}：{library['Name']} 从媒体项获取图片")
@@ -4077,7 +3895,7 @@ class MediaCoverGenerator(_PluginBase):
         image_url = self.__get_image_url(item)
         if not image_url:
             return False
-
+            
         image_path = self.__download_image(service, image_url, library['Name'], count=1)
         if not image_path:
             return False
@@ -4086,7 +3904,7 @@ class MediaCoverGenerator(_PluginBase):
         title_result = self.__get_title_from_config(library['Name'])
         config_bg_color = title_result[2] if len(title_result) == 3 else None
         image_data = self.__generate_image_from_path(service.name, library['Name'], title, image_path, config_bg_color)
-
+            
         if not image_data:
             return False
         if service.type == 'emby':
@@ -4095,19 +3913,19 @@ class MediaCoverGenerator(_PluginBase):
             library_id = library.get("ItemId")
         # 更新id
         self.update_cover_history(
-            server=service.name,
-            library_id=library_id,
+            server=service.name, 
+            library_id=library_id, 
             item_id=updated_item_id
         )
 
         return image_data
-
+    
     def __update_grid_image(self, service, library, title, items):
         """更新九宫格封面"""
         logger.info(f"媒体库 {service.name}：{library['Name']} 从媒体项获取图片")
 
         image_paths = []
-
+        
         updated_item_ids = []
         for i, item in enumerate(items):
             if self._event.is_set():
@@ -4119,10 +3937,10 @@ class MediaCoverGenerator(_PluginBase):
                 if image_path:
                     image_paths.append(image_path)
                     updated_item_ids.append(self.__get_item_id(item))
-
+        
         if len(image_paths) < 1:
             return False
-
+            
         # 生成九宫格图片
         # 从配置获取背景颜色
         title_result = self.__get_title_from_config(library['Name'])
@@ -4137,13 +3955,13 @@ class MediaCoverGenerator(_PluginBase):
         # 更新ids
         for item_id in reversed(updated_item_ids):
             self.update_cover_history(
-                server=service.name,
-                library_id=library_id,
+                server=service.name, 
+                library_id=library_id, 
                 item_id=item_id
             )
-
+            
         return image_data
-
+    
     def __load_title_config(self, yaml_str: str) -> dict:
         try:
             # 先处理转义换行，再处理真实换行
@@ -4267,7 +4085,7 @@ class MediaCoverGenerator(_PluginBase):
                 logger.info(f"媒体库名 '{library_name}' 以数字或字母开头，如果需要自定义标题，请在配置中使用引号包围媒体库名，例如: \"{library_name}\":")
 
         return (zh_title, en_title, bg_color)
-
+    
     def __get_server_libraries(self, service):
         try:
             if not service:
@@ -4290,7 +4108,7 @@ class MediaCoverGenerator(_PluginBase):
         except Exception as err:
             logger.error(f"获取媒体库列表失败：{str(err)}")
             return []
-
+    
     def __get_all_libraries(self, server, service):
         try:
             lib_items = []
@@ -4310,7 +4128,7 @@ class MediaCoverGenerator(_PluginBase):
         except Exception as err:
             logger.error(f"获取所有媒体库失败：{str(err)}")
             return []
-
+        
     def __get_image_url(self, item):
         """
         从媒体项信息中获取图片URL
@@ -4421,7 +4239,7 @@ class MediaCoverGenerator(_PluginBase):
                     item_id = item.get("Id")
                     tag = item.get("ImageTags").get("Primary")
                     return f'[HOST]emby/Items/{item_id}/Images/Primary?tag={tag}&api_key=[APIKEY]'
-
+            
     def __get_item_id(self, item):
         """
         从媒体项信息中获取项目ID
@@ -4577,7 +4395,7 @@ class MediaCoverGenerator(_PluginBase):
                 logger.info(f"已按历史数量限制删除旧封面: {old_file}")
         except Exception as e:
             logger.warning(f"清理历史封面失败: {e}")
-
+        
 
     def __set_library_image(self, service, library, image_base64):
         """
@@ -4590,7 +4408,7 @@ class MediaCoverGenerator(_PluginBase):
                 library_id = library.get("Id")
             else:
                 library_id = library.get("ItemId")
-
+            
             url = f'[HOST]emby/Items/{library_id}/Images/Primary?api_key=[APIKEY]'
             # 根据 base64 前几个字节简单判断格式
             content_type = "image/png"
@@ -4615,7 +4433,7 @@ class MediaCoverGenerator(_PluginBase):
                     self.__save_image_to_local(image_bytes, service.name, library['Name'], extension)
                 except Exception as save_err:
                     logger.error(f"保存发送前图片失败: {str(save_err)}")
-
+            
             res = service.instance.post_data(
                 url=url,
                 data=image_base64,
@@ -4623,7 +4441,7 @@ class MediaCoverGenerator(_PluginBase):
                     "Content-Type": content_type
                 }
             )
-
+            
             if res and res.status_code in [200, 204]:
                 return True
             else:
@@ -4701,7 +4519,7 @@ class MediaCoverGenerator(_PluginBase):
             new_history.extend(item_list)
 
         self.save_data('cover_history', new_history)
-        return [
+        return [ 
             item for item in new_history
             if str(item.get("library_id")) == str(library_id)
         ]
@@ -4774,37 +4592,37 @@ class MediaCoverGenerator(_PluginBase):
         # 如果源图片数量不足，需要重复使用
         if len(source_image_paths) < len(missing_numbers):
             logger.info(f"信息: 源图片数量({len(source_image_paths)})小于缺失数量({len(missing_numbers)})，某些图片将被重复使用。")
-
+        
         # 为每个缺失的编号选择一个源图片，尽量避免连续重复
         last_used_source = None
         for missing_num in missing_numbers:
             target_path = os.path.join(library_dir, f"{missing_num}.jpg")
-
+            
             # 如果只有一个源文件，没有选择，直接使用
             if len(source_image_paths) == 1:
                 selected_source = source_image_paths[0]
             else:
                 # 尝试选择一个与上次不同的源文件
                 available_sources = [s for s in source_image_paths if s != last_used_source]
-
+                
                 # 如果没有其他选择（可能上次用了唯一的源文件），则使用所有源
                 if not available_sources:
                     available_sources = source_image_paths
-
+                    
                 # 随机选择一个源文件
                 selected_source = random.choice(available_sources)
-
+                
             # 记录本次使用的源文件，用于下次比较
             last_used_source = selected_source
-
+            
             try:
                 if not os.path.exists(selected_source):
                     logger.info(f"错误: 源文件 {selected_source} 在尝试复制前找不到了！")
                     return False
-
+                    
                 shutil.copy(selected_source, target_path)
                 logger.info(f"信息: 已创建 {missing_num}.jpg (源自: {os.path.basename(selected_source)})")
-
+                
             except Exception as e:
                 logger.info(f"错误: 复制文件 {selected_source} 到 {target_path} 时发生错误: {e}")
                 return False
@@ -4827,7 +4645,7 @@ class MediaCoverGenerator(_PluginBase):
                 return 'path'
 
             return None
-
+        
         font_dir_path = self._font_path
         Path(font_dir_path).mkdir(parents=True, exist_ok=True)
 
@@ -4853,7 +4671,7 @@ class MediaCoverGenerator(_PluginBase):
             self._en_font_preset = "EmblemaOne"
 
         default_en_url = default_font_url.get(self._en_font_preset, "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/EmblemaOne.woff2")
-
+        
         log_prefix = "默认"
         zh_custom_type = detect_string_type(self._zh_font_custom)
         en_custom_type = detect_string_type(self._en_font_custom)
@@ -4906,7 +4724,7 @@ class MediaCoverGenerator(_PluginBase):
             extension = self.get_file_extension_from_url(url, fallback_ext=fallback_ext)
             downloaded_font_file_path = Path(font_dir_path) / f"{download_base}{extension}"
             hash_file_path = Path(font_dir_path) / hash_filename
-
+            
             current_font_path = None
             using_local_font = False
             if local_path_cfg:
@@ -4927,7 +4745,7 @@ class MediaCoverGenerator(_PluginBase):
                             url_has_changed = False
                     except Exception as e:
                         logger.warning(f"读取哈希文件失败 {hash_file_path}: {e}。将重新下载。")
-
+                
                 font_file_is_valid = validate_font_file(downloaded_font_file_path)
 
                 if url_has_changed or not font_file_is_valid:
@@ -4955,7 +4773,7 @@ class MediaCoverGenerator(_PluginBase):
                 else:
                     logger.info(f"{log_prefix}{lang}字体: 使用已下载/缓存的有效字体 {downloaded_font_file_path}")
                     current_font_path = downloaded_font_file_path
-
+            
             # 安全设置字体路径
             if current_font_path and current_font_path.exists():
                 setattr(self, final_attr, current_font_path)
@@ -5070,7 +4888,7 @@ class MediaCoverGenerator(_PluginBase):
             except OSError as unlink_error:
                 logger.error(f"无法删除现有字体文件 {font_path}: {unlink_error}")
                 return False
-
+        
         # 使用优化的网络助手进行下载
         network_helper = NetworkHelper(timeout=timeout, max_retries=retries)
 
@@ -5119,7 +4937,7 @@ class MediaCoverGenerator(_PluginBase):
                         temp_path.unlink()
                     except OSError:
                         pass
-
+        
         # 所有策略都失败
         logger.error(f"所有下载策略均失败，无法下载字体，建议手动下载字体: {font_url}")
         # 确保目标路径没有损坏的文件
@@ -5129,7 +4947,7 @@ class MediaCoverGenerator(_PluginBase):
                 logger.info(f"已删除部分下载的文件: {font_path}")
             except OSError as unlink_error:
                 logger.error(f"无法删除部分下载的文件 {font_path}: {unlink_error}")
-
+        
         return False
 
     def get_file_extension_from_url(self, url: str, fallback_ext: str = ".ttf") -> str:
@@ -5149,14 +4967,14 @@ class MediaCoverGenerator(_PluginBase):
         except Exception as e:
             logger.error(f"解析URL时出错 '{url}': {e}. 使用备用扩展名: {fallback_ext}")
             return fallback_ext
-
+        
     def _validate_font_file(self, font_path: Path):
         if not font_path or not font_path.exists() or not font_path.is_file():
             return False
-
+        
         try:
             with open(font_path, "rb") as f:
-                header = f.read(4)
+                header = f.read(4) 
                 if (header.startswith(b'\x00\x01\x00\x00') or
                     header.startswith(b'OTTO') or
                     header.startswith(b'true') or
