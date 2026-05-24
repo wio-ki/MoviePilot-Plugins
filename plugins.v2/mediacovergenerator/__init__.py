@@ -54,7 +54,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/emby.png"
     # 插件版本
-    plugin_version = "0.10.1"
+    plugin_version = "0.10.2"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -950,10 +950,10 @@ class MediaCoverGenerator(_PluginBase):
     @staticmethod
     def __ui_selected_style() -> str:
         return (
-            "background: linear-gradient(135deg, #D4A574 0%, #1A7F7E 52%, #8B6F47 100%); "
-            "color: #FFFFFF; border: 1px solid rgba(212,165,116,.58); "
-            "box-shadow: inset 0 -3px 0 rgba(26,26,26,.18), 0 10px 24px rgba(13,92,92,.22); "
-            "border-radius: 14px; font-weight: 800; text-shadow: 0 1px 2px rgba(0,0,0,0.3);"
+            "background: linear-gradient(135deg, #F5F5DC 0%, #8A9A7B 48%, #E8D7B8 100%); "
+            "color: #2D2D2D; border: 1px solid rgba(138,154,123,.65); "
+            "box-shadow: inset 0 2px 8px rgba(138,154,123,.35), 0 4px 12px rgba(138,154,123,.28); "
+            "border-radius: 14px; font-weight: 700; text-shadow: 0 1px 1px rgba(255,255,255,0.6);"
         )
 
     @staticmethod
