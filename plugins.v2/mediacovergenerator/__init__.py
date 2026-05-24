@@ -54,7 +54,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/emby.png"
     # 插件版本
-    plugin_version = "0.10.3"
+    plugin_version = "0.10.4"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -954,6 +954,17 @@ class MediaCoverGenerator(_PluginBase):
             "color: #2D2D2D; border: 1px solid rgba(138,154,123,.65); "
             "box-shadow: inset 0 2px 8px rgba(138,154,123,.35), 0 4px 12px rgba(138,154,123,.28); "
             "border-radius: 14px; font-weight: 700; text-shadow: 0 1px 1px rgba(255,255,255,0.6);"
+        )
+
+    @staticmethod
+    def __ui_button_style() -> str:
+        return (
+            "background: rgba(255,255,255,0.8); "
+            "color: #7A6F5D; "
+            "border: 1px solid #E2DCD0; "
+            "border-radius: 8px; "
+            "font-weight: 500; "
+            "transition: all .25s ease;"
         )
 
     @staticmethod
@@ -2352,11 +2363,18 @@ class MediaCoverGenerator(_PluginBase):
                 "content": [
                     {
                         "component": "VTabs",
-                        "props": {"model": "tab", "grow": True, "color": "#D4A574", "class": "px-2 pt-2", "style": "background:rgba(248,239,226,.78);"},
+                        "props": {
+                            "model": "tab",
+                            "grow": True,
+                            "color": "#8A9A7B",
+                            "class": "px-2 pt-2",
+                            "style": "background:rgba(248,239,226,.78);",
+                            "selectedClass": "v-tab--selected"
+                        },
                         "content": [
                             {
                                 "component": "VTab",
-                                "props": {"value": "style-tab", "style": self.__ui_selected_style()},
+                                "props": {"value": "style-tab"},
                                 "content": [
                                     {
                                         "component": "VIcon",
@@ -2371,7 +2389,7 @@ class MediaCoverGenerator(_PluginBase):
                             },
                             {
                                 "component": "VTab",
-                                "props": {"value": "title-tab", "style": "color:#2D2D2D;border-radius:14px;border:1px solid rgba(212,165,116,.18);"},
+                                "props": {"value": "title-tab"},
                                 "content": [
                                     {
                                         "component": "VIcon",
@@ -2386,7 +2404,7 @@ class MediaCoverGenerator(_PluginBase):
                             },
                             {
                                 "component": "VTab",
-                                "props": {"value": "more-tab", "style": "color:#2D2D2D;border-radius:14px;border:1px solid rgba(212,165,116,.18);"},
+                                "props": {"value": "more-tab"},
                                 "content": [
                                     {
                                         "component": "VIcon",
@@ -2644,13 +2662,13 @@ class MediaCoverGenerator(_PluginBase):
                             },
                             {
                                 "component": "VTab",
-                                "props": {"value": "history-tab", "style": self.__ui_selected_style_blue() if page_tab == "history-tab" else "color:#2D2D2D;border-radius:14px;border:1px solid rgba(168,197,209,.18);"},
+                                "props": {"value": "history-tab", "style": self.__ui_selected_style() if page_tab == "history-tab" else "color:#2D2D2D;border-radius:14px;border:1px solid rgba(212,165,116,.18);"},
                                 "text": "历史归档",
                                 "events": {"click": {"api": "plugin/MediaCoverGenerator/set_page_tab_history", "method": "post"}},
                             },
                             {
                                 "component": "VTab",
-                                "props": {"value": "clean-tab", "style": self.__ui_selected_style_amber() if page_tab == "clean-tab" else "color:#2D2D2D;border-radius:14px;border:1px solid rgba(212,165,116,.18);"},
+                                "props": {"value": "clean-tab", "style": self.__ui_selected_style() if page_tab == "clean-tab" else "color:#2D2D2D;border-radius:14px;border:1px solid rgba(212,165,116,.18);"},
                                 "text": "缓存整理",
                                 "events": {"click": {"api": "plugin/MediaCoverGenerator/set_page_tab_clean", "method": "post"}},
                             },
@@ -2694,9 +2712,9 @@ class MediaCoverGenerator(_PluginBase):
                                                                 "component": "VBtn",
                                                                 "props": {
                                                                     "variant": "flat",
-                                                                    "color": "#D4A574",
                                                                     "class": "text-none mr-2 mb-2",
                                                                     "prepend-icon": "mdi-swap-horizontal",
+                                                                    "style": self.__ui_button_style(),
                                                                 },
                                                     "text": f"切换到{'动态' if style_variant == 'static' else '静态'}",
                                                     "events": {"click": {"api": "plugin/MediaCoverGenerator/toggle_style_variant", "method": "post"}},
@@ -2705,9 +2723,9 @@ class MediaCoverGenerator(_PluginBase):
                                                                 "component": "VBtn",
                                                                 "props": {
                                                                     "variant": "flat",
-                                                                    "color": "#D4A574",
                                                                     "class": "text-none mb-2",
                                                                     "prepend-icon": "mdi-play-circle-outline",
+                                                                    "style": self.__ui_button_style(),
                                                                 },
                                                     "text": "立即生成当前风格",
                                                     "events": {"click": {"api": "plugin/MediaCoverGenerator/generate_now", "method": "post"}},
@@ -2749,9 +2767,9 @@ class MediaCoverGenerator(_PluginBase):
                                                                 "component": "VBtn",
                                                                 "props": {
                                                                     "variant": "flat",
-                                                                    "color": "#D4A574",
                                                                     "class": "text-none mr-2 mb-2",
                                                                     "prepend-icon": "mdi-swap-horizontal",
+                                                                    "style": self.__ui_button_style(),
                                                                 },
                                                     "text": f"切换到{'动态' if style_variant == 'static' else '静态'}",
                                                     "events": {"click": {"api": "plugin/MediaCoverGenerator/toggle_style_variant", "method": "post"}},
@@ -2760,9 +2778,9 @@ class MediaCoverGenerator(_PluginBase):
                                                                 "component": "VBtn",
                                                                 "props": {
                                                                     "variant": "flat",
-                                                                    "color": "#D4A574",
                                                                     "class": "text-none mb-2",
                                                                     "prepend-icon": "mdi-play-circle-outline",
+                                                                    "style": self.__ui_button_style(),
                                                                 },
                                                     "text": "立即生成当前风格",
                                                     "events": {"click": {"api": "plugin/MediaCoverGenerator/generate_now", "method": "post"}},
