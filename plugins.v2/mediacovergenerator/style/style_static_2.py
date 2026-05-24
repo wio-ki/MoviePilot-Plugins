@@ -1,10 +1,8 @@
 import base64
-import os
 import random
 import colorsys
 from collections import Counter
 from io import BytesIO
-from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
@@ -97,25 +95,6 @@ def add_film_grain(image, intensity=0.05):
     img_array = np.clip(img_array, 0, 255).astype(np.uint8)
     
     return Image.fromarray(img_array)
-
-
-def crop_to_16_9(img):
-    """直接将图片裁剪为16:9的比例"""
-    target_ratio = 16 / 9
-    current_ratio = img.width / img.height
-    
-    if current_ratio > target_ratio:
-        # 图片太宽，裁剪两侧
-        new_width = int(img.height * target_ratio)
-        left = (img.width - new_width) // 2
-        img = img.crop((left, 0, left + new_width, img.height))
-    else:
-        # 图片太高，裁剪上下
-        new_height = int(img.width / target_ratio)
-        top = (img.height - new_height) // 2
-        img = img.crop((0, top, img.width, top + new_height))
-    
-    return img
 
 
 def align_image_right(img, canvas_size):

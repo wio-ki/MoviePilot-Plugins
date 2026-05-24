@@ -28,16 +28,6 @@ def _ease_in_out_sine(t):
     return 0.5 * (1.0 - math.cos(math.pi * t))
 
 
-def _ease_out_back(t, overshoot=0.35):
-    t = _clamp(t, 0.0, 1.0)
-    u = t - 1.0
-    return 1.0 + (overshoot + 1.0) * (u ** 3) + overshoot * (u ** 2)
-
-
-def _lerp(a, b, t):
-    return a + (b - a) * t
-
-
 def _blend_rgba(a, b, t):
     t = _clamp(t, 0.0, 1.0)
     if t <= 0.0:
@@ -87,24 +77,6 @@ def _image_signature(image_path):
             return hashlib.md5(sig_img.tobytes()).hexdigest()
     except Exception:
         return f"path:{Path(image_path).name.lower()}"
-
-
-def _animate_zoom(base_img, phase, duration_seconds, amp=0.018):
-    duration_seconds = max(1.0, float(duration_seconds))
-    duration_scale = _clamp(duration_seconds / 8.0, 0.5, 1.0)
-    effective_amp = _clamp(amp * duration_scale, 0.006, 0.03)
-
-    theta = 2.0 * math.pi * _clamp(phase, 0.0, 1.0)
-    z = 0.5 - 0.5 * math.cos(theta)  # 0 -> 1 -> 0
-    zoom = 1.0 + effective_amp * z
-
-    w, h = base_img.size
-    sw = max(w + 2, int(round(w * zoom)))
-    sh = max(h + 2, int(round(h * zoom)))
-    scaled = base_img.resize((sw, sh), Image.Resampling.BICUBIC)
-    left = (sw - w) // 2
-    top = (sh - h) // 2
-    return scaled.crop((left, top, left + w, top + h))
 
 
 def _build_text_layer(canvas_size, title, font_path, font_size, font_offset, bg_color):

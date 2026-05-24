@@ -1,37 +1,21 @@
 import base64
 import random
 import colorsys
-from collections import Counter
 from io import BytesIO
-from pathlib import Path
-import math
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 from app.log import logger
-from app.plugins.mediacovergenerator.utils.image_manager import (
-    ResolutionConfig, ImageResourceManager, managed_image, managed_images
-)
+from app.plugins.mediacovergenerator.utils.image_manager import ResolutionConfig, managed_image
 from app.plugins.mediacovergenerator.utils.performance_helper import (
-    OptimizedImageProcessor, PerformanceMonitor, memory_efficient_operation
+    OptimizedImageProcessor, memory_efficient_operation
 )
 from app.plugins.mediacovergenerator.utils.color_helper import ColorHelper
 
 
 # ========== 配置 ==========
 # canvas_size = (1920, 1080)  # 移除固定尺寸，改为动态配置
-
-def is_not_black_white_gray_near(color, threshold=20):
-    """判断颜色既不是黑、白、灰，也不是接近黑、白。"""
-    r, g, b = color
-    if (r < threshold and g < threshold and b < threshold) or \
-       (r > 255 - threshold and g > 255 - threshold and b > 255 - threshold):
-        return False
-    gray_diff_threshold = 10
-    if abs(r - g) < gray_diff_threshold and abs(g - b) < gray_diff_threshold and abs(r - b) < gray_diff_threshold:
-        return False
-    return True
 
 def rgb_to_hsv(color):
     """将 RGB 颜色转换为 HSV 颜色。"""
@@ -43,33 +27,6 @@ def hsv_to_rgb(h, s, v):
     r, g, b = colorsys.hsv_to_rgb(h, s, v)
     return (int(r * 255), int(g * 255), int(b * 255))
 
-def adjust_color_macaron(color):
-    """
-    调整颜色使其更接近马卡龙风格：
-    - 如果颜色太暗，增加亮度
-    - 如果颜色太亮，降低亮度
-    - 调整饱和度到适当范围
-    """
-    h, s, v = rgb_to_hsv(color)
-    
-    # 马卡龙风格的理想范围
-    target_saturation_range = (0.3, 0.7)  # 饱和度范围
-    target_value_range = (0.6, 0.85)      # 亮度范围
-    
-    # 调整饱和度
-    if s < target_saturation_range[0]:
-        s = target_saturation_range[0]
-    elif s > target_saturation_range[1]:
-        s = target_saturation_range[1]
-    
-    # 调整亮度
-    if v < target_value_range[0]:
-        v = target_value_range[0]  # 太暗，加亮
-    elif v > target_value_range[1]:
-        v = target_value_range[1]  # 太亮，加暗
-    
-    return hsv_to_rgb(h, s, v)
-
 def color_distance(color1, color2):
     """计算两个颜色在HSV空间中的距离"""
     h1, s1, v1 = rgb_to_hsv(color1)
@@ -80,57 +37,6 @@ def color_distance(color1, color2):
     
     # 综合距离，给予色调更高的权重
     return h_dist * 5 + abs(s1 - s2) + abs(v1 - v2)
-
-def find_dominant_macaron_colors(image, num_colors=5):
-    """
-    从图像中提取主要颜色并调整为马卡龙风格：
-    1. 过滤掉黑白灰颜色
-    2. 从剩余颜色中找到出现频率最高的几种
-    3. 调整这些颜色使其接近马卡龙风格
-    4. 确保提取的颜色之间有足够的差异
-    """
-    # 缩小图片以提高效率
-    img = image.copy()
-    img.thumbnail((150, 150))
-    img = img.convert('RGB')
-    pixels = list(img.getdata())
-    
-    # 过滤掉黑白灰颜色
-    filtered_pixels = [p for p in pixels if is_not_black_white_gray_near(p)]
-    if not filtered_pixels:
-        return []
-    
-    # 统计颜色出现频率
-    color_counter = Counter(filtered_pixels)
-    candidate_colors = color_counter.most_common(num_colors * 5)  # 提取更多候选颜色
-    
-    macaron_colors = []
-    min_color_distance = 0.15  # 颜色差异阈值
-    
-    for color, _ in candidate_colors:
-        # 调整为马卡龙风格
-        adjusted_color = adjust_color_macaron(color)
-        
-        # 检查与已选颜色的差异
-        if not any(color_distance(adjusted_color, existing) < min_color_distance for existing in macaron_colors):
-            macaron_colors.append(adjusted_color)
-            if len(macaron_colors) >= num_colors:
-                break
-    
-    return macaron_colors
-
-def adjust_background_color(color, darken_factor=0.85):
-    """
-    调整背景色，使其适合作为背景：
-    - 降低亮度以减少对比度
-    - 略微降低饱和度
-    """
-    h, s, v = rgb_to_hsv(color)
-    # 降低亮度
-    v = v * darken_factor
-    # 略微降低饱和度
-    s = s * 0.9
-    return hsv_to_rgb(h, s, v)
 
 def darken_color(color, factor=0.7):
     """
@@ -204,41 +110,6 @@ def add_rounded_corners(img, radius=30):
     return result
 
 
-
-def add_card_shadow(img, offset=(10, 10), radius=10, opacity=0.5):
-    """给卡片添加更真实的阴影效果"""
-    # 获取原图尺寸
-    width, height = img.size
-    
-    # 创建一个更大的画布以容纳阴影和旋转后的图像
-    # 提供足够的边距，确保旋转后阴影不会被截断
-    padding = max(width, height) // 2
-    shadow = Image.new("RGBA", (width + padding * 2, height + padding * 2), (0, 0, 0, 0))
-    
-    # 在原图轮廓绘制黑色阴影，放置在中心偏移的位置
-    orig_mask = Image.new("L", (width, height), 255)
-    rounded_mask = add_rounded_corners(orig_mask, radius).convert("L")
-    
-    # 阴影位置计算，从中心位置开始偏移
-    shadow_x = padding + offset[0]
-    shadow_y = padding + offset[1]
-    shadow.paste((0, 0, 0, int(255 * opacity)), 
-                (shadow_x, shadow_y, width + shadow_x, height + shadow_y), 
-                rounded_mask)
-    
-    # 模糊阴影以获得更自然的效果
-    shadow = shadow.filter(ImageFilter.GaussianBlur(radius))
-    
-    # 创建结果图像
-    result = Image.new("RGBA", shadow.size, (0, 0, 0, 0))
-    
-    # 先放置阴影
-    result.paste(shadow, (0, 0), shadow)
-    
-    # 放置原图到中心位置
-    result.paste(img, (padding, padding), img if img.mode == "RGBA" else None)
-    
-    return result
 
 def add_shadow_and_rotate(canvas, img, angle, offset=(10, 10), radius=10, opacity=0.5, center_pos=None):
     """

@@ -67,43 +67,6 @@ def add_soft_rim(img, width=2, color=(255, 246, 236), alpha=110):
     return Image.alpha_composite(rgba, rim_layer)
 
 
-def rotate_around_pivot(
-    img,
-    angle,
-    pivot,
-    resample=Image.Resampling.BICUBIC,
-    return_pivot=False,
-):
-    """
-    img: PIL Image (RGBA)
-    angle: 旋转角度（与 PIL rotate 一致，正值逆时针，负值顺时针）
-    pivot: 旋转轴点坐标 (x, y)，相对于输入 img
-    return_pivot: 是否返回旋转后画布中的轴点坐标
-    """
-    w, h = img.size
-    px, py = pivot
-
-    pad = int(math.hypot(w, h))
-    canvas = Image.new("RGBA", (w + pad * 2, h + pad * 2), (0, 0, 0, 0))
-    canvas.paste(img, (pad, pad))
-
-    pivot_on_canvas = (pad + px, pad + py)
-    rotated = canvas.rotate(angle, resample=resample, center=pivot_on_canvas)
-
-    if return_pivot:
-        return rotated, pivot_on_canvas
-    return rotated
-
-
-def rotate_centered(img, angle, resample=Image.Resampling.BICUBIC):
-    """围绕图片中心旋转并返回与原尺寸一致的结果，避免锚点跳变。"""
-    w, h = img.size
-    rotated = img.rotate(angle, resample=resample, expand=True)
-    left = max(0, (rotated.width - w) // 2)
-    top = max(0, (rotated.height - h) // 2)
-    return rotated.crop((left, top, left + w, top + h))
-
-
 def rotate_on_stable_canvas(img, angle, canvas_size, resample=Image.Resampling.BICUBIC):
     """
     在固定尺寸画布上围绕正中心旋转。
@@ -148,12 +111,6 @@ def get_card_with_shadow(img, shadow_offset, shadow_radius, opacity):
     return canvas
 
 
-def _ease_out_back(t, overshoot=0.55):
-    t = max(0.0, min(1.0, t))
-    u = t - 1.0
-    return 1.0 + (overshoot + 1.0) * (u ** 3) + overshoot * (u ** 2)
-
-
 def _clamp(value, minimum, maximum):
     return max(minimum, min(maximum, value))
 
@@ -161,30 +118,6 @@ def _clamp(value, minimum, maximum):
 def _ease_in_out_sine(t):
     t = _clamp(t, 0.0, 1.0)
     return 0.5 * (1.0 - math.cos(math.pi * t))
-
-
-def _ease_out_quad(t):
-    t = _clamp(t, 0.0, 1.0)
-    return 1.0 - (1.0 - t) ** 2
-
-
-def _ease_in_quad(t):
-    t = _clamp(t, 0.0, 1.0)
-    return t ** 2
-
-
-def _round_half_up(n, decimals=0):
-    """
-    实现确定性的“四舍五入”（远离 0 的舍入），
-    解决 Python 默认 round() 在 X.5 时舍向偶数（Banker's rounding）导致的抖动。
-    """
-    multiplier = 10 ** decimals
-    return math.floor(n * multiplier + 0.5) / multiplier
-
-
-def _smoothstep01(t):
-    t = _clamp(t, 0.0, 1.0)
-    return t * t * (3.0 - 2.0 * t)
 
 
 def _alpha_scaled(img, factor):

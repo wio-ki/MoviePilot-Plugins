@@ -656,41 +656,6 @@ def create_blur_background(image_path, template_width, template_height, backgrou
 
     return final_bg_img
 
-def add_film_grain(image, intensity=0.05):
-    """
-    为图像添加胶片颗粒效果
-    
-    参数:
-        image (PIL.Image): 输入图像
-        intensity (float): 颗粒强度，范围从0到1
-    
-    返回:
-        PIL.Image: 添加颗粒效果后的图像
-    """
-    # 获取图像模式
-    mode = image.mode
-    
-    # 转换为numpy数组
-    img_array = np.array(image, dtype=np.float32)
-    
-    # 确定通道数
-    if mode == 'RGBA':
-        # 只对RGB通道添加噪声
-        channels = img_array.shape[2]
-        for i in range(min(3, channels)):  # 只处理RGB通道
-            channel = img_array[:, :, i]
-            noise = np.random.normal(0, 255 * intensity, channel.shape)
-            img_array[:, :, i] = np.clip(channel + noise, 0, 255)
-    else:
-        # RGB或其他模式
-        noise = np.random.normal(0, 255 * intensity, img_array.shape)
-        img_array = np.clip(img_array + noise, 0, 255)
-    
-    # 转换回PIL图像
-    grainy_image = Image.fromarray(img_array.astype(np.uint8), mode)
-    
-    return grainy_image
-
 def is_not_black_white_gray_near(color, threshold=20):
     """判断颜色既不是黑、白、灰，也不是接近黑、白。"""
     r, g, b = color

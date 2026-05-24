@@ -1,6 +1,5 @@
 import base64
 from collections import Counter
-import io
 from pathlib import Path
 from PIL import Image, ImageFilter, ImageDraw, ImageFont, ImageOps
 import numpy as np
@@ -11,7 +10,6 @@ import colorsys
 from app.log import logger
 import subprocess
 import tempfile
-import shutil
 from app.plugins.mediacovergenerator.utils.color_helper import ColorHelper
 
 """ 
@@ -240,48 +238,6 @@ def draw_multiline_text_on_image(
         draw.text((x, current_y), line, font=font, fill=fill_color)
     img_copy = Image.alpha_composite(img_copy, text_layer)
     return img_copy, len(lines)
-
-
-def get_random_color(image_path):
-    """
-    获取图片随机位置的颜色
-
-    参数:
-        image_path: 图片文件路径
-
-    返回:
-        随机点颜色，RGBA格式
-    """
-    try:
-        img = Image.open(image_path)
-        # 获取图片尺寸
-        width, height = img.size
-
-        # 在图片范围内随机选择一个点
-        # 避免边缘区域，缩小范围到图片的20%-80%区域
-        random_x = random.randint(int(width * 0.5), int(width * 0.8))
-        random_y = random.randint(int(height * 0.5), int(height * 0.8))
-
-        # 获取随机点的颜色
-        if img.mode == "RGBA":
-            r, g, b, a = img.getpixel((random_x, random_y))
-            return (r, g, b, a)
-        elif img.mode == "RGB":
-            r, g, b = img.getpixel((random_x, random_y))
-            return (r + 100, g + 50, b, 255)
-        else:
-            img = img.convert("RGBA")
-            r, g, b, a = img.getpixel((random_x, random_y))
-            return (r, g, b, a)
-    except Exception as e:
-        # logger.error(f"获取图片颜色时出错: {e}")
-        # 返回随机颜色作为备选
-        return (
-            random.randint(50, 200),
-            random.randint(50, 200),
-            random.randint(50, 200),
-            255,
-        )
 
 
 def draw_color_block(image, position, size, color):
@@ -640,41 +596,6 @@ def create_blur_background(image_path, template_width, template_height, backgrou
     final_bg_img = add_film_grain(blended_bg_img, intensity=0.03)
 
     return final_bg_img
-
-def add_film_grain(image, intensity=0.05):
-    """
-    为图像添加胶片颗粒效果
-    
-    参数:
-        image (PIL.Image): 输入图像
-        intensity (float): 颗粒强度，范围从0到1
-    
-    返回:
-        PIL.Image: 添加颗粒效果后的图像
-    """
-    # 获取图像模式
-    mode = image.mode
-    
-    # 转换为numpy数组
-    img_array = np.array(image, dtype=np.float32)
-    
-    # 确定通道数
-    if mode == 'RGBA':
-        # 只对RGB通道添加噪声
-        channels = img_array.shape[2]
-        for i in range(min(3, channels)):  # 只处理RGB通道
-            channel = img_array[:, :, i]
-            noise = np.random.normal(0, 255 * intensity, channel.shape)
-            img_array[:, :, i] = np.clip(channel + noise, 0, 255)
-    else:
-        # RGB或其他模式
-        noise = np.random.normal(0, 255 * intensity, img_array.shape)
-        img_array = np.clip(img_array + noise, 0, 255)
-    
-    # 转换回PIL图像
-    grainy_image = Image.fromarray(img_array.astype(np.uint8), mode)
-    
-    return grainy_image
 
 def is_not_black_white_gray_near(color, threshold=20):
     """判断颜色既不是黑、白、灰，也不是接近黑、白。"""
