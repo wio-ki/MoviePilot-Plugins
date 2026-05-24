@@ -79,7 +79,7 @@ def create_style_static_4(
         ratio = float(color_ratio)
         if ratio < 0 or ratio > 1:
             ratio = 0.8
-
+            
         img_gray = src.convert('L')
         lum = ImageStat.Stat(img_gray).mean[0]
         if lum > 180:

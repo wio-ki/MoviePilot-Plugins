@@ -578,10 +578,10 @@ def create_style_animated_1(
                 # 1. 堆叠层同步移动 (B 和 C 同时转动)
                 ang_b = s2_ang + (s1_ang - s2_ang) * it_stack
                 pos_b = (p2[0] + (p1[0] - p2[0]) * it_stack, p2[1] + (p1[1] - p2[1]) * it_stack)
-
+                
                 ang_c = s3_ang + (s2_ang - s3_ang) * it_stack
                 pos_c = (p3[0] + (p2[0] - p3[0]) * it_stack, p3[1] + (p2[1] - p3[1]) * it_stack)
-
+                
                 # D: 新底层卡片渐变出现
                 alpha_d = _ease_in_out_sine(local)
                 ang_d = s3_ang
@@ -668,10 +668,10 @@ def create_style_animated_1(
                         frame.paste(blur_rot, (blur_x, blur_y), blur_rot)
 
                     rotated = rotate_on_stable_canvas(card_img, ang, stable_canvas_size)
-
+                    
                     draw_x = int(round(center_pos[0] + offsets[0])) - center_offset
                     draw_y = int(round(center_pos[1] + offsets[1])) - center_offset
-
+                    
                     frame.paste(rotated, (draw_x, draw_y), rotated)
 
                 frame = Image.alpha_composite(frame, text_layer)
@@ -789,7 +789,7 @@ def create_style_animated_1(
                             err_data = ffmpeg_proc.stderr.read() if ffmpeg_proc.stderr else b""
                             error_msg = err_data.decode("utf-8", "ignore") if err_data else "无详细错误信息"
                             logger.error(f"ffmpeg 执行失败 (状态码 {ret})")
-
+                            
                             raise subprocess.CalledProcessError(ret, ffmpeg_cmd, stderr=err_data)
                         break
 
