@@ -3,11 +3,12 @@
         "name": "Emby媒体库封面生成",
         "description": "生成媒体库动态/静态封面，支持 Emby/Jellyfin",
         "labels": "Emby,动态封面,媒体库",
-        "version": "0.10.4",
+        "version": "0.10.5",
         "icon": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/emby.png",
         "author": "Kioo",
         "level": 1,
         "history": {
+            "v0.10.5": "补齐实时预览入口与 WebP 动图输出：详情页显示当前风格预览，输出格式可选择 WEBP，四个动态风格导出逻辑一致",
             "v0.10.4": "优化按钮样式：纯白背景+暖灰色调+细边框；统一详情页三个 Tab 为鼠尾草绿渐变；修复配置页 Tab 选中态显示",
             "v0.10.3": "修复 Tab 显示逻辑：配置页未选中 Tab 不再显示渐变色；详情页三个 Tab 采用不同色调（鼠尾草绿/天蓝/琥珀金）便于区分",
             "v0.10.2": "优化 Tab 选中样式：采用米白、鼠尾草绿、微淡金高级渐变，增强选中态视觉对比度",
