@@ -54,7 +54,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/emby.png"
     # 插件版本
-    plugin_version = "0.10.0"
+    plugin_version = "0.10.1"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -1164,8 +1164,8 @@ class MediaCoverGenerator(_PluginBase):
                                 'props': {
                                     'modelvalue': 'title_config',
                                     'lang': 'yaml',
-                                    'theme': 'monokai',
-                                    'style': 'height: 30rem; border-radius: 0; --v-theme-primary: 212,165,116;',
+                                    'theme': 'tomorrow',
+                                    'style': 'height: 30rem; border-radius: 0; font-size: 15px; --v-theme-primary: 212,165,116; background: linear-gradient(135deg, rgba(255,250,240,.95), rgba(248,239,226,.92)); border: 1px solid rgba(212,165,116,.28);',
                                     'placeholder': '''媒体库名称:
   - 主标题
   - 副标题
@@ -2353,7 +2353,7 @@ class MediaCoverGenerator(_PluginBase):
                             },
                             {
                                 "component": "VTab",
-                                "props": {"value": "title-tab", "style": "color:#2D2D2D;border-radius:14px;border:1px solid rgba(212,165,116,.18);"},
+                                "props": {"value": "title-tab", "style": self.__ui_selected_style()},
                                 "content": [
                                     {
                                         "component": "VIcon",
@@ -2368,7 +2368,7 @@ class MediaCoverGenerator(_PluginBase):
                             },
                             {
                                 "component": "VTab",
-                                "props": {"value": "more-tab", "style": "color:#2D2D2D;border-radius:14px;border:1px solid rgba(212,165,116,.18);"},
+                                "props": {"value": "more-tab", "style": self.__ui_selected_style()},
                                 "content": [
                                     {
                                         "component": "VIcon",
