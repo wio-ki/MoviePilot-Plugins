@@ -959,13 +959,39 @@ class MediaCoverGenerator(_PluginBase):
     @staticmethod
     def __ui_button_style() -> str:
         return (
-            "background: rgba(255,255,255,0.8); "
-            "color: #7A6F5D; "
-            "border: 1px solid #E2DCD0; "
+            "background: rgba(255,255,255,0.8) !important; "
+            "color: #7A6F5D !important; "
+            "border: 1px solid #E2DCD0 !important; "
             "border-radius: 8px; "
             "font-weight: 500; "
+            "box-shadow: 0 6px 16px rgba(122,111,93,.08) !important; "
             "transition: all .25s ease;"
         )
+
+    @staticmethod
+    def __ui_theme_styles() -> Dict[str, str]:
+        return {
+            "component": "style",
+            "text": """
+.mcg-soft-action-btn:hover {
+    background: #FFF3C4 !important;
+    border-color: #D8C88C !important;
+    color: #6F644F !important;
+    box-shadow: 0 8px 20px rgba(184,153,91,.16) !important;
+    transform: translateY(-1px);
+}
+.mcg-tab-selected,
+.mcg-config-tabs .v-tab--selected {
+    background: linear-gradient(135deg, #F5F5DC 0%, #8A9A7B 48%, #E8D7B8 100%) !important;
+    color: #2D2D2D !important;
+    border: 1px solid rgba(138,154,123,.65) !important;
+    box-shadow: inset 0 2px 8px rgba(138,154,123,.35), 0 4px 12px rgba(138,154,123,.22) !important;
+    border-radius: 14px !important;
+    font-weight: 700 !important;
+    text-shadow: 0 1px 1px rgba(255,255,255,.6);
+}
+""",
+        }
 
     @staticmethod
     def __ui_selected_style_blue() -> str:
@@ -1044,6 +1070,9 @@ class MediaCoverGenerator(_PluginBase):
                 )
                 props["style"] = f"{style}; {alert_style}" if style else alert_style
             if component == "VBtn" and props.get("variant") == "flat":
+                if "mcg-soft-action-btn" in props.get("class", ""):
+                    props.setdefault("elevation", 0)
+                    return node
                 style = props.get("style", "")
                 props.setdefault("elevation", 4)
                 btn_style = "background: linear-gradient(135deg, #D4A574 0%, #8B6F47 58%, #0D5C5C 100%); color: #FFFFF0; box-shadow: 0 8px 24px rgba(212,165,116,.32); transition: all .3s cubic-bezier(.4,0,.2,1); position: relative; overflow: hidden; min-width: auto; padding: 8px 20px;"
@@ -1150,7 +1179,7 @@ class MediaCoverGenerator(_PluginBase):
             {
                 "component": "div",
                 "props": {"class": "pa-2", "style": MediaCoverGenerator.__ui_style()},
-                "content": MediaCoverGenerator.__ui_tone_component([MediaCoverGenerator.__ui_hero(title, subtitle, icon), *content]),
+                "content": MediaCoverGenerator.__ui_tone_component([MediaCoverGenerator.__ui_theme_styles(), MediaCoverGenerator.__ui_hero(title, subtitle, icon), *content]),
             }
         ]
 
@@ -2367,9 +2396,9 @@ class MediaCoverGenerator(_PluginBase):
                             "model": "tab",
                             "grow": True,
                             "color": "#8A9A7B",
-                            "class": "px-2 pt-2",
+                            "class": "px-2 pt-2 mcg-config-tabs",
                             "style": "background:rgba(248,239,226,.78);",
-                            "selectedClass": "v-tab--selected"
+                            "selectedClass": "mcg-tab-selected"
                         },
                         "content": [
                             {
@@ -2712,7 +2741,7 @@ class MediaCoverGenerator(_PluginBase):
                                                                 "component": "VBtn",
                                                                 "props": {
                                                                     "variant": "flat",
-                                                                    "class": "text-none mr-2 mb-2",
+                                                                    "class": "text-none mr-2 mb-2 mcg-soft-action-btn",
                                                                     "prepend-icon": "mdi-swap-horizontal",
                                                                     "style": self.__ui_button_style(),
                                                                 },
@@ -2723,7 +2752,7 @@ class MediaCoverGenerator(_PluginBase):
                                                                 "component": "VBtn",
                                                                 "props": {
                                                                     "variant": "flat",
-                                                                    "class": "text-none mb-2",
+                                                                    "class": "text-none mb-2 mcg-soft-action-btn",
                                                                     "prepend-icon": "mdi-play-circle-outline",
                                                                     "style": self.__ui_button_style(),
                                                                 },
@@ -2767,7 +2796,7 @@ class MediaCoverGenerator(_PluginBase):
                                                                 "component": "VBtn",
                                                                 "props": {
                                                                     "variant": "flat",
-                                                                    "class": "text-none mr-2 mb-2",
+                                                                    "class": "text-none mr-2 mb-2 mcg-soft-action-btn",
                                                                     "prepend-icon": "mdi-swap-horizontal",
                                                                     "style": self.__ui_button_style(),
                                                                 },
@@ -2778,7 +2807,7 @@ class MediaCoverGenerator(_PluginBase):
                                                                 "component": "VBtn",
                                                                 "props": {
                                                                     "variant": "flat",
-                                                                    "class": "text-none mb-2",
+                                                                    "class": "text-none mb-2 mcg-soft-action-btn",
                                                                     "prepend-icon": "mdi-play-circle-outline",
                                                                     "style": self.__ui_button_style(),
                                                                 },
