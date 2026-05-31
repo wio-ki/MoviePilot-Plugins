@@ -1,5 +1,6 @@
 # MoviePilot-Plugins
-forked from justzerock/MoviePilot-Plugins
+forked from https://github.com/justzerock/MoviePilot-Plugins
+
 MoviePilot官方插件市场：https://github.com/jxxghp/MoviePilot-Plugins
 
 ### [媒体库封面生成](https://github.com/wio-ki/MoviePilot-Plugins/tree/main/plugins.v2/mediacovergenerator)
