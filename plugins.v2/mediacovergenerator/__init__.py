@@ -54,7 +54,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/emby.png"
     # 插件版本
-    plugin_version = "0.10.6"
+    plugin_version = "0.10.7"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -951,7 +951,7 @@ class MediaCoverGenerator(_PluginBase):
     def __ui_selected_style() -> str:
         return (
             "background: linear-gradient(135deg, #F5F5DC 0%, #8A9A7B 48%, #E8D7B8 100%); "
-            "color: #2D2D2D; border: 1px solid rgba(138,154,123,.65); "
+            "color: var(--mcg-on-paper); border: 1px solid rgba(138,154,123,.65); "
             "box-shadow: inset 0 2px 8px rgba(138,154,123,.35), 0 4px 12px rgba(138,154,123,.28); "
             "border-radius: 14px; font-weight: 700; text-shadow: 0 1px 1px rgba(255,255,255,0.6);"
         )
@@ -960,7 +960,7 @@ class MediaCoverGenerator(_PluginBase):
     def __ui_button_style() -> str:
         return (
             "background: rgba(255,255,255,0.8) !important; "
-            "color: #7A6F5D !important; "
+            "color: var(--mcg-action-text) !important; "
             "border: 1px solid #E2DCD0 !important; "
             "border-radius: 8px; "
             "font-weight: 500; "
@@ -1010,17 +1010,136 @@ class MediaCoverGenerator(_PluginBase):
         return {
             "component": "style",
             "text": """
+.mcg-theme-root {
+    --mcg-on-paper: #2D2D2D;
+    --mcg-on-paper-muted: #666666;
+    --mcg-on-paper-soft: #7A6F5D;
+    --mcg-action-text: #7A6F5D;
+    --mcg-action-text-hover: #6F644F;
+    --mcg-host-text: #2D2D2D;
+    --mcg-host-text-muted: #666666;
+    color: var(--mcg-on-paper);
+}
+html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
+.v-theme--dark .mcg-theme-root,
+.v-theme--transparent .mcg-theme-root,
+.v-theme--purple .mcg-theme-root {
+    --mcg-host-text: rgba(255, 255, 255, .9);
+    --mcg-host-text-muted: rgba(255, 255, 255, .62);
+}
+.mcg-theme-root .v-card,
+.mcg-theme-root .v-card-title,
+.mcg-theme-root .v-card-text,
+.mcg-theme-root .v-expansion-panel,
+.mcg-theme-root .v-expansion-panel-title,
+.mcg-theme-root .v-expansion-panel-title__icon,
+.mcg-theme-root .v-expansion-panel-text,
+.mcg-theme-root .v-btn-toggle,
+.mcg-theme-root .v-btn--variant-outlined,
+.mcg-theme-root .v-btn__content,
+.mcg-theme-root .v-label,
+.mcg-theme-root .v-selection-control .v-label,
+.mcg-theme-root .v-field,
+.mcg-theme-root .v-field-label,
+.mcg-theme-root .v-field-label--floating,
+.mcg-theme-root .v-field__input,
+.mcg-theme-root .v-select__selection,
+.mcg-theme-root .v-select__selection-text,
+.mcg-theme-root .v-list-item-title,
+.mcg-theme-root .v-list-item-subtitle,
+.mcg-theme-root .v-tab,
+.mcg-theme-root .v-icon {
+    color: var(--mcg-on-paper) !important;
+}
+.mcg-theme-root .v-expansion-panel-title .v-icon,
+.mcg-theme-root .v-btn--variant-outlined .v-icon,
+.mcg-theme-root .v-field .v-icon {
+    color: var(--mcg-on-paper-muted) !important;
+    opacity: 1 !important;
+}
+.mcg-theme-root .v-expansion-panel-title,
+.mcg-theme-root .v-expansion-panel-text__wrapper {
+    background: transparent !important;
+}
+.mcg-theme-root .v-expansion-panel-title__overlay,
+.mcg-theme-root .v-btn__overlay,
+.mcg-theme-root .v-card__overlay {
+    background: transparent !important;
+    opacity: 0 !important;
+}
+.mcg-theme-root .v-btn--variant-outlined {
+    background: rgba(255, 248, 237, .38) !important;
+    border-color: rgba(212, 165, 116, .38) !important;
+}
+.mcg-theme-root .v-btn--variant-outlined.v-btn--active,
+.mcg-theme-root .v-btn-toggle .v-btn--active {
+    background: rgba(232, 201, 160, .34) !important;
+    color: #9A6848 !important;
+}
+.mcg-theme-root .v-btn--variant-outlined.v-btn--active .v-btn__content,
+.mcg-theme-root .v-btn-toggle .v-btn--active .v-btn__content {
+    color: #9A6848 !important;
+}
+.mcg-theme-root .v-btn--variant-outlined.v-btn--active .v-icon,
+.mcg-theme-root .v-btn-toggle .v-btn--active .v-icon {
+    color: #9A6848 !important;
+}
+.mcg-theme-root .v-card-subtitle,
+.mcg-theme-root .v-input__details,
+.mcg-theme-root .v-messages,
+.mcg-theme-root .v-field__prefix,
+.mcg-theme-root .v-field__suffix,
+.mcg-theme-root .v-field__prepend-inner,
+.mcg-theme-root .v-field__append-inner,
+.mcg-theme-root .text-medium-emphasis {
+    color: var(--mcg-on-paper-muted) !important;
+}
+.mcg-theme-root .v-field__input::placeholder,
+.mcg-theme-root input::placeholder,
+.mcg-theme-root textarea::placeholder {
+    color: rgba(102, 102, 102, .66) !important;
+}
+.mcg-theme-root .v-field__outline {
+    color: rgba(122, 111, 93, .72) !important;
+}
+.mcg-theme-root .v-switch .v-selection-control__input {
+    color: #D4A574 !important;
+}
+.mcg-theme-root .mcg-host-title {
+    color: var(--mcg-host-text) !important;
+}
+.mcg-theme-root .mcg-host-muted {
+    color: var(--mcg-host-text-muted) !important;
+}
+.mcg-theme-root .mcg-style-card {
+    background: rgba(255, 252, 246, .90) !important;
+    color: var(--mcg-on-paper) !important;
+    isolation: isolate;
+}
+.mcg-theme-root .mcg-style-card-caption,
+.mcg-theme-root .mcg-style-card .v-card-text {
+    background: linear-gradient(135deg, rgba(255, 248, 237, .98), rgba(240, 221, 198, .94)) !important;
+    color: var(--mcg-on-paper) !important;
+    border-top: 1px solid rgba(201, 130, 86, .22) !important;
+    font-weight: 800 !important;
+    opacity: 1 !important;
+    mix-blend-mode: normal !important;
+    text-shadow: none !important;
+}
+.mcg-theme-root .mcg-style-card .v-img {
+    background: transparent !important;
+}
 .mcg-soft-action-btn:hover {
     background: #FFF3C4 !important;
     border-color: #D8C88C !important;
-    color: #6F644F !important;
+    color: var(--mcg-action-text-hover) !important;
     box-shadow: 0 8px 20px rgba(184,153,91,.16) !important;
     transform: translateY(-1px);
 }
 .mcg-tab-selected,
 .mcg-config-tabs .v-tab--selected {
     background: linear-gradient(135deg, #F5F5DC 0%, #8A9A7B 48%, #E8D7B8 100%) !important;
-    color: #2D2D2D !important;
+    color: var(--mcg-on-paper) !important;
     border: 1px solid rgba(138,154,123,.65) !important;
     box-shadow: inset 0 2px 8px rgba(138,154,123,.35), 0 4px 12px rgba(138,154,123,.22) !important;
     border-radius: 14px !important;
@@ -1034,7 +1153,7 @@ class MediaCoverGenerator(_PluginBase):
     def __ui_selected_style_blue() -> str:
         return (
             "background: linear-gradient(135deg, #E8F4F8 0%, #A8C5D1 48%, #D4E8F0 100%); "
-            "color: #2D2D2D; border: 1px solid rgba(168,197,209,.65); "
+            "color: var(--mcg-on-paper); border: 1px solid rgba(168,197,209,.65); "
             "box-shadow: inset 0 2px 8px rgba(168,197,209,.35), 0 4px 12px rgba(168,197,209,.28); "
             "border-radius: 14px; font-weight: 700; text-shadow: 0 1px 1px rgba(255,255,255,0.6);"
         )
@@ -1043,7 +1162,7 @@ class MediaCoverGenerator(_PluginBase):
     def __ui_selected_style_amber() -> str:
         return (
             "background: linear-gradient(135deg, #FFF8E1 0%, #D4A574 48%, #F5E6D3 100%); "
-            "color: #2D2D2D; border: 1px solid rgba(212,165,116,.65); "
+            "color: var(--mcg-on-paper); border: 1px solid rgba(212,165,116,.65); "
             "box-shadow: inset 0 2px 8px rgba(212,165,116,.35), 0 4px 12px rgba(212,165,116,.28); "
             "border-radius: 14px; font-weight: 700; text-shadow: 0 1px 1px rgba(255,255,255,0.6);"
         )
@@ -1103,7 +1222,7 @@ class MediaCoverGenerator(_PluginBase):
                 style = props.get("style", "")
                 alert_style = (
                     "background: linear-gradient(135deg, rgba(212,165,116,.16), rgba(13,92,92,.10)); "
-                    "color: #2D2D2D; border-left: 4px solid #D4A574; border-top: 1px solid rgba(212,165,116,.20); border-right: 1px solid rgba(13,92,92,.14); border-bottom: 1px solid rgba(13,92,92,.14); backdrop-filter: blur(8px);"
+                    "color: var(--mcg-on-paper); border-left: 4px solid #D4A574; border-top: 1px solid rgba(212,165,116,.20); border-right: 1px solid rgba(13,92,92,.14); border-bottom: 1px solid rgba(13,92,92,.14); backdrop-filter: blur(8px);"
                 )
                 props["style"] = f"{style}; {alert_style}" if style else alert_style
             if component == "VBtn" and props.get("variant") == "flat":
@@ -1130,7 +1249,7 @@ class MediaCoverGenerator(_PluginBase):
             if component == "VTab":
                 style = props.get("style", "")
                 tab_item_style = (
-                    "color:#2D2D2D; border-radius:14px; "
+                    "color:var(--mcg-on-paper); border-radius:14px; "
                     "border:1px solid rgba(212,165,116,.18); "
                     "transition:all .3s cubic-bezier(.4,0,.2,1);"
                 )
@@ -1141,6 +1260,8 @@ class MediaCoverGenerator(_PluginBase):
                 props["color"] = cls.__ui_accent()
             elif props.get("color") in {"#9a6848", "#9f7657"}:
                 props["color"] = cls.__ui_accent()
+            else:
+                props.setdefault("color", "#7A6F5D")
 
         content = node.get("content")
         if content is not None:
@@ -1190,14 +1311,14 @@ class MediaCoverGenerator(_PluginBase):
                                         {
                                             "component": "div",
                                             "props": {
-                                                "style": "font-size:28px;line-height:1.2;font-weight:900;color:#2f261f;"
+                                                "style": "font-size:28px;line-height:1.2;font-weight:900;color:var(--mcg-on-paper);"
                                             },
                                             "text": title,
                                         },
                                         {
                                             "component": "div",
                                             "props": {
-                                                "style": "margin-top:8px;color:#715f50;line-height:1.75;font-size:13px;"
+                                                "style": "margin-top:8px;color:var(--mcg-on-paper-muted);line-height:1.75;font-size:13px;"
                                             },
                                             "text": subtitle,
                                         },
@@ -1215,7 +1336,7 @@ class MediaCoverGenerator(_PluginBase):
         return [
             {
                 "component": "div",
-                "props": {"class": "pa-2", "style": MediaCoverGenerator.__ui_style()},
+                "props": {"class": "pa-2 mcg-theme-root", "style": MediaCoverGenerator.__ui_style()},
                 "content": MediaCoverGenerator.__ui_tone_component([MediaCoverGenerator.__ui_theme_styles(), MediaCoverGenerator.__ui_hero(title, subtitle, icon), *content]),
             }
         ]
@@ -2247,8 +2368,8 @@ class MediaCoverGenerator(_PluginBase):
                                     {
                                         "component": "div",
                                         "content": [
-                                            {"component": "div", "props": {"style": "font-weight:900;color:#2f261f;"}, "text": "基础设置"},
-                                            {"component": "div", "props": {"style": "font-size:12px;color:#806d5c;font-weight:400;margin-top:2px;"}, "text": "启用、服务器、媒体库与执行计划"},
+                                            {"component": "div", "props": {"style": "font-weight:900;color:var(--mcg-on-paper);"}, "text": "基础设置"},
+                                            {"component": "div", "props": {"style": "font-size:12px;color:var(--mcg-on-paper-muted);font-weight:400;margin-top:2px;"}, "text": "启用、服务器、媒体库与执行计划"},
                                         ],
                                     },
                                 ],
@@ -2740,19 +2861,19 @@ class MediaCoverGenerator(_PluginBase):
                         "content": [
                             {
                                 "component": "VTab",
-                                "props": {"value": "generate-tab", "style": self.__ui_selected_style() if page_tab == "generate-tab" else "color:#2D2D2D;border-radius:14px;border:1px solid rgba(212,165,116,.18);"},
+                                "props": {"value": "generate-tab", "style": self.__ui_selected_style() if page_tab == "generate-tab" else "color:var(--mcg-on-paper);border-radius:14px;border:1px solid rgba(212,165,116,.18);"},
                                 "text": "生成工坊",
                                 "events": {"click": {"api": "plugin/MediaCoverGenerator/set_page_tab_generate", "method": "post"}},
                             },
                             {
                                 "component": "VTab",
-                                "props": {"value": "history-tab", "style": self.__ui_selected_style() if page_tab == "history-tab" else "color:#2D2D2D;border-radius:14px;border:1px solid rgba(212,165,116,.18);"},
+                                "props": {"value": "history-tab", "style": self.__ui_selected_style() if page_tab == "history-tab" else "color:var(--mcg-on-paper);border-radius:14px;border:1px solid rgba(212,165,116,.18);"},
                                 "text": "历史归档",
                                 "events": {"click": {"api": "plugin/MediaCoverGenerator/set_page_tab_history", "method": "post"}},
                             },
                             {
                                 "component": "VTab",
-                                "props": {"value": "clean-tab", "style": self.__ui_selected_style() if page_tab == "clean-tab" else "color:#2D2D2D;border-radius:14px;border:1px solid rgba(212,165,116,.18);"},
+                                "props": {"value": "clean-tab", "style": self.__ui_selected_style() if page_tab == "clean-tab" else "color:var(--mcg-on-paper);border-radius:14px;border:1px solid rgba(212,165,116,.18);"},
                                 "text": "缓存整理",
                                 "events": {"click": {"api": "plugin/MediaCoverGenerator/set_page_tab_clean", "method": "post"}},
                             },
@@ -2961,8 +3082,8 @@ class MediaCoverGenerator(_PluginBase):
                             "props": {
                                 "variant": "flat",
                                 "elevation": 0,
-                                "class": "cursor-pointer overflow-hidden",
-                                "style": ("background:linear-gradient(135deg,#fff8ed,#f0ddc6); border:2px solid #c98256; border-radius:18px; box-shadow:0 18px 36px rgba(143,95,63,.18);" if style["index"] == selected_index else "background:rgba(255,252,246,.78); border:1px solid rgba(111,78,55,.13); border-radius:18px; box-shadow:0 10px 26px rgba(53,45,35,.07);"),
+                                "class": "cursor-pointer overflow-hidden mcg-style-card",
+                                "style": ("background:linear-gradient(135deg,#fff8ed,#f0ddc6); border:2px solid #c98256; border-radius:18px; box-shadow:0 18px 36px rgba(143,95,63,.18);" if style["index"] == selected_index else "background:rgba(255,252,246,.90); border:1px solid rgba(111,78,55,.13); border-radius:18px; box-shadow:0 10px 26px rgba(53,45,35,.07);"),
                             },
                             "events": {
                                 "click": {
@@ -2981,7 +3102,7 @@ class MediaCoverGenerator(_PluginBase):
                                 },
                                 {
                                     "component": "VCardText",
-                                    "props": {"class": "py-2 text-center"},
+                                    "props": {"class": "py-2 text-center mcg-style-card-caption", "style": "background:linear-gradient(135deg,rgba(255,248,237,.98),rgba(240,221,198,.94));color:var(--mcg-on-paper) !important;font-weight:800;border-top:1px solid rgba(201,130,86,.22);"},
                                     "text": f"{style['name']}（{'静态' if style_variant == 'static' else '动态'}{style['index']}）" if style["index"] == selected_index else style["name"],
                                 },
                             ],
