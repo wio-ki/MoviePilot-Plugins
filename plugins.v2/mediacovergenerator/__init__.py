@@ -3344,6 +3344,9 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
             logger.debug("忽略缺少媒体服务器或媒体项 ID 的新入库 Webhook")
             return
 
+        # 插件重载时会设置停止信号，新入库事件开始前需要清除遗留状态。
+        self._event.clear()
+
         if self._delay:
             logger.info(f"Webhook 入库延迟 {self._delay} 秒后开始更新封面")
             time.sleep(int(self._delay))
