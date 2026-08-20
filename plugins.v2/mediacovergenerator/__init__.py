@@ -3317,13 +3317,16 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
         item_id = existsinfo.itemid
         server = existsinfo.server
         service = self._servers.get(server)
+        libraries = []
         if service:
             libraries = self.__get_server_libraries(service)
         if libraries and not library_id:
+            item_path = getattr(iteminfo, "path", None)
             library = next(
                 (library
-                 for library in libraries if library.get('Locations', []) 
-                 and any(iteminfo.path.startswith(path) for path in library.get('Locations', []))),
+                 for library in libraries if library.get('Locations', [])
+                 and any(self.__path_is_under(item_path, path)
+                         for path in library.get('Locations', []))),
                 None
             )
         
@@ -4229,6 +4232,32 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
         except Exception as err:
             logger.error(f"获取媒体库列表失败：{str(err)}")
             return []
+
+    @staticmethod
+    def __normalize_library_path(path):
+        """Normalize Emby paths so UNC and local path representations can match."""
+        if path is None:
+            return ""
+
+        normalized = str(path).strip().replace("\\", "/")
+        if normalized.startswith("//"):
+            # Emby may return //server/share/... while VirtualFolders uses /share/...
+            unc_parts = [part for part in normalized[2:].split("/") if part]
+            normalized = "/" + "/".join(unc_parts[1:]) if len(unc_parts) > 1 else "/"
+
+        normalized = re.sub(r"/+", "/", normalized)
+        if len(normalized) > 1:
+            normalized = normalized.rstrip("/")
+        return normalized
+
+    @classmethod
+    def __path_is_under(cls, item_path, library_path):
+        """Return whether an item belongs to a library directory."""
+        item_path = cls.__normalize_library_path(item_path)
+        library_path = cls.__normalize_library_path(library_path)
+        if not item_path or not library_path:
+            return False
+        return item_path == library_path or item_path.startswith(library_path + "/")
     
     def __get_all_libraries(self, server, service):
         try:
