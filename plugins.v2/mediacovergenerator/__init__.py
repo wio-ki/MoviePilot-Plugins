@@ -3311,12 +3311,61 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
             logger.warning(f"获取 {mediainfo.title_year} 详情失败")
             return
             
-        # Try to get library ID
-        library_id = None
-        library = {}
         item_id = existsinfo.itemid
         server = existsinfo.server
-        service = self._servers.get(server)
+        return self.__update_library_cover_item(
+            server=server,
+            item_id=item_id,
+            iteminfo=iteminfo,
+            title_year=mediainfo.title_year,
+        )
+
+    @eventmanager.register(EventType.WebhookMessage)
+    def update_library_cover_webhook(self, event: Event):
+        """Update a library cover when Emby reports a new item via Webhook."""
+        if not self._enabled or not self._transfer_monitor:
+            return
+
+        event_info = getattr(event, "event_data", None)
+        if not event_info:
+            return
+        event_type = getattr(event_info, "event", None)
+        if isinstance(event_info, dict):
+            event_type = event_info.get("event")
+            get_value = event_info.get
+        else:
+            get_value = lambda key, default=None: getattr(event_info, key, default)
+        if event_type != "library.new":
+            return
+
+        server = get_value("server_name")
+        item_id = get_value("item_id")
+        if not server or not item_id or not self._servers or server not in self._servers:
+            logger.debug("忽略缺少媒体服务器或媒体项 ID 的新入库 Webhook")
+            return
+
+        if self._delay:
+            logger.info(f"Webhook 入库延迟 {self._delay} 秒后开始更新封面")
+            time.sleep(int(self._delay))
+
+        iteminfo = self.mschain.iteminfo(server=server, item_id=item_id)
+        if not iteminfo:
+            logger.warning(f"Webhook 新入库媒体 {get_value('item_name', item_id)} 详情获取失败")
+            return
+
+        title_year = get_value("item_name") or getattr(iteminfo, "name", None) or str(item_id)
+        return self.__update_library_cover_item(
+            server=server,
+            item_id=item_id,
+            iteminfo=iteminfo,
+            title_year=title_year,
+        )
+
+    def __update_library_cover_item(self, server, item_id, iteminfo, title_year):
+        """Resolve an item to its library and update that library cover."""
+        library_id = None
+        library = {}
+        service = self._servers.get(server) if self._servers else None
         libraries = []
         if service:
             libraries = self.__get_server_libraries(service)
@@ -3331,7 +3380,7 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
             )
         
         if not library:
-            logger.warning(f"找不到 {mediainfo.title_year} 所在媒体库")
+            logger.warning(f"找不到 {title_year} 所在媒体库")
             return
         if service.type == 'emby':
             library_id = library.get("Id")
@@ -3343,7 +3392,7 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
 
         update_key = (server, item_id)
         if update_key in self._current_updating_items:
-            logger.info(f"媒体库 {server}：{library['Name']} 的项目 {mediainfo.title_year} 正在更新中，跳过此次更新")
+            logger.info(f"媒体库 {server}：{library['Name']} 的项目 {title_year} 正在更新中，跳过此次更新")
             return
         # self.clean_cover_history(save=True)
         old_history = self.get_data('cover_history') or []
@@ -3354,7 +3403,7 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
             default=None
         )
         if latest_item and str(latest_item.get("item_id")) == str(item_id):
-            logger.info(f"媒体 {mediainfo.title_year} 在库中是最新记录，不更新封面图")
+            logger.info(f"媒体 {title_year} 在库中是最新记录，不更新封面图")
             return
         
         # 安全地获取字体和翻译
@@ -3374,7 +3423,7 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
         if self.__update_library(service, library):
             self._monitor_sort = ''
             self._current_updating_items.remove(update_key)
-            logger.info(f"媒体库 {server}：{library['Name']} 封面更新成功")
+            logger.info(f"媒体库 {server}：{library['Name']} 封面更新成功（入库监控）")
 
     
     def __update_all_libraries(self):
