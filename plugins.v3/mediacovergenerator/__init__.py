@@ -21,17 +21,14 @@ from apscheduler.triggers.cron import CronTrigger
 
 from app import schemas
 from app.chain.mediaserver import MediaServerChain
-from app.core.config import settings
-from app.core.event import eventmanager, Event
-from app.core.meta import MetaBase
-from app.helper.mediaserver import MediaServerHelper
-from app.log import logger
+from app.sdk.config import settings
+from app.sdk.events import eventmanager, Event
+from app.sdk.services import MediaServerHelper
+from app.sdk.logging import logger
+from app.sdk.media import MediaInfo
+from app.sdk.network import RequestUtils, UrlUtils
 from app.plugins import _PluginBase
-from app.schemas import MediaInfo, TransferInfo
 from app.schemas.types import EventType
-from app.schemas import ServiceInfo
-from app.utils.http import RequestUtils
-from app.utils.url import UrlUtils
 from app.plugins.mediacovergenerator.style.style_static_1 import create_style_static_1
 from app.plugins.mediacovergenerator.style.style_static_2 import create_style_static_2
 from app.plugins.mediacovergenerator.style.style_static_3  import create_style_static_3
@@ -54,7 +51,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/emby.png"
     # 插件版本
-    plugin_version = "0.10.10"
+    plugin_version = "1.0.0"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -137,10 +134,22 @@ class MediaCoverGenerator(_PluginBase):
 
     def __init__(self):
         super().__init__()
+        self._event = threading.Event()
+        self._update_lock = threading.Lock()
+        self._current_updating_items = set()
+        self._seen_keys = set()
+        self._sanitize_log_cache = set()
 
     def init_plugin(self, config: dict = None):
+        # Stop previous jobs before replacing runtime state during a plugin reload.
+        self.stop_service()
         self.mschain = MediaServerChain()
         self.mediaserver_helper = MediaServerHelper()
+        self._servers = {}
+        self._all_libraries = []
+        self._current_updating_items.clear()
+        self._monitor_sort = ''
+        self._event.clear()
         data_path = self.get_data_path()
         (data_path / 'fonts').mkdir(parents=True, exist_ok=True)
         (data_path / 'input').mkdir(parents=True, exist_ok=True)
@@ -249,9 +258,19 @@ class MediaCoverGenerator(_PluginBase):
             )
             self._page_tab = config.get("page_tab", "generate-tab")
 
-            if self._resolution not in ["1080p", "720p", "480p"]:
-                self._resolution = "480p"
-            self._animation_resolution = "320x180"
+        self._enabled = bool(self._enabled)
+        self._transfer_monitor = bool(self._transfer_monitor)
+        self._selected_servers = self._selected_servers or []
+        self._include_libraries = self._include_libraries or []
+        try:
+            self._delay = max(0, int(self._delay or 0))
+        except (TypeError, ValueError):
+            logger.warning(f"入库延迟配置非法 ({self._delay})，已回退为 60 秒")
+            self._delay = 60
+
+        if self._resolution not in ["1080p", "720p", "480p"]:
+            self._resolution = "480p"
+        self._animation_resolution = "320x180"
 
         self._animated_2_image_count = self.__clamp_value(
             self._animated_2_image_count,
@@ -287,9 +306,6 @@ class MediaCoverGenerator(_PluginBase):
                     logger.info(f"媒体服务器 {server} 未连接")
         else:
             logger.info("未选择媒体服务器")
-
-        # 停止现有任务
-        self.stop_service()
 
         cleanup_triggered = False
         if self._clean_images:
@@ -610,7 +626,7 @@ class MediaCoverGenerator(_PluginBase):
             "summary": "API说明"
         }]
         """
-        return [
+        routes = [
             {
                 "path": "/clean_images",
                 "endpoint": self.api_clean_images,
@@ -697,9 +713,26 @@ class MediaCoverGenerator(_PluginBase):
             {"path": "set_page_tab_generate", "endpoint": self.api_set_page_tab_generate, "auth": "bear", "methods": ["POST"], "summary": "切换到生成页(兼容)"},
             {"path": "set_page_tab_history", "endpoint": self.api_set_page_tab_history, "auth": "bear", "methods": ["POST"], "summary": "切换到历史页(兼容)"},
             {"path": "set_page_tab_clean", "endpoint": self.api_set_page_tab_clean, "auth": "bear", "methods": ["POST"], "summary": "切换到清理页(兼容)"},
-            {"path": "/saved_cover_image", "endpoint": self.api_saved_cover_image, "methods": ["GET"], "summary": "获取已保存封面图片"},
-            {"path": "saved_cover_image", "endpoint": self.api_saved_cover_image, "methods": ["GET"], "summary": "获取已保存封面图片(兼容)"},
+            {"path": "/saved_cover_image", "endpoint": self.api_saved_cover_image, "methods": ["GET"], "response_model": None, "summary": "获取已保存封面图片"},
+            {"path": "saved_cover_image", "endpoint": self.api_saved_cover_image, "methods": ["GET"], "response_model": None, "summary": "获取已保存封面图片(兼容)"},
         ]
+        response_model = getattr(schemas, "Response", None)
+        if response_model is not None:
+            response_model = response_model[Any]
+            for route in routes:
+                endpoint = route.get("endpoint")
+                if getattr(endpoint, "__name__", "") != "api_saved_cover_image":
+                    route["response_model"] = response_model
+        return routes
+
+    @staticmethod
+    def __api_response(
+        success: bool,
+        message: str = "",
+        data: Any = None,
+    ) -> schemas.Response[Any]:
+        """Return the strict MoviePilot V3 response envelope."""
+        return schemas.Response[Any](success=success, message=message, data=data)
 
     def api_clean_images(self):
         try:
@@ -707,10 +740,10 @@ class MediaCoverGenerator(_PluginBase):
             self.__clean_generated_images()
             self._clean_images = False
             self.__update_config()
-            return {"code": 0, "msg": "图片缓存清理完成"}
+            return self.__api_response(True, "图片缓存清理完成")
         except Exception as e:
             logger.error(f"【MediaCoverGenerator】立即清理图片失败: {e}", exc_info=True)
-            return {"code": 1, "msg": f"图片缓存清理失败: {e}"}
+            return self.__api_response(False, f"图片缓存清理失败: {e}")
 
     def api_clean_fonts(self):
         try:
@@ -718,37 +751,37 @@ class MediaCoverGenerator(_PluginBase):
             self.__clean_downloaded_fonts()
             self._clean_fonts = False
             self.__update_config()
-            return {"code": 0, "msg": "字体缓存清理完成"}
+            return self.__api_response(True, "字体缓存清理完成")
         except Exception as e:
             logger.error(f"【MediaCoverGenerator】立即清理字体失败: {e}", exc_info=True)
-            return {"code": 1, "msg": f"字体缓存清理失败: {e}"}
+            return self.__api_response(False, f"字体缓存清理失败: {e}")
 
     def api_delete_saved_cover(self, file: str = ""):
         try:
             target_file = self.__resolve_saved_cover_path(file)
             if not target_file:
-                return {"code": 1, "msg": "无效文件路径"}
+                return self.__api_response(False, "无效文件路径")
             if not target_file.exists() or not target_file.is_file():
-                return {"code": 1, "msg": "文件不存在"}
+                return self.__api_response(False, "文件不存在")
             target_file.unlink(missing_ok=True)
             logger.info(f"【MediaCoverGenerator】已删除封面文件: {target_file}")
-            return {"code": 0, "msg": "封面文件删除成功"}
+            return self.__api_response(True, "封面文件删除成功")
         except Exception as e:
             logger.error(f"【MediaCoverGenerator】删除封面文件失败: {e}", exc_info=True)
-            return {"code": 1, "msg": f"封面文件删除失败: {e}"}
+            return self.__api_response(False, f"封面文件删除失败: {e}")
 
     def api_generate_now(self, style: str = ""):
         old_style = self._cover_style
         try:
             if not self._enabled:
                 logger.warning("【MediaCoverGenerator】立即生成失败：插件未启用，请先在设置页启用插件并保存")
-                return {"code": 1, "msg": "插件未启用，请先在设置页启用插件并保存"}
+                return self.__api_response(False, "插件未启用，请先在设置页启用插件并保存")
             if not self._selected_servers:
                 logger.warning("【MediaCoverGenerator】立即生成失败：未勾选媒体服务器，请先在设置页勾选服务器并保存")
-                return {"code": 1, "msg": "未勾选媒体服务器，请先在设置页勾选服务器并保存"}
+                return self.__api_response(False, "未勾选媒体服务器，请先在设置页勾选服务器并保存")
             if not self._servers:
                 logger.warning("【MediaCoverGenerator】立即生成失败：服务器连接信息为空，请检查设置并保存后重试")
-                return {"code": 1, "msg": "服务器连接信息为空，请检查设置并保存后重试"}
+                return self.__api_response(False, "服务器连接信息为空，请检查设置并保存后重试")
 
             target_style = (style or "").strip()
             allowed_styles = {
@@ -757,14 +790,14 @@ class MediaCoverGenerator(_PluginBase):
             }
             if target_style:
                 if target_style not in allowed_styles:
-                    return {"code": 1, "msg": f"不支持的风格: {target_style}"}
+                    return self.__api_response(False, f"不支持的风格: {target_style}")
                 self._cover_style = target_style
             logger.info(f"【MediaCoverGenerator】收到立即生成请求，风格: {self._cover_style}")
             tips = self.__update_all_libraries()
-            return {"code": 0, "msg": tips or "封面生成任务已完成"}
+            return self.__api_response(True, tips or "封面生成任务已完成", tips)
         except Exception as e:
             logger.error(f"【MediaCoverGenerator】立即生成失败: {e}", exc_info=True)
-            return {"code": 1, "msg": f"封面生成失败: {e}"}
+            return self.__api_response(False, f"封面生成失败: {e}")
         finally:
             self._cover_style = old_style
 
@@ -776,17 +809,17 @@ class MediaCoverGenerator(_PluginBase):
                 "animated_1", "animated_2", "animated_3", "animated_4",
             }
             if target_style not in allowed_styles:
-                return {"code": 1, "msg": f"不支持的风格: {target_style}"}
+                return self.__api_response(False, f"不支持的风格: {target_style}")
             self._cover_style = target_style
             base, variant = self.__resolve_cover_style_ui(target_style)
             self._cover_style_base = base
             self._cover_style_variant = variant
             self.__update_config()
             logger.info(f"【MediaCoverGenerator】已保存封面风格: {target_style}")
-            return {"code": 0, "msg": f"已保存风格: {target_style}"}
+            return self.__api_response(True, f"已保存风格: {target_style}")
         except Exception as e:
             logger.error(f"【MediaCoverGenerator】保存封面风格失败: {e}", exc_info=True)
-            return {"code": 1, "msg": f"保存风格失败: {e}"}
+            return self.__api_response(False, f"保存风格失败: {e}")
 
     def __get_cover_style_parts(self) -> Tuple[str, int]:
         style = (self._cover_style or "static_1").strip()
@@ -813,19 +846,19 @@ class MediaCoverGenerator(_PluginBase):
             variant, index = self.__get_cover_style_parts()
             new_variant = "animated" if variant == "static" else "static"
             self.__set_cover_style_parts(new_variant, index)
-            return {"code": 0, "msg": f"已切换为{new_variant}风格{index}"}
+            return self.__api_response(True, f"已切换为{new_variant}风格{index}")
         except Exception as e:
             logger.error(f"【MediaCoverGenerator】切换静态/动态失败: {e}", exc_info=True)
-            return {"code": 1, "msg": f"切换失败: {e}"}
+            return self.__api_response(False, f"切换失败: {e}")
 
     def __api_select_style(self, index: int):
         try:
             variant, _ = self.__get_cover_style_parts()
             self.__set_cover_style_parts(variant, index)
-            return {"code": 0, "msg": f"已选择{variant}风格{index}"}
+            return self.__api_response(True, f"已选择{variant}风格{index}")
         except Exception as e:
             logger.error(f"【MediaCoverGenerator】选择风格失败: {e}", exc_info=True)
-            return {"code": 1, "msg": f"选择风格失败: {e}"}
+            return self.__api_response(False, f"选择风格失败: {e}")
 
     def api_select_style_1(self):
         return self.__api_select_style(1)
@@ -846,22 +879,22 @@ class MediaCoverGenerator(_PluginBase):
     def api_set_page_tab_generate(self):
         self.__set_page_tab("generate-tab")
         message = "已切换到封面生成"
-        return {"success": True, "message": message, "data": None}
+        return self.__api_response(True, message)
 
     def api_set_page_tab_history(self):
         self.__set_page_tab("history-tab")
         message = "已切换到历史封面"
-        return {"success": True, "message": message, "data": None}
+        return self.__api_response(True, message)
 
     def api_set_page_tab_clean(self):
         self.__set_page_tab("clean-tab")
         message = "已切换到清理缓存"
-        return {"success": True, "message": message, "data": None}
+        return self.__api_response(True, message)
 
     def api_saved_cover_image(self, file: str = ""):
         target_file = self.__resolve_saved_cover_path(file)
         if not target_file or not target_file.exists() or not target_file.is_file():
-            return {"code": 1, "msg": "图片不存在"}
+            return self.__api_response(False, "图片不存在")
         mime_type, _ = mimetypes.guess_type(str(target_file))
         if not mime_type:
             mime_type = "image/jpeg"
@@ -874,7 +907,7 @@ class MediaCoverGenerator(_PluginBase):
                 return FileResponse(path=str(target_file), media_type=mime_type)
             except Exception as e:
                 logger.error(f"【MediaCoverGenerator】返回图片失败: {e}")
-                return {"code": 1, "msg": "返回图片失败"}
+                return self.__api_response(False, "返回图片失败")
 
     def get_service(self) -> List[Dict[str, Any]]:
         """
@@ -882,13 +915,18 @@ class MediaCoverGenerator(_PluginBase):
         """
         services = []
         if self._enabled and self._cron:
-            services.append({
-                "id": "MediaCoverGenerator",
-                "name": "媒体库封面更新服务",
-                "trigger": CronTrigger.from_crontab(self._cron),
-                "func": self.__update_all_libraries,
-                "kwargs": {}
-            })
+            try:
+                trigger = CronTrigger.from_crontab(self._cron)
+            except (TypeError, ValueError) as error:
+                logger.error(f"定时更新封面 Cron 配置无效: {error}")
+            else:
+                services.append({
+                    "id": "MediaCoverGenerator",
+                    "name": "媒体库封面更新服务",
+                    "trigger": trigger,
+                    "func": self.__update_all_libraries,
+                    "kwargs": {}
+                })
 
         # 总是显示停止按钮，以便中断长时间运行的任务
         services.append({
@@ -904,11 +942,13 @@ class MediaCoverGenerator(_PluginBase):
         """
         手动停止当前正在执行的任务
         """
+        if not self._update_lock.locked():
+            return True, "当前没有正在执行的封面更新任务"
         if not self._event.is_set():
             logger.info("正在发送停止任务信号...")
             self._event.set()
-            return True, "已发送停止停止信号，请等待当前操作清理完成"
-        return True, "任务已处于停止状态或正在停止中"
+            return True, "已发送停止信号，请等待当前操作清理完成"
+        return True, "任务正在停止中"
 
     @staticmethod
     def __ui_style() -> str:
@@ -3290,38 +3330,36 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
         if not mediainfo:
             return
 
-        # 开始前清理可能遗留的停止信号，防止阻塞监控
-        self._event.clear()
-
         # Delay
         if self._delay:
             logger.info(f"延迟 {self._delay} 秒后开始更新封面")
             time.sleep(int(self._delay))
 
-        # Query the item in media server
-        existsinfo = self.mschain.media_exists(mediainfo=mediainfo)
-        if not existsinfo or not existsinfo.itemid:
-            self.mschain.sync()
+        try:
+            # Query the item in media server
             existsinfo = self.mschain.media_exists(mediainfo=mediainfo)
-            if not existsinfo:
-                logger.warning(f"{mediainfo.title_year} 不存在媒体库中，可能服务器还未扫描完成，建议设置合适的延迟时间")
+            if not existsinfo or not existsinfo.itemid:
+                self.mschain.sync()
+                existsinfo = self.mschain.media_exists(mediainfo=mediainfo)
+                if not existsinfo or not existsinfo.itemid:
+                    logger.warning(f"{mediainfo.title_year} 不存在媒体库中，可能服务器还未扫描完成，建议设置合适的延迟时间")
+                    return
+
+            # Get item details including backdrop
+            iteminfo = self.mschain.iteminfo(server=existsinfo.server, item_id=existsinfo.itemid)
+            if not iteminfo:
+                logger.warning(f"获取 {mediainfo.title_year} 详情失败")
                 return
 
-        # Get item details including backdrop
-        iteminfo = self.mschain.iteminfo(server=existsinfo.server, item_id=existsinfo.itemid)
-        # logger.info(f"获取到媒体项 {mediainfo.title_year} 详情：{iteminfo}")
-        if not iteminfo:
-            logger.warning(f"获取 {mediainfo.title_year} 详情失败")
-            return
-
-        item_id = existsinfo.itemid
-        server = existsinfo.server
-        return self.__update_library_cover_item(
-            server=server,
-            item_id=item_id,
-            iteminfo=iteminfo,
-            title_year=mediainfo.title_year,
-        )
+            return self.__update_library_cover_item(
+                server=existsinfo.server,
+                item_id=existsinfo.itemid,
+                iteminfo=iteminfo,
+                title_year=mediainfo.title_year,
+            )
+        except Exception as error:
+            logger.error(f"入库监控查询 {mediainfo.title_year} 失败: {error}", exc_info=True)
+            return False
 
     @eventmanager.register(EventType.WebhookMessage)
     def update_library_cover_webhook(self, event: Event):
@@ -3347,25 +3385,26 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
             logger.debug("忽略缺少媒体服务器或媒体项 ID 的新入库 Webhook")
             return
 
-        # 插件重载时会设置停止信号，新入库事件开始前需要清除遗留状态。
-        self._event.clear()
-
         if self._delay:
             logger.info(f"Webhook 入库延迟 {self._delay} 秒后开始更新封面")
             time.sleep(int(self._delay))
 
-        iteminfo = self.mschain.iteminfo(server=server, item_id=item_id)
-        if not iteminfo:
-            logger.warning(f"Webhook 新入库媒体 {get_value('item_name', item_id)} 详情获取失败")
-            return
+        try:
+            iteminfo = self.mschain.iteminfo(server=server, item_id=item_id)
+            if not iteminfo:
+                logger.warning(f"Webhook 新入库媒体 {get_value('item_name', item_id)} 详情获取失败")
+                return
 
-        title_year = get_value("item_name") or getattr(iteminfo, "name", None) or str(item_id)
-        return self.__update_library_cover_item(
-            server=server,
-            item_id=item_id,
-            iteminfo=iteminfo,
-            title_year=title_year,
-        )
+            title_year = get_value("item_name") or getattr(iteminfo, "name", None) or str(item_id)
+            return self.__update_library_cover_item(
+                server=server,
+                item_id=item_id,
+                iteminfo=iteminfo,
+                title_year=title_year,
+            )
+        except Exception as error:
+            logger.error(f"Webhook 入库监控更新失败: {error}", exc_info=True)
+            return False
 
     def __update_library_cover_item(self, server, item_id, iteminfo, title_year):
         """Resolve an item to its library and update that library cover."""
@@ -3375,15 +3414,35 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
         libraries = []
         if service:
             libraries = self.__get_server_libraries(service)
-        if libraries and not library_id:
-            item_path = getattr(iteminfo, "path", None)
-            library = next(
-                (library
-                 for library in libraries if library.get('Locations', [])
-                 and any(self.__path_is_under(item_path, path)
-                         for path in library.get('Locations', []))),
-                None
-            )
+        if libraries:
+            # V3 MediaServerItem exposes its library ID; use it before path matching.
+            item_library_id = getattr(iteminfo, "library", None)
+            if isinstance(iteminfo, dict):
+                item_library_id = iteminfo.get("library") or iteminfo.get("LibraryId")
+            if item_library_id:
+                library = next(
+                    (
+                        candidate for candidate in libraries
+                        if str(candidate.get("Id") or candidate.get("ItemId"))
+                        == str(item_library_id)
+                    ),
+                    None,
+                )
+            if not library:
+                item_path = getattr(iteminfo, "path", None)
+                if isinstance(iteminfo, dict):
+                    item_path = iteminfo.get("path") or iteminfo.get("Path")
+                library = next(
+                    (
+                        candidate for candidate in libraries
+                        if candidate.get('Locations', [])
+                        and any(
+                            self.__path_is_under(item_path, path)
+                            for path in candidate.get('Locations', [])
+                        )
+                    ),
+                    None,
+                )
 
         if not library:
             logger.warning(f"找不到 {title_year} 所在媒体库")
@@ -3396,7 +3455,7 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
             logger.info(f"{server}：{library['Name']} 不在列表中，跳过更新封面")
             return
 
-        update_key = (server, item_id)
+        update_key = (server, str(library_id))
         if update_key in self._current_updating_items:
             logger.info(f"媒体库 {server}：{library['Name']} 的项目 {title_year} 正在更新中，跳过此次更新")
             return
@@ -3404,8 +3463,14 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
         old_history = self.get_data('cover_history') or []
         # 新增去重判断逻辑
         latest_item = max(
-            (item for item in old_history if str(item.get("library_id")) == str(library_id)),
-            key=lambda x: x["timestamp"],
+            (
+                item for item in old_history
+                if isinstance(item, dict)
+                and str(item.get("server")) == str(server)
+                and str(item.get("library_id")) == str(library_id)
+                and item.get("timestamp") is not None
+            ),
+            key=lambda x: float(x.get("timestamp", 0)),
             default=None
         )
         if latest_item and str(latest_item.get("item_id")) == str(item_id):
@@ -3418,18 +3483,30 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
         except Exception as e:
             logger.error(f"初始化字体或翻译时出错: {e}")
             # 继续执行，但可能会影响封面生成质量
-        new_history = self.update_cover_history(
-            server=server,
-            library_id=library_id,
-            item_id=item_id
-        )
-        # logger.info(f"最新数据： {new_history}")
+        if not self._update_lock.acquire(blocking=False):
+            logger.info(f"媒体库 {server} 正在执行全量更新，跳过入库监控任务 {title_year}")
+            return False
         self._monitor_sort = 'DateCreated'
         self._current_updating_items.add(update_key)
-        if self.__update_library(service, library):
+        try:
+            updated = self.__update_library(service, library)
+        except Exception as error:
+            logger.error(f"入库监控更新媒体库 {library['Name']} 失败: {error}", exc_info=True)
+            updated = False
+        finally:
             self._monitor_sort = ''
-            self._current_updating_items.remove(update_key)
+            self._current_updating_items.discard(update_key)
+            self._update_lock.release()
+        if updated:
+            self.update_cover_history(
+                server=server,
+                library_id=library_id,
+                item_id=item_id,
+            )
             logger.info(f"媒体库 {server}：{library['Name']} 封面更新成功（入库监控）")
+        else:
+            logger.warning(f"媒体库 {server}：{library['Name']} 封面更新失败（入库监控）")
+        return updated
 
 
     def __update_all_libraries(self):
@@ -3447,49 +3524,61 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
         except Exception as e:
             logger.error(f"初始化过程中出错: {e}")
             logger.warning("将尝试继续执行，但可能影响封面生成质量")
+        if not self._update_lock.acquire(blocking=False):
+            logger.warning("已有媒体库封面更新任务正在执行，跳过本次任务")
+            return "已有媒体库封面更新任务正在执行"
         logger.info("开始更新媒体库封面 ...")
         # 开始前确保停止信号已清除
         self._event.clear()
-        for server, service in self._servers.items():
-            # 扫描所有媒体库
-            logger.info(f"当前服务器 {server}")
-            cover_style = {
-                "static_1": "静态 1",
-                "static_2": "静态 2",
-                "static_3": "静态 3",
-                "static_4": "静态 4（全屏模糊）",
-                "animated_1": "卡片翻转动画",
-                "animated_2": "帷幕切换动画",
-                "animated_3": "斜向滚动动画",
-                "animated_4": "全屏模糊渐变"
-            }.get(self._cover_style, "静态 1")
-            logger.info(f"当前风格 {cover_style}")
-            # 获取媒体库列表
-            libraries = self.__get_server_libraries(service)
-            if not libraries:
-                logger.warning(f"服务器 {server} 的媒体库列表获取失败")
-                continue
-            success_count = 0
-            fail_count = 0
-            for library in libraries:
-                if self._event.is_set():
-                    logger.info("媒体库封面更新服务停止")
-                    self._event.clear()
-                    return
-                if service.type == 'emby':
-                    library_id = library.get("Id")
-                else:
-                    library_id = library.get("ItemId")
-                if self._include_libraries and f"{server}-{library_id}" not in self._include_libraries:
-                    logger.info(f"{server}：{library['Name']} 不在列表中，跳过更新封面")
+        total_success = 0
+        total_fail = 0
+        try:
+            for server, service in self._servers.items():
+                # 扫描所有媒体库
+                logger.info(f"当前服务器 {server}")
+                cover_style = {
+                    "static_1": "静态 1",
+                    "static_2": "静态 2",
+                    "static_3": "静态 3",
+                    "static_4": "静态 4（全屏模糊）",
+                    "animated_1": "卡片翻转动画",
+                    "animated_2": "帷幕切换动画",
+                    "animated_3": "斜向滚动动画",
+                    "animated_4": "全屏模糊渐变"
+                }.get(self._cover_style, "静态 1")
+                logger.info(f"当前风格 {cover_style}")
+                libraries = self.__get_server_libraries(service)
+                if not libraries:
+                    logger.warning(f"服务器 {server} 的媒体库列表获取失败")
                     continue
-                if self.__update_library(service, library):
-                    logger.info(f"媒体库 {server}：{library['Name']} 封面更新成功")
-                    success_count += 1
-                else:
-                    logger.warning(f"媒体库 {server}：{library['Name']} 封面更新失败")
-                    fail_count += 1
-        tips = f"媒体库封面更新任务结束，成功 {success_count} 个，失败 {fail_count} 个"
+                for library in libraries:
+                    if self._event.is_set():
+                        logger.info("媒体库封面更新服务停止")
+                        return
+                    if service.type == 'emby':
+                        library_id = library.get("Id")
+                    else:
+                        library_id = library.get("ItemId")
+                    if self._include_libraries and f"{server}-{library_id}" not in self._include_libraries:
+                        logger.info(f"{server}：{library['Name']} 不在列表中，跳过更新封面")
+                        continue
+                    try:
+                        updated = self.__update_library(service, library)
+                    except Exception as error:
+                        logger.error(f"媒体库 {server}：{library['Name']} 更新异常: {error}", exc_info=True)
+                        updated = False
+                    if updated:
+                        logger.info(f"媒体库 {server}：{library['Name']} 封面更新成功")
+                        total_success += 1
+                    else:
+                        logger.warning(f"媒体库 {server}：{library['Name']} 封面更新失败")
+                        total_fail += 1
+        finally:
+            self._monitor_sort = ''
+            self._current_updating_items.clear()
+            self._event.clear()
+            self._update_lock.release()
+        tips = f"媒体库封面更新任务结束，成功 {total_success} 个，失败 {total_fail} 个"
         logger.info(tips)
         return tips
 
@@ -3515,6 +3604,7 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
 
         if image_data:
             return self.__set_library_image(service, library, image_data)
+        return False
 
     def __check_custom_image(self, library_name):
         if not self._covers_input:
@@ -5227,12 +5317,12 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
         停止服务
         """
         try:
+            if self._update_lock.locked():
+                self._event.set()
             if self._scheduler:
                 self._scheduler.remove_all_jobs()
                 if self._scheduler.running:
-                    self._event.set()
                     self._scheduler.shutdown()
-                    self._event.clear()
                 self._scheduler = None
         except Exception as e:
             logger.error(f"停止服务失败: {str(e)}")
