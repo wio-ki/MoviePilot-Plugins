@@ -1,0 +1,17 @@
+{
+    "MediaCoverGenerator": {
+        "name": "Emby媒体库封面生成",
+        "description": "生成媒体库动态/静态封面，支持 Emby/Jellyfin",
+        "labels": "Emby,动态封面,媒体库",
+        "version": "0.10.9",
+        "icon": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/emby.png",
+        "author": "Kioo",
+        "level": 1,
+        "release": false,
+        "system_version": ">=3.0.0",
+        "history": {
+            "v0.10.9": "修复 MoviePilot v3 数据页选项卡响应格式、Episode 条目项目 ID 获取异常和作者头像地址；兼容 MoviePilot v2/v3",
+            "v0.10.8": "修复：入库监控封面更新失败"
+        }
+    }
+}
