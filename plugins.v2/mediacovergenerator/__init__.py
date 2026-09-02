@@ -54,11 +54,11 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/emby.png"
     # 插件版本
-    plugin_version = "0.10.9"
+    plugin_version = "0.10.8"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
-    author_url = "https://github.com/wio-ki"
+    author_url = "https://github.com/wio-ki/MoviePilot-Plugins"
     # 插件配置项ID前缀
     plugin_config_prefix = "mediacovergenerator_"
     # 加载顺序
@@ -4088,12 +4088,11 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
         else:
             library_id = library.get("ItemId")
         # 更新id
-        if updated_item_id:
-            self.update_cover_history(
-                server=service.name,
-                library_id=library_id,
-                item_id=updated_item_id
-            )
+        self.update_cover_history(
+            server=service.name,
+            library_id=library_id,
+            item_id=updated_item_id
+        )
 
         return image_data
     
@@ -4113,9 +4112,7 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
                 image_path = self.__download_image(service, image_url, library['Name'], count=i+1)
                 if image_path:
                     image_paths.append(image_path)
-                    item_id = self.__get_item_id(item)
-                    if item_id:
-                        updated_item_ids.append(item_id)
+                    updated_item_ids.append(self.__get_item_id(item))
         
         if len(image_paths) < 1:
             return False
@@ -4134,8 +4131,8 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
         # 更新ids
         for item_id in reversed(updated_item_ids):
             self.update_cover_history(
-                server=service.name, 
-                library_id=library_id, 
+                server=service.name,
+                library_id=library_id,
                 item_id=item_id
             )
             
@@ -4449,9 +4446,8 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
         """
         从媒体项信息中获取项目ID
         """
-        item_id = None
         # Emby/Jellyfin
-        if item.get('Type') in {'MusicAlbum', 'Audio'}:
+        if item['Type'] in 'MusicAlbum,Audio':
             if item.get("ParentBackdropImageTags") and len(item["ParentBackdropImageTags"]) > 0:
                 item_id = item.get("ParentBackdropItemId")
             elif item.get("PrimaryImageTag"):
@@ -4461,21 +4457,13 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
 
         elif self._cover_style == 'static_3' or self._cover_style in ['animated_1', 'animated_2', 'animated_3', 'animated_4']:
             if self._use_primary:
-                if item.get("Type") == 'Episode' and item.get("SeriesPrimaryImageTag"):
-                    item_id = item.get("SeriesId")
-                elif item.get("Type") == 'Episode' and item.get("ParentBackdropImageTags") and len(item["ParentBackdropImageTags"]) > 0:
-                    item_id = item.get("ParentBackdropItemId")
-                elif (item.get("ImageTags") and item.get("ImageTags").get("Primary")) \
+                if (item.get("ImageTags") and item.get("ImageTags").get("Primary")) \
                     or (item.get("BackdropImageTags") and len(item["BackdropImageTags"]) > 0):
                     item_id = item.get("Id")
                 elif item.get("ParentBackdropImageTags") and len(item["ParentBackdropImageTags"]) > 0:
                     item_id = item.get("ParentBackdropItemId")
             else:
-                if item.get("Type") == 'Episode' and item.get("ParentBackdropImageTags") and len(item["ParentBackdropImageTags"]) > 0:
-                    item_id = item.get("ParentBackdropItemId")
-                elif item.get("Type") == 'Episode' and item.get("SeriesPrimaryImageTag"):
-                    item_id = item.get("SeriesId")
-                elif item.get("ParentBackdropImageTags") and len(item["ParentBackdropImageTags"]) > 0:
+                if item.get("ParentBackdropImageTags") and len(item["ParentBackdropImageTags"]) > 0:
                     item_id = item.get("ParentBackdropItemId")
                 elif (item.get("ImageTags") and item.get("ImageTags").get("Primary")) \
                     or (item.get("BackdropImageTags") and len(item["BackdropImageTags"]) > 0):
@@ -4483,21 +4471,13 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
 
         elif self._cover_style.startswith('static'):
             if self._use_primary:
-                if item.get("Type") == 'Episode' and item.get("SeriesPrimaryImageTag"):
-                    item_id = item.get("SeriesId")
-                elif item.get("Type") == 'Episode' and item.get("ParentBackdropImageTags") and len(item["ParentBackdropImageTags"]) > 0:
-                    item_id = item.get("ParentBackdropItemId")
-                elif (item.get("BackdropImageTags") and len(item["BackdropImageTags"]) > 0) \
+                if (item.get("BackdropImageTags") and len(item["BackdropImageTags"]) > 0) \
                     or (item.get("ImageTags") and item.get("ImageTags").get("Primary")):
                     item_id = item.get("Id")
                 elif item.get("ParentBackdropImageTags") and len(item["ParentBackdropImageTags"]) > 0:
                     item_id = item.get("ParentBackdropItemId")
             else:
-                if item.get("Type") == 'Episode' and item.get("ParentBackdropImageTags") and len(item["ParentBackdropImageTags"]) > 0:
-                    item_id = item.get("ParentBackdropItemId")
-                elif item.get("Type") == 'Episode' and item.get("SeriesPrimaryImageTag"):
-                    item_id = item.get("SeriesId")
-                elif item.get("ParentBackdropImageTags") and len(item["ParentBackdropImageTags"]) > 0:
+                if item.get("ParentBackdropImageTags") and len(item["ParentBackdropImageTags"]) > 0:
                     item_id = item.get("ParentBackdropItemId")
                 elif (item.get("BackdropImageTags") and len(item["BackdropImageTags"]) > 0) \
                     or (item.get("ImageTags") and item.get("ImageTags").get("Primary")):
