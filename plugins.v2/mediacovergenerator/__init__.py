@@ -54,7 +54,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/emby.png"
     # 插件版本
-    plugin_version = "0.10.8"
+    plugin_version = "0.10.9"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -845,15 +845,18 @@ class MediaCoverGenerator(_PluginBase):
 
     def api_set_page_tab_generate(self):
         self.__set_page_tab("generate-tab")
-        return {"code": 0, "msg": "已切换到封面生成"}
+        message = "已切换到封面生成"
+        return {"success": True, "message": message, "data": None, "code": 0, "msg": message}
 
     def api_set_page_tab_history(self):
         self.__set_page_tab("history-tab")
-        return {"code": 0, "msg": "已切换到历史封面"}
+        message = "已切换到历史封面"
+        return {"success": True, "message": message, "data": None, "code": 0, "msg": message}
 
     def api_set_page_tab_clean(self):
         self.__set_page_tab("clean-tab")
-        return {"code": 0, "msg": "已切换到清理缓存"}
+        message = "已切换到清理缓存"
+        return {"success": True, "message": message, "data": None, "code": 0, "msg": message}
 
     def api_saved_cover_image(self, file: str = ""):
         target_file = self.__resolve_saved_cover_path(file)
@@ -4088,11 +4091,12 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
         else:
             library_id = library.get("ItemId")
         # 更新id
-        self.update_cover_history(
-            server=service.name, 
-            library_id=library_id, 
-            item_id=updated_item_id
-        )
+        if updated_item_id:
+            self.update_cover_history(
+                server=service.name,
+                library_id=library_id,
+                item_id=updated_item_id
+            )
 
         return image_data
     
@@ -4112,7 +4116,9 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
                 image_path = self.__download_image(service, image_url, library['Name'], count=i+1)
                 if image_path:
                     image_paths.append(image_path)
-                    updated_item_ids.append(self.__get_item_id(item))
+                    item_id = self.__get_item_id(item)
+                    if item_id:
+                        updated_item_ids.append(item_id)
         
         if len(image_paths) < 1:
             return False
@@ -4446,8 +4452,9 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
         """
         从媒体项信息中获取项目ID
         """
+        item_id = None
         # Emby/Jellyfin
-        if item['Type'] in 'MusicAlbum,Audio':
+        if item.get('Type') in {'MusicAlbum', 'Audio'}:
             if item.get("ParentBackdropImageTags") and len(item["ParentBackdropImageTags"]) > 0:
                 item_id = item.get("ParentBackdropItemId")
             elif item.get("PrimaryImageTag"):
@@ -4457,13 +4464,21 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
 
         elif self._cover_style == 'static_3' or self._cover_style in ['animated_1', 'animated_2', 'animated_3', 'animated_4']:
             if self._use_primary:
-                if (item.get("ImageTags") and item.get("ImageTags").get("Primary")) \
+                if item.get("Type") == 'Episode' and item.get("SeriesPrimaryImageTag"):
+                    item_id = item.get("SeriesId")
+                elif item.get("Type") == 'Episode' and item.get("ParentBackdropImageTags") and len(item["ParentBackdropImageTags"]) > 0:
+                    item_id = item.get("ParentBackdropItemId")
+                elif (item.get("ImageTags") and item.get("ImageTags").get("Primary")) \
                     or (item.get("BackdropImageTags") and len(item["BackdropImageTags"]) > 0):
                     item_id = item.get("Id")
                 elif item.get("ParentBackdropImageTags") and len(item["ParentBackdropImageTags"]) > 0:
                     item_id = item.get("ParentBackdropItemId")
             else:
-                if item.get("ParentBackdropImageTags") and len(item["ParentBackdropImageTags"]) > 0:
+                if item.get("Type") == 'Episode' and item.get("ParentBackdropImageTags") and len(item["ParentBackdropImageTags"]) > 0:
+                    item_id = item.get("ParentBackdropItemId")
+                elif item.get("Type") == 'Episode' and item.get("SeriesPrimaryImageTag"):
+                    item_id = item.get("SeriesId")
+                elif item.get("ParentBackdropImageTags") and len(item["ParentBackdropImageTags"]) > 0:
                     item_id = item.get("ParentBackdropItemId")
                 elif (item.get("ImageTags") and item.get("ImageTags").get("Primary")) \
                     or (item.get("BackdropImageTags") and len(item["BackdropImageTags"]) > 0):
@@ -4471,13 +4486,21 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
 
         elif self._cover_style.startswith('static'):
             if self._use_primary:
-                if (item.get("BackdropImageTags") and len(item["BackdropImageTags"]) > 0) \
+                if item.get("Type") == 'Episode' and item.get("SeriesPrimaryImageTag"):
+                    item_id = item.get("SeriesId")
+                elif item.get("Type") == 'Episode' and item.get("ParentBackdropImageTags") and len(item["ParentBackdropImageTags"]) > 0:
+                    item_id = item.get("ParentBackdropItemId")
+                elif (item.get("BackdropImageTags") and len(item["BackdropImageTags"]) > 0) \
                     or (item.get("ImageTags") and item.get("ImageTags").get("Primary")):
                     item_id = item.get("Id")
                 elif item.get("ParentBackdropImageTags") and len(item["ParentBackdropImageTags"]) > 0:
                     item_id = item.get("ParentBackdropItemId")
             else:
-                if item.get("ParentBackdropImageTags") and len(item["ParentBackdropImageTags"]) > 0:
+                if item.get("Type") == 'Episode' and item.get("ParentBackdropImageTags") and len(item["ParentBackdropImageTags"]) > 0:
+                    item_id = item.get("ParentBackdropItemId")
+                elif item.get("Type") == 'Episode' and item.get("SeriesPrimaryImageTag"):
+                    item_id = item.get("SeriesId")
+                elif item.get("ParentBackdropImageTags") and len(item["ParentBackdropImageTags"]) > 0:
                     item_id = item.get("ParentBackdropItemId")
                 elif (item.get("BackdropImageTags") and len(item["BackdropImageTags"]) > 0) \
                     or (item.get("ImageTags") and item.get("ImageTags").get("Primary")):
