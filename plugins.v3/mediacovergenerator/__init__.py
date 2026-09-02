@@ -54,7 +54,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/emby.png"
     # 插件版本
-    plugin_version = "0.10.9"
+    plugin_version = "0.10.10"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -846,17 +846,17 @@ class MediaCoverGenerator(_PluginBase):
     def api_set_page_tab_generate(self):
         self.__set_page_tab("generate-tab")
         message = "已切换到封面生成"
-        return {"success": True, "message": message, "data": None, "code": 0, "msg": message}
+        return {"success": True, "message": message, "data": None}
 
     def api_set_page_tab_history(self):
         self.__set_page_tab("history-tab")
         message = "已切换到历史封面"
-        return {"success": True, "message": message, "data": None, "code": 0, "msg": message}
+        return {"success": True, "message": message, "data": None}
 
     def api_set_page_tab_clean(self):
         self.__set_page_tab("clean-tab")
         message = "已切换到清理缓存"
-        return {"success": True, "message": message, "data": None, "code": 0, "msg": message}
+        return {"success": True, "message": message, "data": None}
 
     def api_saved_cover_image(self, file: str = ""):
         target_file = self.__resolve_saved_cover_path(file)
