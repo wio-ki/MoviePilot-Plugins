@@ -51,7 +51,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/emby.png"
     # 插件版本
-    plugin_version = "1.0.0"
+    plugin_version = "1.0.1"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -962,27 +962,36 @@ class MediaCoverGenerator(_PluginBase):
             "box-shadow: 0 24px 70px rgba(53,45,35,.12); "
             "padding: 18px; "
             "--v-theme-primary: 212,165,116; --v-theme-secondary: 13,92,92; "
-            "--v-theme-info: 13,92,92; --v-theme-warning: 139,111,71; --v-theme-error: 160,90,63;"
+            "--v-theme-info: 13,92,92; --v-theme-warning: 139,111,71; --v-theme-error: 160,90,63; "
+            "color: var(--mcg-on-paper) !important; color-scheme: light; "
+            "opacity: 1 !important; filter: none !important; mix-blend-mode: normal !important; isolation: isolate;"
         )
 
     @staticmethod
     def __ui_card_style() -> str:
         return (
-            "background: linear-gradient(135deg, rgba(255,255,240,.88), rgba(255,255,255,.62)); "
-            "border: 1px solid rgba(212,165,116,.26); "
+            "background: linear-gradient(135deg, rgba(255,255,240,.94), rgba(255,255,255,.84)) !important; "
+            "background-color: rgba(255,252,246,.94) !important; "
+            "border: 1px solid rgba(212,165,116,.26) !important; "
             "border-radius: 18px; "
-            "box-shadow: 0 2px 4px rgba(26,26,26,.06), 0 12px 28px rgba(13,92,92,.08), 0 24px 60px rgba(139,111,71,.10); "
-            "backdrop-filter: blur(12px) saturate(170%); overflow: hidden; "
+            "box-shadow: 0 2px 4px rgba(26,26,26,.06), 0 12px 28px rgba(13,92,92,.08), 0 24px 60px rgba(139,111,71,.10) !important; "
+            "backdrop-filter: none !important; -webkit-backdrop-filter: none !important; "
+            "color: var(--mcg-on-paper) !important; opacity: 1 !important; "
+            "filter: none !important; mix-blend-mode: normal !important; isolation: isolate; overflow: hidden; "
             "transition: all .3s cubic-bezier(.4,0,.2,1);"
         )
 
     @staticmethod
     def __ui_soft_card_style() -> str:
         return (
-            "background: linear-gradient(135deg, rgba(212,165,116,.13), rgba(13,92,92,.08)); "
-            "border: 1px solid rgba(212,165,116,.20); "
+            "background: linear-gradient(135deg, rgba(212,165,116,.13), rgba(13,92,92,.08)) !important; "
+            "background-color: rgba(255,252,246,.72) !important; "
+            "border: 1px solid rgba(212,165,116,.20) !important; "
             "border-radius: 16px; "
-            "box-shadow: 0 2px 4px rgba(26,26,26,.06), 0 10px 26px rgba(13,92,92,.10); "
+            "box-shadow: 0 2px 4px rgba(26,26,26,.06), 0 10px 26px rgba(13,92,92,.10) !important; "
+            "backdrop-filter: none !important; -webkit-backdrop-filter: none !important; "
+            "color: var(--mcg-on-paper) !important; opacity: 1 !important; "
+            "filter: none !important; mix-blend-mode: normal !important; isolation: isolate; "
             "transition: all .3s cubic-bezier(.4,0,.2,1);"
         )
 
@@ -1059,27 +1068,55 @@ class MediaCoverGenerator(_PluginBase):
     --mcg-on-paper-soft: #7A6F5D;
     --mcg-action-text: #7A6F5D;
     --mcg-action-text-hover: #6F644F;
-    --mcg-host-text: #2D2D2D;
-    --mcg-host-text-muted: #666666;
+    --v-theme-primary: 212, 165, 116;
+    --v-theme-secondary: 13, 92, 92;
+    --v-theme-info: 13, 92, 92;
+    --v-theme-warning: 139, 111, 71;
+    --v-theme-error: 160, 90, 63;
+    --v-theme-background: 255, 252, 246;
+    --v-theme-surface: 255, 252, 246;
+    --v-theme-surface-variant: 240, 221, 198;
+    --v-theme-on-background: 45, 45, 45;
+    --v-theme-on-surface: 45, 45, 45;
+    --v-theme-on-surface-variant: 102, 102, 102;
     color: var(--mcg-on-paper);
+    color-scheme: light;
+    isolation: isolate;
 }
-html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
-.v-theme--dark .mcg-theme-root,
-.v-theme--transparent .mcg-theme-root,
-.v-theme--purple .mcg-theme-root {
-    --mcg-host-text: rgba(255, 255, 255, .9);
-    --mcg-host-text-muted: rgba(255, 255, 255, .62);
+.mcg-theme-root .mcg-surface {
+    background-color: rgba(255, 252, 246, .94) !important;
+    background-image: none !important;
+    border-color: rgba(212, 165, 116, .26) !important;
+    box-shadow: 0 10px 26px rgba(53, 45, 35, .08) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    color: var(--mcg-on-paper) !important;
+    opacity: 1 !important;
+    filter: none !important;
+    mix-blend-mode: normal !important;
+    isolation: isolate;
 }
-.mcg-theme-root .v-card,
-.mcg-theme-root .v-card-title,
-.mcg-theme-root .v-card-text,
-.mcg-theme-root .v-expansion-panel,
-.mcg-theme-root .v-expansion-panel-title,
-.mcg-theme-root .v-expansion-panel-title__icon,
-.mcg-theme-root .v-expansion-panel-text,
-.mcg-theme-root .v-btn-toggle,
-.mcg-theme-root .v-btn--variant-outlined,
-.mcg-theme-root .v-btn__content,
+.mcg-theme-root .mcg-surface > .v-card__underlay,
+.mcg-theme-root .mcg-surface > .v-card__overlay,
+.mcg-theme-root .mcg-surface > .v-sheet__underlay {
+    display: none !important;
+    opacity: 0 !important;
+}
+.mcg-theme-root .mcg-surface > .v-card-title,
+.mcg-theme-root .mcg-surface > .v-card-text,
+.mcg-theme-root .mcg-surface > .v-card-subtitle,
+.mcg-theme-root .mcg-surface .mcg-host-title {
+    color: var(--mcg-on-paper) !important;
+    opacity: 1 !important;
+}
+.mcg-theme-root .mcg-surface .mcg-host-muted,
+.mcg-theme-root .mcg-surface .text-medium-emphasis,
+.mcg-theme-root .mcg-surface .v-card-subtitle,
+.mcg-theme-root .mcg-surface .v-input__details,
+.mcg-theme-root .mcg-surface .v-messages {
+    color: var(--mcg-on-paper-muted) !important;
+    opacity: 1 !important;
+}
 .mcg-theme-root .v-label,
 .mcg-theme-root .v-selection-control .v-label,
 .mcg-theme-root .v-field,
@@ -1088,17 +1125,63 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
 .mcg-theme-root .v-field__input,
 .mcg-theme-root .v-select__selection,
 .mcg-theme-root .v-select__selection-text,
-.mcg-theme-root .v-list-item-title,
-.mcg-theme-root .v-list-item-subtitle,
+.mcg-theme-root .v-btn__content,
 .mcg-theme-root .v-tab,
-.mcg-theme-root .v-icon {
+.mcg-theme-root .v-chip,
+.mcg-theme-root .v-chip__content {
     color: var(--mcg-on-paper) !important;
 }
-.mcg-theme-root .v-expansion-panel-title .v-icon,
-.mcg-theme-root .v-btn--variant-outlined .v-icon,
-.mcg-theme-root .v-field .v-icon {
-    color: var(--mcg-on-paper-muted) !important;
+.mcg-theme-root .v-label,
+.mcg-theme-root .v-field-label,
+.mcg-theme-root .v-field-label--floating,
+.mcg-theme-root .v-select__selection,
+.mcg-theme-root .v-select__selection-text,
+.mcg-theme-root .v-chip,
+.mcg-theme-root .v-chip__content {
     opacity: 1 !important;
+}
+.mcg-theme-root .v-field {
+    background: rgba(255, 252, 246, .82) !important;
+    background-color: rgba(255, 252, 246, .82) !important;
+    color: var(--mcg-on-paper) !important;
+    opacity: 1 !important;
+    filter: none !important;
+    mix-blend-mode: normal !important;
+    isolation: isolate;
+}
+html[data-theme="glass"] .mcg-theme-root .v-field,
+html[data-theme="glass"] .mcg-theme-root .v-field.v-field--variant-outlined {
+    background: rgba(255, 252, 246, .94) !important;
+    background-color: rgba(255, 252, 246, .94) !important;
+}
+html[data-theme="glass"] .mcg-theme-root .v-field.v-field--focused,
+html[data-theme="glass"] .mcg-theme-root .v-field.v-field--variant-outlined.v-field--focused {
+    background: rgba(255, 252, 246, .98) !important;
+    background-color: rgba(255, 252, 246, .98) !important;
+}
+.mcg-theme-root .v-input,
+.mcg-theme-root .v-input__control {
+    opacity: 1 !important;
+    filter: none !important;
+    mix-blend-mode: normal !important;
+}
+.mcg-theme-root .v-field__overlay,
+.mcg-theme-root .v-field__underlay {
+    background: transparent !important;
+    opacity: 0 !important;
+}
+.mcg-theme-root .v-field__input input,
+.mcg-theme-root .v-field__input textarea {
+    color: var(--mcg-on-paper) !important;
+    caret-color: #8B6F47 !important;
+}
+.mcg-theme-root .v-btn--variant-outlined:not(.v-btn--active),
+.mcg-theme-root .v-btn-toggle .v-btn:not(.v-btn--active) {
+    color: var(--mcg-on-paper) !important;
+}
+.mcg-theme-root .v-btn--variant-outlined:not(.v-btn--active) .v-btn__content,
+.mcg-theme-root .v-btn-toggle .v-btn:not(.v-btn--active) .v-btn__content {
+    color: var(--mcg-on-paper) !important;
 }
 .mcg-theme-root .v-expansion-panel-title,
 .mcg-theme-root .v-expansion-panel-text__wrapper {
@@ -1149,10 +1232,10 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
     color: #D4A574 !important;
 }
 .mcg-theme-root .mcg-host-title {
-    color: var(--mcg-host-text) !important;
+    color: var(--mcg-on-paper) !important;
 }
 .mcg-theme-root .mcg-host-muted {
-    color: var(--mcg-host-text-muted) !important;
+    color: var(--mcg-on-paper-muted) !important;
 }
 .mcg-theme-root .mcg-style-card {
     background: rgba(255, 252, 246, .90) !important;
@@ -1171,6 +1254,29 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
 }
 .mcg-theme-root .mcg-style-card .v-img {
     background: transparent !important;
+}
+.mcg-theme-root .mcg-history-card,
+.mcg-theme-root .mcg-history-card .v-card-text {
+    background: rgba(255, 252, 246, .96) !important;
+    color: var(--mcg-on-paper) !important;
+    opacity: 1 !important;
+    filter: none !important;
+    mix-blend-mode: normal !important;
+    isolation: isolate;
+}
+.mcg-theme-root .mcg-history-card .mcg-history-name {
+    color: var(--mcg-on-paper) !important;
+    opacity: 1 !important;
+    font-weight: 600;
+}
+.mcg-theme-root .mcg-history-card .mcg-history-size {
+    color: var(--mcg-on-paper-muted) !important;
+    opacity: 1 !important;
+}
+.mcg-theme-root .mcg-history-card .mcg-history-delete,
+.mcg-theme-root .mcg-history-card .mcg-history-delete .v-btn__content {
+    color: #A05A3F !important;
+    opacity: 1 !important;
 }
 .mcg-soft-action-btn:hover {
     background: #FFF3C4 !important;
@@ -1237,6 +1343,14 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
             for key in ("color", "baseColor", "borderColor"):
                 if props.get(key) in color_map:
                     props[key] = color_map[props[key]]
+            if component in {"VCard", "VSheet", "VExpansionPanel"}:
+                current_class = str(props.get("class", ""))
+                if "mcg-surface" not in current_class.split():
+                    current_class = f"{current_class} mcg-surface".strip()
+                props["class"] = current_class
+                style = props.get("style", "")
+                surface_style = "opacity: 1 !important; filter: none !important; mix-blend-mode: normal !important; isolation: isolate;"
+                props["style"] = f"{style}; {surface_style}" if style else surface_style
             if props.get("type") in color_map:
                 alert_type = props.get("type")
                 props.pop("type", None)
@@ -1254,7 +1368,7 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
                     props["class"] = f"{current_class} custom-input".strip()
                 style = props.get("style", "")
                 input_style = (
-                    "background: rgba(255,255,255,.035); border-radius: 12px; "
+                    "background: rgba(255,252,246,.82) !important; background-color: rgba(255,252,246,.82) !important; border-radius: 12px; "
                     "border-width: 1px !important; "
                     "transition: all .3s cubic-bezier(.4,0,.2,1);"
                 )
@@ -1271,13 +1385,13 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
             if component == "VBtn" and props.get("variant") == "flat":
                 if "mcg-soft-action-btn" in props.get("class", ""):
                     props.setdefault("elevation", 0)
-                    return node
-                style = props.get("style", "")
-                props.setdefault("elevation", 4)
-                btn_style = "background: linear-gradient(135deg, #D4A574 0%, #8B6F47 58%, #0D5C5C 100%); color: #FFFFF0; box-shadow: 0 8px 24px rgba(212,165,116,.32); transition: all .3s cubic-bezier(.4,0,.2,1); position: relative; overflow: hidden; min-width: auto; padding: 8px 20px;"
-                if props.get("color") == "#A05A3F":
-                    btn_style = "background: linear-gradient(135deg, #A05A3F 0%, #8B6F47 100%); color: #FFFFF0; box-shadow: 0 8px 24px rgba(160,90,63,.26); transition: all .3s cubic-bezier(.4,0,.2,1); position: relative; overflow: hidden; min-width: auto; padding: 8px 20px;"
-                props["style"] = f"{style}; {btn_style}" if style else btn_style
+                else:
+                    style = props.get("style", "")
+                    props.setdefault("elevation", 4)
+                    btn_style = "background: linear-gradient(135deg, #D4A574 0%, #8B6F47 58%, #0D5C5C 100%); color: #FFFFF0; box-shadow: 0 8px 24px rgba(212,165,116,.32); transition: all .3s cubic-bezier(.4,0,.2,1); position: relative; overflow: hidden; min-width: auto; padding: 8px 20px;"
+                    if props.get("color") == "#A05A3F":
+                        btn_style = "background: linear-gradient(135deg, #A05A3F 0%, #8B6F47 100%); color: #FFFFF0; box-shadow: 0 8px 24px rgba(160,90,63,.26); transition: all .3s cubic-bezier(.4,0,.2,1); position: relative; overflow: hidden; min-width: auto; padding: 8px 20px;"
+                    props["style"] = f"{style}; {btn_style}" if style else btn_style
             if component == "VTabs":
                 props["selectedClass"] = "mcg-tab-selected"
                 props["sliderColor"] = cls.__ui_accent()
@@ -2807,7 +2921,7 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
                                     "props": {
                                         "variant": "flat",
                                         "elevation": 2,
-                                        "class": "rounded-lg",
+                                        "class": "rounded-lg mcg-history-card",
                                     },
                                     "content": [
                                         {
@@ -2833,14 +2947,14 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
                                                                 {
                                                                     "component": "div",
                                                                     "props": {
-                                                                        "class": "text-body-2",
+                                                                        "class": "text-body-2 mcg-history-name",
                                                                         "style": "display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.2rem; min-height: 2.4rem;"
                                                                     },
                                                                     "text": item["name"],
                                                                 },
                                                                 {
                                                                     "component": "div",
-                                                                    "props": {"class": "text-caption text-medium-emphasis mt-1"},
+                                                                    "props": {"class": "text-caption mt-1 mcg-history-size"},
                                                                     "text": item["size"],
                                                                 },
                                                             ],
@@ -2856,7 +2970,7 @@ html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
                                                                         "variant": "text",
                                                                         "size": "small",
                                                                         "title": "删除",
-                                                                        "class": "text-none",
+                                                                        "class": "text-none mcg-history-delete",
                                                                     },
                                                                     "text": "删除",
                                                                     "events": {
