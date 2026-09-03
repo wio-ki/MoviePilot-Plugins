@@ -1255,6 +1255,50 @@ html[data-theme="glass"] .mcg-theme-root .v-field.v-field--variant-outlined.v-fi
 .mcg-theme-root .mcg-style-card .v-img {
     background: transparent !important;
 }
+.mcg-theme-root .mcg-title-editor,
+.mcg-theme-root .mcg-title-editor .ace_gutter,
+.mcg-theme-root .mcg-title-editor .ace_scroller,
+.mcg-theme-root .mcg-title-editor .ace_content {
+    background: rgba(255, 252, 246, .96) !important;
+    background-color: rgba(255, 252, 246, .96) !important;
+    color: #2D2D2D !important;
+    opacity: 1 !important;
+    filter: none !important;
+    mix-blend-mode: normal !important;
+    text-shadow: none !important;
+}
+html[data-theme="glass"] .mcg-theme-root .mcg-title-editor,
+html[data-theme="glass"] .mcg-theme-root .mcg-title-editor .ace_gutter,
+html[data-theme="glass"] .mcg-theme-root .mcg-title-editor .ace_scroller,
+html[data-theme="glass"] .mcg-theme-root .mcg-title-editor .ace_content,
+html[data-theme="glass"] .mcg-theme-root .mcg-title-editor .ace_text-layer,
+html[data-theme="glass"] .mcg-theme-root .mcg-title-editor .ace_line {
+    background: rgba(255, 252, 246, .96) !important;
+    background-color: rgba(255, 252, 246, .96) !important;
+    color: #2D2D2D !important;
+    opacity: 1 !important;
+    filter: none !important;
+    mix-blend-mode: normal !important;
+}
+.mcg-theme-root .mcg-title-editor .ace_gutter {
+    color: #666666 !important;
+    border-right: 1px solid rgba(122, 111, 93, .18) !important;
+}
+.mcg-theme-root .mcg-title-editor .ace_gutter-cell,
+.mcg-theme-root .mcg-title-editor .ace_line span,
+.mcg-theme-root .mcg-title-editor .ace_text-layer {
+    color: #2D2D2D !important;
+    opacity: 1 !important;
+    text-shadow: none !important;
+}
+.mcg-theme-root .mcg-title-editor .ace_marker-layer .ace_active-line,
+.mcg-theme-root .mcg-title-editor .ace_marker-layer .ace_selection {
+    background: rgba(212, 165, 116, .18) !important;
+}
+.mcg-theme-root .mcg-title-editor .ace_cursor {
+    color: #8B6F47 !important;
+    opacity: 1 !important;
+}
 .mcg-theme-root .mcg-history-card,
 .mcg-theme-root .mcg-history-card .v-card-text {
     background: rgba(255, 252, 246, .96) !important;
@@ -1556,6 +1600,7 @@ html[data-theme="glass"] .mcg-theme-root .v-field.v-field--variant-outlined.v-fi
                                     'modelvalue': 'title_config',
                                     'lang': 'yaml',
                                     'theme': 'tomorrow',
+                                    'class': 'mcg-title-editor',
                                     'style': 'height: 30rem; border-radius: 0; font-size: 15px; --v-theme-primary: 212,165,116; background: linear-gradient(135deg, rgba(255,250,240,.95), rgba(248,239,226,.92)); border: 1px solid rgba(212,165,116,.28);',
                                     'placeholder': '''媒体库名称:
   - 主标题
