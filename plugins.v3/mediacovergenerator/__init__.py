@@ -51,7 +51,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/emby.png"
     # 插件版本
-    plugin_version = "3.0.1"
+    plugin_version = "1.0.0"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -962,36 +962,27 @@ class MediaCoverGenerator(_PluginBase):
             "box-shadow: 0 24px 70px rgba(53,45,35,.12); "
             "padding: 18px; "
             "--v-theme-primary: 212,165,116; --v-theme-secondary: 13,92,92; "
-            "--v-theme-info: 13,92,92; --v-theme-warning: 139,111,71; --v-theme-error: 160,90,63; "
-            "color: var(--mcg-on-paper) !important; color-scheme: light; "
-            "opacity: 1 !important; filter: none !important; mix-blend-mode: normal !important; isolation: isolate;"
+            "--v-theme-info: 13,92,92; --v-theme-warning: 139,111,71; --v-theme-error: 160,90,63;"
         )
 
     @staticmethod
     def __ui_card_style() -> str:
         return (
-            "background: linear-gradient(135deg, rgba(255,255,240,.94), rgba(255,255,255,.84)) !important; "
-            "background-color: rgba(255,252,246,.94) !important; "
-            "border: 1px solid rgba(212,165,116,.26) !important; "
+            "background: linear-gradient(135deg, rgba(255,255,240,.88), rgba(255,255,255,.62)); "
+            "border: 1px solid rgba(212,165,116,.26); "
             "border-radius: 18px; "
-            "box-shadow: 0 2px 4px rgba(26,26,26,.06), 0 12px 28px rgba(13,92,92,.08), 0 24px 60px rgba(139,111,71,.10) !important; "
-            "backdrop-filter: none !important; -webkit-backdrop-filter: none !important; "
-            "color: var(--mcg-on-paper) !important; opacity: 1 !important; "
-            "filter: none !important; mix-blend-mode: normal !important; isolation: isolate; overflow: hidden; "
+            "box-shadow: 0 2px 4px rgba(26,26,26,.06), 0 12px 28px rgba(13,92,92,.08), 0 24px 60px rgba(139,111,71,.10); "
+            "backdrop-filter: blur(12px) saturate(170%); overflow: hidden; "
             "transition: all .3s cubic-bezier(.4,0,.2,1);"
         )
 
     @staticmethod
     def __ui_soft_card_style() -> str:
         return (
-            "background: linear-gradient(135deg, rgba(212,165,116,.13), rgba(13,92,92,.08)) !important; "
-            "background-color: rgba(255,252,246,.72) !important; "
-            "border: 1px solid rgba(212,165,116,.20) !important; "
+            "background: linear-gradient(135deg, rgba(212,165,116,.13), rgba(13,92,92,.08)); "
+            "border: 1px solid rgba(212,165,116,.20); "
             "border-radius: 16px; "
-            "box-shadow: 0 2px 4px rgba(26,26,26,.06), 0 10px 26px rgba(13,92,92,.10) !important; "
-            "backdrop-filter: none !important; -webkit-backdrop-filter: none !important; "
-            "color: var(--mcg-on-paper) !important; opacity: 1 !important; "
-            "filter: none !important; mix-blend-mode: normal !important; isolation: isolate; "
+            "box-shadow: 0 2px 4px rgba(26,26,26,.06), 0 10px 26px rgba(13,92,92,.10); "
             "transition: all .3s cubic-bezier(.4,0,.2,1);"
         )
 
@@ -1070,90 +1061,16 @@ class MediaCoverGenerator(_PluginBase):
     --mcg-action-text-hover: #6F644F;
     --mcg-host-text: #2D2D2D;
     --mcg-host-text-muted: #666666;
-    --v-high-emphasis-opacity: 1;
-    --v-medium-emphasis-opacity: .82;
-    --v-disabled-opacity: .5;
-    color: var(--mcg-on-paper) !important;
-    color-scheme: light;
-    opacity: 1 !important;
-    filter: none !important;
-    mix-blend-mode: normal !important;
-    isolation: isolate;
+    color: var(--mcg-on-paper);
 }
-.mcg-theme-root,
-.mcg-theme-root :where(*) {
-    text-shadow: none;
-}
-.mcg-theme-root.mcg-theme-root :where(*) {
-    --v-theme-primary: 212, 165, 116 !important;
-    --v-theme-secondary: 13, 92, 92 !important;
-    --v-theme-info: 13, 92, 92 !important;
-    --v-theme-warning: 139, 111, 71 !important;
-    --v-theme-error: 160, 90, 63 !important;
-    --v-theme-background: 255, 252, 246 !important;
-    --v-theme-surface: 255, 252, 246 !important;
-    --v-theme-surface-variant: 240, 221, 198 !important;
-    --v-theme-on-background: 45, 45, 45 !important;
-    --v-theme-on-surface: 45, 45, 45 !important;
-    --v-theme-on-surface-variant: 102, 102, 102 !important;
-    --v-high-emphasis-opacity: 1 !important;
-    --v-medium-emphasis-opacity: .82 !important;
-    --v-disabled-opacity: .5 !important;
-}
-.mcg-theme-root.mcg-theme-root :is(
-    .v-card-title,
-    .v-card-text,
-    .v-card-subtitle,
-    .v-btn__content,
-    .v-label,
-    .v-selection-control .v-label,
-    .v-field,
-    .v-field-label,
-    .v-field-label--floating,
-    .v-field__input,
-    .v-select__selection,
-    .v-select__selection-text,
-    .v-list-item-title,
-    .v-list-item-subtitle,
-    .v-tab,
-    .v-icon
-) {
-    color: var(--mcg-on-paper) !important;
-    opacity: 1 !important;
-    filter: none !important;
-    mix-blend-mode: normal !important;
-}
-.mcg-theme-root.mcg-theme-root :is(
-    .v-card-subtitle,
-    .v-input__details,
-    .v-messages,
-    .v-field__prefix,
-    .v-field__suffix,
-    .v-field__prepend-inner,
-    .v-field__append-inner,
-    .text-medium-emphasis
-) {
-    color: var(--mcg-on-paper-muted) !important;
-}
-.mcg-theme-root :where(.mcg-surface) {
-    background-color: rgba(255, 252, 246, .94) !important;
-    background-image: none !important;
-    border-color: rgba(212, 165, 116, .26) !important;
-    box-shadow: 0 10px 26px rgba(53, 45, 35, .08) !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-    color: var(--mcg-on-paper) !important;
-    opacity: 1 !important;
-    filter: none !important;
-    mix-blend-mode: normal !important;
-    isolation: isolate;
-}
-.mcg-theme-root :where(.mcg-surface) > :where(.v-card__underlay, .v-card__overlay, .v-sheet__underlay) {
-    display: none !important;
-    opacity: 0 !important;
+html[data-theme]:not([data-theme="light"]) .mcg-theme-root,
+.v-theme--dark .mcg-theme-root,
+.v-theme--transparent .mcg-theme-root,
+.v-theme--purple .mcg-theme-root {
+    --mcg-host-text: rgba(255, 255, 255, .9);
+    --mcg-host-text-muted: rgba(255, 255, 255, .62);
 }
 .mcg-theme-root .v-card,
-.mcg-theme-root .v-sheet,
 .mcg-theme-root .v-card-title,
 .mcg-theme-root .v-card-text,
 .mcg-theme-root .v-expansion-panel,
@@ -1174,14 +1091,8 @@ class MediaCoverGenerator(_PluginBase):
 .mcg-theme-root .v-list-item-title,
 .mcg-theme-root .v-list-item-subtitle,
 .mcg-theme-root .v-tab,
-.mcg-theme-root input,
-.mcg-theme-root textarea,
-.mcg-theme-root button,
 .mcg-theme-root .v-icon {
     color: var(--mcg-on-paper) !important;
-    opacity: 1 !important;
-    filter: none !important;
-    mix-blend-mode: normal !important;
 }
 .mcg-theme-root .v-expansion-panel-title .v-icon,
 .mcg-theme-root .v-btn--variant-outlined .v-icon,
@@ -1192,8 +1103,6 @@ class MediaCoverGenerator(_PluginBase):
 .mcg-theme-root .v-expansion-panel-title,
 .mcg-theme-root .v-expansion-panel-text__wrapper {
     background: transparent !important;
-    color: var(--mcg-on-paper) !important;
-    opacity: 1 !important;
 }
 .mcg-theme-root .v-expansion-panel-title__overlay,
 .mcg-theme-root .v-btn__overlay,
@@ -1240,10 +1149,10 @@ class MediaCoverGenerator(_PluginBase):
     color: #D4A574 !important;
 }
 .mcg-theme-root .mcg-host-title {
-    color: var(--mcg-on-paper) !important;
+    color: var(--mcg-host-text) !important;
 }
 .mcg-theme-root .mcg-host-muted {
-    color: var(--mcg-on-paper-muted) !important;
+    color: var(--mcg-host-text-muted) !important;
 }
 .mcg-theme-root .mcg-style-card {
     background: rgba(255, 252, 246, .90) !important;
@@ -1305,70 +1214,6 @@ class MediaCoverGenerator(_PluginBase):
     def __ui_input_style() -> str:
         return "--v-theme-primary: 212,165,116; --v-theme-secondary: 13,92,92; --v-theme-info: 13,92,92; --v-theme-error: 160,90,63;"
 
-    @staticmethod
-    def __ui_lock_surface_style(style: str) -> str:
-        """Keep each plugin-owned surface above host-theme important rules."""
-        locked = MediaCoverGenerator.__ui_lock_visual_style(
-            style,
-            fallback_color="var(--mcg-on-paper)",
-            fallback_background="rgba(255, 252, 246, .94)",
-        )
-        surface_style = (
-            "opacity: 1 !important; filter: none !important; "
-            "mix-blend-mode: normal !important; isolation: isolate;"
-        )
-        return f"{locked}; {surface_style}" if locked else surface_style
-
-    @staticmethod
-    def __ui_lock_visual_style(
-        style: str,
-        fallback_color: Optional[str] = None,
-        fallback_background: Optional[str] = None,
-    ) -> str:
-        """Promote plugin-owned visual declarations over host theme rules."""
-        visual_properties = {
-            "background",
-            "background-color",
-            "background-image",
-            "border",
-            "border-color",
-            "border-top",
-            "border-right",
-            "border-bottom",
-            "border-left",
-            "box-shadow",
-            "backdrop-filter",
-            "-webkit-backdrop-filter",
-            "color",
-            "opacity",
-            "filter",
-            "mix-blend-mode",
-        }
-
-        def lock_declaration(match: re.Match) -> str:
-            prefix, property_name, value = match.groups()
-            if property_name.lower() not in visual_properties:
-                return match.group(0)
-            cleaned_value = re.sub(r"\s*!important\s*$", "", value, flags=re.IGNORECASE).strip()
-            return f"{prefix}{property_name}: {cleaned_value} !important"
-
-        locked = re.sub(
-            r"(^|;)\s*([\w-]+)\s*:\s*([^;]+)",
-            lock_declaration,
-            str(style or ""),
-        ).strip()
-        if fallback_background and not re.search(
-            r"(?:^|;)\s*background(?:\s*-\s*(?:color|image))?\s*:",
-            locked,
-            re.IGNORECASE,
-        ):
-            background = f"background: {fallback_background} !important"
-            locked = f"{locked}; {background}" if locked else background
-        if fallback_color and not re.search(r"(?:^|;)\s*color\s*:", locked, re.IGNORECASE):
-            color = f"color: {fallback_color} !important"
-            locked = f"{locked}; {color}" if locked else color
-        return locked
-
     @classmethod
     def __ui_tone_component(cls, node: Any) -> Any:
         if isinstance(node, list):
@@ -1392,14 +1237,6 @@ class MediaCoverGenerator(_PluginBase):
             for key in ("color", "baseColor", "borderColor"):
                 if props.get(key) in color_map:
                     props[key] = color_map[props[key]]
-            if component in {"VCard", "VSheet", "VExpansionPanel"}:
-                current_class = str(props.get("class", ""))
-                surface_classes = ["mcg-surface", "no-blur"]
-                for surface_class in surface_classes:
-                    if surface_class not in current_class.split():
-                        current_class = f"{current_class} {surface_class}".strip()
-                props["class"] = current_class
-                props["style"] = cls.__ui_lock_surface_style(props.get("style", ""))
             if props.get("type") in color_map:
                 alert_type = props.get("type")
                 props.pop("type", None)
@@ -1434,13 +1271,13 @@ class MediaCoverGenerator(_PluginBase):
             if component == "VBtn" and props.get("variant") == "flat":
                 if "mcg-soft-action-btn" in props.get("class", ""):
                     props.setdefault("elevation", 0)
-                else:
-                    style = props.get("style", "")
-                    props.setdefault("elevation", 4)
-                    btn_style = "background: linear-gradient(135deg, #D4A574 0%, #8B6F47 58%, #0D5C5C 100%); color: #FFFFF0; box-shadow: 0 8px 24px rgba(212,165,116,.32); transition: all .3s cubic-bezier(.4,0,.2,1); position: relative; overflow: hidden; min-width: auto; padding: 8px 20px;"
-                    if props.get("color") == "#A05A3F":
-                        btn_style = "background: linear-gradient(135deg, #A05A3F 0%, #8B6F47 100%); color: #FFFFF0; box-shadow: 0 8px 24px rgba(160,90,63,.26); transition: all .3s cubic-bezier(.4,0,.2,1); position: relative; overflow: hidden; min-width: auto; padding: 8px 20px;"
-                    props["style"] = f"{style}; {btn_style}" if style else btn_style
+                    return node
+                style = props.get("style", "")
+                props.setdefault("elevation", 4)
+                btn_style = "background: linear-gradient(135deg, #D4A574 0%, #8B6F47 58%, #0D5C5C 100%); color: #FFFFF0; box-shadow: 0 8px 24px rgba(212,165,116,.32); transition: all .3s cubic-bezier(.4,0,.2,1); position: relative; overflow: hidden; min-width: auto; padding: 8px 20px;"
+                if props.get("color") == "#A05A3F":
+                    btn_style = "background: linear-gradient(135deg, #A05A3F 0%, #8B6F47 100%); color: #FFFFF0; box-shadow: 0 8px 24px rgba(160,90,63,.26); transition: all .3s cubic-bezier(.4,0,.2,1); position: relative; overflow: hidden; min-width: auto; padding: 8px 20px;"
+                props["style"] = f"{style}; {btn_style}" if style else btn_style
             if component == "VTabs":
                 props["selectedClass"] = "mcg-tab-selected"
                 props["sliderColor"] = cls.__ui_accent()
@@ -1461,37 +1298,6 @@ class MediaCoverGenerator(_PluginBase):
                 )
                 props["style"] = f"{style}; {tab_item_style}" if style else tab_item_style
 
-            if component != "style":
-                text_components = {
-                    "VCard",
-                    "VSheet",
-                    "VExpansionPanel",
-                    "VCardTitle",
-                    "VCardText",
-                    "VCardSubtitle",
-                    "VList",
-                    "VListItem",
-                    "VListItemTitle",
-                    "VListItemSubtitle",
-                    "VAlert",
-                    "VBtn",
-                    "VBtnToggle",
-                    "VTabs",
-                    "VTab",
-                    "VTextField",
-                    "VTextarea",
-                    "VSelect",
-                    "VSwitch",
-                    "VCheckbox",
-                    "VRadio",
-                    "VCronField",
-                    "VAceEditor",
-                }
-                style = props.get("style", "")
-                fallback_color = "var(--mcg-on-paper)" if component in text_components else None
-                if isinstance(style, str):
-                    props["style"] = cls.__ui_lock_visual_style(style, fallback_color=fallback_color)
-
         if component == "VIcon" and isinstance(props, dict):
             if props.get("color") in {"primary", "info", "error", "warning"}:
                 props["color"] = cls.__ui_accent()
@@ -1499,12 +1305,6 @@ class MediaCoverGenerator(_PluginBase):
                 props["color"] = cls.__ui_accent()
             else:
                 props.setdefault("color", "#7A6F5D")
-            icon_color = props.get("color")
-            if isinstance(icon_color, str):
-                props["style"] = cls.__ui_lock_visual_style(
-                    props.get("style", ""),
-                    fallback_color=icon_color,
-                )
 
         content = node.get("content")
         if content is not None:
