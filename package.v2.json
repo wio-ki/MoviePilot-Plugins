@@ -8,6 +8,7 @@
         "author": "Kioo",
         "level": 1,
         "history": {
+            "v0.10.9": "修复：__get_item_id 未初始化导致综艺等含剧集条目的库封面更新失败",
             "v0.10.8": "修复：入库监控封面更新失败",
             "v0.10.7": "Adapt the MediaCoverGenerator UI for MoviePilot custom themes, fixing unreadable text and icons in transparent, dark, and purple themes",
             "v0.10.6": "基于 0.10.4 优化三种静态封面风格：增加柔和光影、暗角、细颗粒与更精致的卡片/文字层次",
