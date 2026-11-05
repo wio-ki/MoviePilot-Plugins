@@ -9,9 +9,10 @@ from collections import Counter
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont, ImageOps
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps
 
 from app.log import logger
+from app.plugins.mediacovergenerator.style.title_layout import TitleLayout, soft_shadow
 from app.plugins.mediacovergenerator.utils.color_helper import ColorHelper
 
 
@@ -134,96 +135,14 @@ def _alpha_scaled(img, factor):
 
 
 def _build_text_layer(target_w, target_h, title, font_path, font_size, font_offset, bg_color, scale):
-    text_layer = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
-    shadow_layer = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
-
-    draw = ImageDraw.Draw(text_layer)
-    shadow_draw = ImageDraw.Draw(shadow_layer)
-
-    zh_font_size, en_font_size = float(font_size[0]), float(font_size[1])
-    zh_font_offset, title_spacing, _ = font_offset
-    zh_font_path, en_font_path = font_path
-    title_zh, title_en = title
-
-    # 参考 style_animated_1：按分辨率比例缩放字体
-    zh_font = ImageFont.truetype(zh_font_path, max(1, int(zh_font_size * scale)))
-    en_font = ImageFont.truetype(en_font_path, max(1, int(en_font_size * scale)))
-
-    left_area_center_x = int(target_w * 0.25)
-    left_area_center_y = int(target_h * 0.5)
-
-    text_color = (255, 255, 255, 229)
-    shadow_color = darken_color(bg_color, 0.8) + (75,)
-    shadow_offset = 12
-    shadow_alpha = 75
-
-    zh_bbox = draw.textbbox((0, 0), title_zh, font=zh_font)
-    zh_text_w = zh_bbox[2] - zh_bbox[0]
-    zh_text_h = zh_bbox[3] - zh_bbox[1]
-
-    en_line_spacing = max(1, int(en_font_size * 0.12 * scale))
-    en_lines = []
-    total_en_height = 0
-
-    if title_en:
-        en_bbox = draw.textbbox((0, 0), title_en, font=en_font)
-        en_full_width = en_bbox[2] - en_bbox[0]
-
-        if en_full_width > zh_text_w and " " in title_en:
-            words = title_en.split(" ")
-            current_line = words[0]
-            for word in words[1:]:
-                test_line = current_line + " " + word
-                test_bbox = draw.textbbox((0, 0), test_line, font=en_font)
-                test_width = test_bbox[2] - test_bbox[0]
-                if test_width > zh_text_w:
-                    en_lines.append(current_line)
-                    current_line = word
-                else:
-                    current_line = test_line
-            if current_line:
-                en_lines.append(current_line)
-
-            for line in en_lines:
-                line_bbox = draw.textbbox((0, 0), line, font=en_font)
-                line_height = line_bbox[3] - line_bbox[1]
-                total_en_height += line_height + en_line_spacing
-            if en_lines:
-                total_en_height -= en_line_spacing
-        else:
-            en_lines = [title_en]
-            total_en_height = en_bbox[3] - en_bbox[1]
-
-    title_spacing_px = float(title_spacing) * scale if title_en else 0
-    total_text_height = zh_text_h + total_en_height + title_spacing_px
-    total_text_y = left_area_center_y - total_text_height // 2
-
-    zh_x = left_area_center_x - zh_text_w // 2
-    zh_y = total_text_y + float(zh_font_offset) * scale
-
-    for offset in range(3, shadow_offset + 1, 2):
-        current_shadow_color = shadow_color[:3] + (shadow_alpha,)
-        shadow_draw.text((zh_x + offset, zh_y + offset), title_zh, font=zh_font, fill=current_shadow_color)
-
-    draw.text((zh_x, zh_y), title_zh, font=zh_font, fill=text_color)
-
-    if en_lines:
-        en_y = zh_y + zh_text_h + title_spacing_px
-        for i, line in enumerate(en_lines):
-            line_bbox = draw.textbbox((0, 0), line, font=en_font)
-            line_width = line_bbox[2] - line_bbox[0]
-            line_height = line_bbox[3] - line_bbox[1]
-            en_x = left_area_center_x - line_width // 2
-            current_y = en_y + i * (line_height + en_line_spacing)
-
-            for offset in range(2, max(3, shadow_offset // 2 + 1)):
-                current_shadow_color = shadow_color[:3] + (shadow_alpha,)
-                shadow_draw.text((en_x + offset, current_y + offset), line, font=en_font, fill=current_shadow_color)
-
-            draw.text((en_x, current_y), line, font=en_font, fill=text_color)
-
-    blurred_shadow = shadow_layer.filter(ImageFilter.GaussianBlur(radius=shadow_offset))
-    return Image.alpha_composite(blurred_shadow, text_layer)
+    scaled_size = (float(font_size[0]) * scale, float(font_size[1]) * scale)
+    layout = TitleLayout(title, font_path, scaled_size, font_offset, scale, target_w * 0.44,
+                         uppercase_subtitle=False, tracking=0.03)
+    return layout.render_centered(
+        (target_w, target_h), target_w * 0.25, target_h / 2.0,
+        main_fill=(255, 255, 255, 235), sub_fill=(255, 255, 255, 235),
+        shadow=soft_shadow(darken_color(bg_color, 0.8), target_h),
+    )
 
 
 def create_style_animated_1(
@@ -578,10 +497,10 @@ def create_style_animated_1(
                 # 1. 堆叠层同步移动 (B 和 C 同时转动)
                 ang_b = s2_ang + (s1_ang - s2_ang) * it_stack
                 pos_b = (p2[0] + (p1[0] - p2[0]) * it_stack, p2[1] + (p1[1] - p2[1]) * it_stack)
-                
+
                 ang_c = s3_ang + (s2_ang - s3_ang) * it_stack
                 pos_c = (p3[0] + (p2[0] - p3[0]) * it_stack, p3[1] + (p2[1] - p3[1]) * it_stack)
-                
+
                 # D: 新底层卡片渐变出现
                 alpha_d = _ease_in_out_sine(local)
                 ang_d = s3_ang
@@ -668,10 +587,10 @@ def create_style_animated_1(
                         frame.paste(blur_rot, (blur_x, blur_y), blur_rot)
 
                     rotated = rotate_on_stable_canvas(card_img, ang, stable_canvas_size)
-                    
+
                     draw_x = int(round(center_pos[0] + offsets[0])) - center_offset
                     draw_y = int(round(center_pos[1] + offsets[1])) - center_offset
-                    
+
                     frame.paste(rotated, (draw_x, draw_y), rotated)
 
                 frame = Image.alpha_composite(frame, text_layer)
@@ -772,7 +691,7 @@ def create_style_animated_1(
                             err_data = ffmpeg_proc.stderr.read() if ffmpeg_proc.stderr else b""
                             error_msg = err_data.decode("utf-8", "ignore") if err_data else "无详细错误信息"
                             logger.error(f"ffmpeg 执行失败 (状态码 {ret})")
-                            
+
                             raise subprocess.CalledProcessError(ret, ffmpeg_cmd, stderr=err_data)
                         break
 

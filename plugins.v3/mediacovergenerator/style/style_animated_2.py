@@ -7,9 +7,10 @@ import tempfile
 import time
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
 from app.log import logger
+from app.plugins.mediacovergenerator.style.title_layout import TitleLayout, soft_shadow
 from app.plugins.mediacovergenerator.style.style_static_2 import (
     add_film_grain,
     align_image_right,
@@ -81,84 +82,16 @@ def _image_signature(image_path):
 
 def _build_text_layer(canvas_size, title, font_path, font_size, font_offset, bg_color):
     width, height = canvas_size
-    title_zh, title_en = title
-    zh_font_path, en_font_path = font_path
-    zh_font_size, en_font_size = float(font_size[0]), float(font_size[1])
-    zh_font_offset, title_spacing, _ = font_offset
-
-    # 小分辨率动图按比例放大字体，避免文字过小
+    # 小分辨率动图按比例换算字号，文字占比和静态版一致
     scale = height / 1080.0
-    zh_font = ImageFont.truetype(zh_font_path, max(1, int(zh_font_size * scale)))
-    en_font = ImageFont.truetype(en_font_path, max(1, int(en_font_size * scale)))
-
-    text_layer = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
-    shadow_layer = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(text_layer)
-    sdraw = ImageDraw.Draw(shadow_layer)
-
-    left_center_x = int(width * 0.25)
-    left_center_y = int(height * 0.5)
-
-    text_color = (255, 255, 255, 232)
-    shadow_color = darken_color(bg_color, 0.8) + (78,)
-
-    zh_bbox = draw.textbbox((0, 0), title_zh, font=zh_font)
-    zh_w = zh_bbox[2] - zh_bbox[0]
-    zh_h = zh_bbox[3] - zh_bbox[1]
-
-    en_lines = []
-    en_line_spacing = max(1, int(en_font.size * 0.12))
-    en_height = 0
-    if title_en:
-        en_bbox = draw.textbbox((0, 0), title_en, font=en_font)
-        en_full_w = en_bbox[2] - en_bbox[0]
-        if en_full_w > zh_w and " " in title_en:
-            words = title_en.split(" ")
-            current_line = words[0]
-            for word in words[1:]:
-                test_line = current_line + " " + word
-                test_bbox = draw.textbbox((0, 0), test_line, font=en_font)
-                test_w = test_bbox[2] - test_bbox[0]
-                if test_w > zh_w:
-                    en_lines.append(current_line)
-                    current_line = word
-                else:
-                    current_line = test_line
-            if current_line:
-                en_lines.append(current_line)
-        else:
-            en_lines = [title_en]
-
-        for i, line in enumerate(en_lines):
-            line_bbox = draw.textbbox((0, 0), line, font=en_font)
-            line_h = line_bbox[3] - line_bbox[1]
-            en_height += line_h
-            if i < len(en_lines) - 1:
-                en_height += en_line_spacing
-
-    total_h = zh_h + (float(title_spacing) * scale if en_lines else 0) + en_height
-    y0 = left_center_y - int(total_h // 2)
-
-    zh_x = left_center_x - zh_w // 2
-    zh_y = y0 + int(float(zh_font_offset) * scale)
-
-    for off in range(3, 11, 2):
-        sdraw.text((zh_x + off, zh_y + off), title_zh, font=zh_font, fill=shadow_color)
-    draw.text((zh_x, zh_y), title_zh, font=zh_font, fill=text_color)
-
-    if en_lines:
-        ey = zh_y + zh_h + int(float(title_spacing) * scale)
-        for line in en_lines:
-            eb = draw.textbbox((0, 0), line, font=en_font)
-            ew = eb[2] - eb[0]
-            eh = eb[3] - eb[1]
-            ex = left_center_x - ew // 2
-            for off in range(2, 8, 2):
-                sdraw.text((ex + off, ey + off), line, font=en_font, fill=shadow_color)
-            draw.text((ex, ey), line, font=en_font, fill=text_color)
-            ey += eh + en_line_spacing
-
-    return Image.alpha_composite(shadow_layer.filter(ImageFilter.GaussianBlur(radius=8)), text_layer)
+    scaled_size = (float(font_size[0]) * scale, float(font_size[1]) * scale)
+    layout = TitleLayout(title, font_path, scaled_size, font_offset, scale, width * 0.38,
+                         uppercase_subtitle=False, tracking=0.03)
+    return layout.render_centered(
+        canvas_size, width * 0.25, height / 2.0,
+        main_fill=(255, 255, 255, 235), sub_fill=(255, 255, 255, 235),
+        shadow=soft_shadow(darken_color(bg_color, 0.8), height),
+    )
 
 
 def create_style_animated_2(

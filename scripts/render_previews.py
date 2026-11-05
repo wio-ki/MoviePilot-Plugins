@@ -20,9 +20,10 @@ from PIL import Image, ImageDraw, ImageFilter
 
 REPO = Path(__file__).resolve().parent.parent
 PLUGIN_DIRS = [REPO / "plugins.v3" / "mediacovergenerator", REPO / "plugins.v2" / "mediacovergenerator"]
-FONTS = (str(REPO / "fonts" / "chaohei.ttf"), str(REPO / "fonts" / "EmblemaOne.woff2"))
-TITLE = ("光影典藏", "CINEMA COLLECTION")
+FONTS = (str(REPO / "fonts" / "pangmen.ttf"), str(REPO / "fonts" / "caveatbrush.ttf"))
+TITLE = ("电影", "MOVIE")
 FONT_FILES = {
+    "pangmen": "pangmen.ttf", "CaveatBrush": "caveatbrush.ttf",
     "chaohei": "chaohei.ttf", "yasong": "yasong.ttf", "EmblemaOne": "EmblemaOne.woff2", "Melete": "Melete.otf",
     "Phosphate": "phosphate.ttf", "JosefinSans": "josefinsans.woff2", "LilitaOne": "lilitaone.woff2",
 }
@@ -139,8 +140,8 @@ def render_all():
     resolution = ResolutionConfig("720p")
     scale = resolution.height / 1080.0
     common = {
-        "font_size": (170 * scale, 75 * scale),
-        "font_offset": (0, 40, 40),
+        "font_size": (290 * scale, 165 * scale),
+        "font_offset": (0, 44, 40, 0.20, 0.04),
         "blur_size": 50,
         "color_ratio": 0.8,
         "resolution_config": resolution,
@@ -176,7 +177,8 @@ def render_all():
             typography[preset["key"]] = create_style_static_4(
                 str(backdrop), TITLE, fonts,
                 font_size=(values["zh_font_size"] * scale, values["en_font_size"] * scale),
-                font_offset=(values["zh_font_offset"], values["title_spacing"] * scale, values["en_line_spacing"] * scale),
+                font_offset=(values["zh_font_offset"], values["title_spacing"], values["en_line_spacing"],
+                             values["zh_letter_spacing"] / 100.0, values["en_letter_spacing"] / 100.0),
                 blur_size=values["blur_size"],
                 color_ratio=values["color_ratio"],
                 resolution_config=resolution,

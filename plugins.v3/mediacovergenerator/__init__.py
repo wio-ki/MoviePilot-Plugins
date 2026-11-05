@@ -110,8 +110,16 @@ COVER_NAME_PATTERN = re.compile(
 )
 LIVE_TV_TYPE = "livetv"
 NUMBERED_IMAGE_PATTERN = re.compile(r"^[1-9][0-9]*\.jpg$", re.IGNORECASE)
-DEFAULT_ZH_FONT_SIZE = 170
-DEFAULT_EN_FONT_SIZE = 75
+DEFAULT_ZH_FONT = "pangmen"
+DEFAULT_EN_FONT = "CaveatBrush"
+DEFAULT_ZH_FONT_SIZE = 290
+DEFAULT_EN_FONT_SIZE = 165
+DEFAULT_TITLE_SPACING = 44
+# 字距是字号的百分比
+DEFAULT_ZH_LETTER_SPACING = 20
+DEFAULT_EN_LETTER_SPACING = 4
+# 新字体下载失败时退回这些字体，不让封面因为缺字体而生成失败
+FONT_FALLBACKS = {DEFAULT_ZH_FONT: "chaohei", DEFAULT_EN_FONT: "EmblemaOne"}
 HISTORY_PAGE_SIZE = 8
 LIBRARY_CACHE_SECONDS = 120
 THUMBNAIL_CACHE_SIZE = 256
@@ -126,7 +134,7 @@ class MediaCoverGenerator(_PluginBase):
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/emby.png"
     # 插件版本
     # 插件版本
-    plugin_version = "1.1.2"
+    plugin_version = "1.2.0"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -181,11 +189,14 @@ class MediaCoverGenerator(_PluginBase):
     _seen_keys = set()
     _zh_font_custom = ''
     _en_font_custom = ''
-    _zh_font_preset = 'chaohei'
-    _en_font_preset = 'EmblemaOne'
+    _zh_font_preset = DEFAULT_ZH_FONT
+    _en_font_preset = DEFAULT_EN_FONT
     _zh_font_offset = ''
     _title_spacing = ''
     _en_line_spacing = ''
+    _zh_letter_spacing = None
+    _en_letter_spacing = None
+    _typography_v2 = False
     _title_scale = 1.0
     _resolution = '480p'
     _custom_width = 1920
@@ -286,11 +297,14 @@ class MediaCoverGenerator(_PluginBase):
             self._use_primary = config.get("use_primary")
             self._zh_font_custom = config.get("zh_font_custom") or ""
             self._en_font_custom = config.get("en_font_custom") or ""
-            self._zh_font_preset = config.get("zh_font_preset", "chaohei")
-            self._en_font_preset = config.get("en_font_preset", "EmblemaOne")
+            self._zh_font_preset = config.get("zh_font_preset", DEFAULT_ZH_FONT)
+            self._en_font_preset = config.get("en_font_preset", DEFAULT_EN_FONT)
             self._zh_font_offset = config.get("zh_font_offset")
             self._title_spacing = config.get("title_spacing")
             self._en_line_spacing = config.get("en_line_spacing")
+            self._zh_letter_spacing = config.get("zh_letter_spacing")
+            self._en_letter_spacing = config.get("en_letter_spacing")
+            self._typography_v2 = bool(config.get("typography_v2"))
             self._title_scale = self.__to_number(config.get("title_scale"), 1.0, float)
             self._resolution = config.get("resolution", "480p")
             self._custom_width = config.get("custom_width", 1920)
@@ -368,9 +382,10 @@ class MediaCoverGenerator(_PluginBase):
         # 旧版本提供过实际不存在的字体预设，这里回退到默认字体
         valid_fonts = {spec["value"] for spec in self.__font_specs()}
         if self._zh_font_preset not in valid_fonts:
-            self._zh_font_preset = "chaohei"
+            self._zh_font_preset = DEFAULT_ZH_FONT
         if self._en_font_preset not in valid_fonts:
-            self._en_font_preset = "EmblemaOne"
+            self._en_font_preset = DEFAULT_EN_FONT
+        typography_migrated = bool(config) and self.__migrate_typography()
 
         self._title_config_error = ""
         if self._title_config:
@@ -409,7 +424,7 @@ class MediaCoverGenerator(_PluginBase):
             self.__clean_downloaded_fonts()
             self._clean_fonts = False
             cleanup_triggered = True
-        if cleanup_triggered:
+        if cleanup_triggered or typography_migrated:
             self.__update_config()
 
         if self._update_now:
@@ -539,6 +554,9 @@ class MediaCoverGenerator(_PluginBase):
             "zh_font_offset": self._zh_font_offset,
             "title_spacing": self._title_spacing,
             "en_line_spacing": self._en_line_spacing,
+            "zh_letter_spacing": self._zh_letter_spacing,
+            "en_letter_spacing": self._en_letter_spacing,
+            "typography_v2": self._typography_v2,
             "title_scale": self._title_scale,
             "resolution": self._resolution,
             "animation_duration": self._animation_duration,
@@ -608,14 +626,55 @@ class MediaCoverGenerator(_PluginBase):
     @staticmethod
     def __font_specs() -> List[Dict[str, Any]]:
         return [
+            {"title": "庞门正道粗书体", "value": "pangmen", "cjk": True, "aliases": ["pangmen", "庞门正道粗书体"]},
             {"title": "潮黑", "value": "chaohei", "cjk": True, "aliases": ["chaohei", "wendao", "潮黑", "chao_hei"]},
             {"title": "粗雅宋", "value": "yasong", "cjk": True, "aliases": ["yasong", "粗雅宋", "multi_1_zh", "ya_song"]},
+            {"title": "CaveatBrush", "value": "CaveatBrush", "cjk": False, "aliases": ["caveatbrush", "caveat_brush"]},
             {"title": "EmblemaOne", "value": "EmblemaOne", "cjk": False, "aliases": ["emblemaone", "emblema_one"]},
             {"title": "Melete", "value": "Melete", "cjk": False, "aliases": ["melete", "multi_1_en"]},
             {"title": "Phosphate", "value": "Phosphate", "cjk": False, "aliases": ["phosphate", "phosphat"]},
             {"title": "JosefinSans", "value": "JosefinSans", "cjk": False, "aliases": ["josefinsans", "josefin_sans"]},
             {"title": "LilitaOne", "value": "LilitaOne", "cjk": False, "aliases": ["lilitaone", "lilita_one"]},
         ]
+
+    def __migrate_typography(self) -> bool:
+        """
+        1.2.0 换了默认字体和字号。一直用旧默认值的配置跟随新默认；
+        改过字体或字号的配置把留空的参数固定为旧默认值，封面不会因为升级而变样。
+        返回配置是否有变化。
+        """
+        if self._typography_v2:
+            return False
+        self._typography_v2 = True
+
+        def unset_or(value, old):
+            return value in (None, "") or self.__to_number(value, old, float) == old
+
+        unchanged = (
+            self._zh_font_preset == "chaohei" and self._en_font_preset == "EmblemaOne"
+            and not self._zh_font_custom and not self._en_font_custom
+            and unset_or(self._zh_font_size, 170) and unset_or(self._en_font_size, 75)
+            and unset_or(self._title_spacing, 40) and unset_or(self._en_line_spacing, 40)
+        )
+        if unchanged:
+            self._zh_font_preset = DEFAULT_ZH_FONT
+            self._en_font_preset = DEFAULT_EN_FONT
+            self._zh_font_size = self._en_font_size = None
+            self._title_spacing = self._en_line_spacing = None
+            logger.info("封面字体已切换为新的默认搭配：庞门正道粗书体 + CaveatBrush")
+            return True
+
+        if self._zh_font_size in (None, ""):
+            self._zh_font_size = 170
+        if self._en_font_size in (None, ""):
+            self._en_font_size = 75
+        if self._title_spacing in (None, ""):
+            self._title_spacing = 40
+        if self._zh_letter_spacing in (None, ""):
+            self._zh_letter_spacing = 0
+        if self._en_letter_spacing in (None, ""):
+            self._en_letter_spacing = 8
+        return True
 
     def __get_font_presets(self) -> Tuple[List[Dict[str, str]], List[Dict[str, str]], Dict[str, Optional[str]], Dict[str, Optional[str]]]:
         items: List[Dict[str, str]] = []
@@ -1760,6 +1819,11 @@ class MediaCoverGenerator(_PluginBase):
         """标题含中文而所选字体不支持时，换成能显示的字体，避免出现方框。"""
         zh_font, en_font = str(self._zh_font_path), str(self._en_font_path)
         main_text, sub_text = title
+        # 粗书体的英文字形很细，纯英文的主标题用副标题字体更好看
+        if (self._zh_font_preset == DEFAULT_ZH_FONT and not self._zh_font_custom
+                and str(main_text or "").strip()
+                and not any(ord(char) >= 0x2E80 for char in str(main_text))):
+            zh_font = en_font
         if not self.__font_supports_text(zh_font, main_text):
             logger.warning(f"主标题字体不支持「{main_text}」，已改用副标题字体")
             if self.__font_supports_text(en_font, main_text):
@@ -1816,9 +1880,12 @@ class MediaCoverGenerator(_PluginBase):
         font_size = (float(zh_font_size), float(en_font_size))
 
         zh_font_offset = self.__to_number(self._zh_font_offset, 0.0, float)
-        title_spacing = self.__to_number(self._title_spacing, 40.0, float) * title_scale
+        title_spacing = self.__to_number(self._title_spacing, DEFAULT_TITLE_SPACING, float) * title_scale
         en_line_spacing = self.__to_number(self._en_line_spacing, 40.0, float) * title_scale
-        font_offset = (zh_font_offset, title_spacing, en_line_spacing)
+        zh_letter_spacing = max(0.0, self.__to_number(self._zh_letter_spacing, DEFAULT_ZH_LETTER_SPACING, float))
+        en_letter_spacing = max(0.0, self.__to_number(self._en_letter_spacing, DEFAULT_EN_LETTER_SPACING, float))
+        font_offset = (zh_font_offset, title_spacing, en_line_spacing,
+                       zh_letter_spacing / 100.0, en_letter_spacing / 100.0)
 
         logger.info(f"当前分辨率配置: {self._resolution_config}")
 
@@ -2796,9 +2863,11 @@ class MediaCoverGenerator(_PluginBase):
         _, _, zh_preset_paths, en_preset_paths = self.__get_font_presets()
 
         if not self._zh_font_preset:
-            self._zh_font_preset = "chaohei"
+            self._zh_font_preset = DEFAULT_ZH_FONT
 
         default_font_url = {
+            "pangmen": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/pangmen.ttf",
+            "CaveatBrush": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/caveatbrush.ttf",
             "chaohei": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/chaohei.ttf",
             "yasong": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/yasong.ttf",
             "EmblemaOne": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/EmblemaOne.woff2",
@@ -2807,12 +2876,12 @@ class MediaCoverGenerator(_PluginBase):
             "JosefinSans": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/josefinsans.woff2",
             "LilitaOne": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/lilitaone.woff2",
         }
-        default_zh_url = default_font_url.get(self._zh_font_preset, "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/chaohei.ttf")
+        default_zh_url = default_font_url.get(self._zh_font_preset, default_font_url[DEFAULT_ZH_FONT])
 
         if not self._en_font_preset:
-            self._en_font_preset = "EmblemaOne"
+            self._en_font_preset = DEFAULT_EN_FONT
 
-        default_en_url = default_font_url.get(self._en_font_preset, "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/EmblemaOne.woff2")
+        default_en_url = default_font_url.get(self._en_font_preset, default_font_url[DEFAULT_EN_FONT])
 
         log_prefix = "默认"
         zh_custom_type = detect_string_type(self._zh_font_custom)
@@ -2841,6 +2910,7 @@ class MediaCoverGenerator(_PluginBase):
                 "final_attr_name": final_zh_font_path_attr,
                 "fallback_ext": ".ttf",
                 "preset_path": zh_preset_paths.get(self._zh_font_preset),
+                "fallback_preset": None if zh_custom_type else FONT_FALLBACKS.get(self._zh_font_preset),
             },
             {
                 "lang": "副标题",
@@ -2851,6 +2921,7 @@ class MediaCoverGenerator(_PluginBase):
                 "final_attr_name": final_en_font_path_attr,
                 "fallback_ext": ".ttf",
                 "preset_path": en_preset_paths.get(self._en_font_preset),
+                "fallback_preset": None if en_custom_type else FONT_FALLBACKS.get(self._en_font_preset),
             }
         ]
 
@@ -2921,6 +2992,9 @@ class MediaCoverGenerator(_PluginBase):
                     logger.info(f"{log_prefix}{lang}字体: 使用已下载/缓存的有效字体 {downloaded_font_file_path}")
                     current_font_path = downloaded_font_file_path
 
+            if not current_font_path and font_info.get("fallback_preset"):
+                current_font_path = self.__fallback_font(font_info["fallback_preset"], default_font_url[font_info["fallback_preset"]])
+
             # 安全设置字体路径
             if current_font_path and current_font_path.exists():
                 setattr(self, final_attr, current_font_path)
@@ -2934,6 +3008,19 @@ class MediaCoverGenerator(_PluginBase):
         # 检查是否所有必要的字体都已获取
         if not self._zh_font_path or not self._en_font_path:
             logger.critical("关键字体文件缺失，插件可能无法正常工作。请检查网络连接或手动下载字体文件。")
+
+    def __fallback_font(self, preset: str, url: str) -> Optional[Path]:
+        """默认字体下载失败时改用备用字体，优先用本地已有的文件。"""
+        _, _, paths, _ = self.__get_font_presets()
+        local = paths.get(preset)
+        if local and validate_font_file(Path(local)):
+            logger.warning(f"默认字体不可用，本次改用 {preset}，下次生成时会重新尝试下载")
+            return Path(local)
+        target = Path(self._font_path) / f"{preset}{self.get_file_extension_from_url(url, fallback_ext='.ttf')}"
+        if self.download_font_safely_with_timeout(url, target):
+            logger.warning(f"默认字体不可用，本次改用 {preset}，下次生成时会重新尝试下载")
+            return target
+        return None
 
     def __sanitize_filename(self, filename: str) -> str:
         """
@@ -3003,7 +3090,7 @@ class MediaCoverGenerator(_PluginBase):
             logger.error(f"健康检查失败: {e}")
             return False
 
-    def download_font_safely_with_timeout(self, font_url: str, font_path: Path, timeout: int = 60) -> bool:
+    def download_font_safely_with_timeout(self, font_url: str, font_path: Path, timeout: int = 180) -> bool:
         """
         带超时的安全字体下载方法，避免首次下载时阻塞过久
         """

@@ -17,13 +17,13 @@ from io import BytesIO
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps
 
 from app.log import logger
+from app.plugins.mediacovergenerator.style.title_layout import TEXT_SUPERSAMPLE, TitleLayout
 from app.plugins.mediacovergenerator.utils.color_helper import ColorHelper
 
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".bmp")
-TEXT_SUPERSAMPLE = 2
 
 
 # ---------------------------------------------------------------- 基础工具
@@ -157,175 +157,6 @@ def _encode_jpeg(image, quality=92):
 
 
 # ---------------------------------------------------------------- 文字排版
-
-
-def _font(path, size):
-    return ImageFont.truetype(str(path), max(1, int(round(size))))
-
-
-def _tracked_width(font, text, tracking):
-    return font.getlength(text) + tracking * max(0, len(text) - 1)
-
-
-def _split_title(text):
-    words = text.split(" ")
-    if len(words) > 1:
-        best, best_gap = None, None
-        for index in range(1, len(words)):
-            first, second = " ".join(words[:index]), " ".join(words[index:])
-            gap = abs(len(first) - len(second))
-            if best_gap is None or gap < best_gap:
-                best, best_gap = (first, second), gap
-        return list(best)
-    middle = (len(text) + 1) // 2
-    return [text[:middle], text[middle:]]
-
-
-def _wrap_words(font, text, tracking, max_width):
-    words = text.split(" ")
-    lines, current = [], ""
-    for word in words:
-        candidate = f"{current} {word}".strip()
-        if current and _tracked_width(font, candidate, tracking) > max_width:
-            lines.append(current)
-            current = word
-        else:
-            current = candidate
-    if current:
-        lines.append(current)
-    return lines
-
-
-class TitleLayout:
-    """
-    测量并绘制主副标题。
-
-    内部尺寸都乘以 TEXT_SUPERSAMPLE，绘制后再整体缩小，低分辨率动图上的文字也能保持清晰。
-    """
-
-    def __init__(self, title, font_path, font_size, font_offset, scale, max_width,
-                 tracking=0.10, uppercase_subtitle=True):
-        main_text, sub_text = title
-        main_font_path, sub_font_path = font_path
-        main_size, sub_size = float(font_size[0]), float(font_size[1])
-        self.offset_y = float(font_offset[0]) * scale
-        self.spacing = max(0.0, float(font_offset[1])) * scale * TEXT_SUPERSAMPLE
-        self.line_gap = max(0.0, float(font_offset[2])) * scale * 0.5 * TEXT_SUPERSAMPLE
-        self.max_width = float(max_width) * TEXT_SUPERSAMPLE
-        self.main_text = str(main_text or "").strip()
-        self.sub_text = str(sub_text or "").strip()
-        if uppercase_subtitle:
-            self.sub_text = self.sub_text.upper()
-
-        main_size = max(1.0, main_size) * TEXT_SUPERSAMPLE
-        sub_size = max(1.0, sub_size) * TEXT_SUPERSAMPLE
-
-        self.main_lines, self.main_font = self._fit_main(main_font_path, main_size)
-        self.sub_font = _font(sub_font_path, sub_size)
-        self.tracking = sub_size * tracking
-        self.sub_lines = self._fit_sub(sub_font_path, sub_size)
-
-        ascent, descent = self.main_font.getmetrics()
-        self.main_line_height = (ascent + descent) * 1.02
-        sub_ascent, sub_descent = self.sub_font.getmetrics()
-        self.sub_line_height = sub_ascent + sub_descent
-        self.width = max(
-            [self.main_font.getlength(line) for line in self.main_lines]
-            + [_tracked_width(self.sub_font, line, self.tracking) for line in self.sub_lines]
-            + [1.0]
-        ) / TEXT_SUPERSAMPLE
-        self.height = self._total_height() / TEXT_SUPERSAMPLE
-
-    def _fit_main(self, path, size):
-        text = self.main_text
-        if not text:
-            return [], _font(path, size)
-        current = size
-        while current > size * 0.62:
-            font = _font(path, current)
-            if font.getlength(text) <= self.max_width:
-                return [text], font
-            current *= 0.94
-        # 缩到下限仍放不下时折成两行，再按最长行继续收缩
-        lines = _split_title(text)
-        current = size * 0.78
-        while True:
-            font = _font(path, current)
-            if max(font.getlength(line) for line in lines) <= self.max_width or current < 8:
-                return lines, font
-            current *= 0.94
-
-    def _fit_sub(self, path, size):
-        if not self.sub_text:
-            return []
-        base_tracking = self.tracking / size
-        current = size
-        lines = [self.sub_text]
-        # 先在小幅缩放内争取单行，放不下才允许折成两行
-        for line_limit, floor in ((1, 0.8), (2, 0.4)):
-            current = size
-            while current >= size * floor:
-                self.sub_font = _font(path, current)
-                self.tracking = current * base_tracking
-                lines = _wrap_words(self.sub_font, self.sub_text, self.tracking, self.max_width)
-                widest = max(_tracked_width(self.sub_font, line, self.tracking) for line in lines)
-                if len(lines) <= line_limit and widest <= self.max_width:
-                    return lines
-                current *= 0.94
-        return lines
-
-    def _total_height(self):
-        total = self.main_line_height * len(self.main_lines)
-        if self.sub_lines:
-            total += self.spacing + self.sub_line_height * len(self.sub_lines)
-            total += self.line_gap * (len(self.sub_lines) - 1)
-        return total
-
-    def _line_x(self, line_width, x_origin, align):
-        if align == "center":
-            return x_origin + (self.max_width - line_width) / 2.0
-        return x_origin
-
-    def render(self, size, x, y, align="left", main_fill=(255, 255, 255, 245),
-               sub_fill=(255, 255, 255, 205), shadow=None):
-        """在 (x, y) 处绘制文字块并返回与画布同尺寸的 RGBA 图层；center 对齐时 x 为文字区左边界。"""
-        ss = TEXT_SUPERSAMPLE
-        large_size = (size[0] * ss, size[1] * ss)
-        layer = Image.new("RGBA", large_size, (0, 0, 0, 0))
-        draw = ImageDraw.Draw(layer)
-        x_origin = x * ss
-        cursor = (y + self.offset_y) * ss
-
-        ascent, descent = self.main_font.getmetrics()
-        for line in self.main_lines:
-            baseline = cursor + ascent
-            line_x = self._line_x(self.main_font.getlength(line), x_origin, align)
-            draw.text((line_x, baseline), line, font=self.main_font, fill=main_fill, anchor="ls")
-            cursor += self.main_line_height
-
-        if self.sub_lines:
-            cursor += self.spacing
-            sub_ascent, _ = self.sub_font.getmetrics()
-            for line in self.sub_lines:
-                baseline = cursor + sub_ascent
-                pen = self._line_x(_tracked_width(self.sub_font, line, self.tracking), x_origin, align)
-                for char in line:
-                    draw.text((pen, baseline), char, font=self.sub_font, fill=sub_fill, anchor="ls")
-                    pen += self.sub_font.getlength(char) + self.tracking
-                cursor += self.sub_line_height + self.line_gap
-
-        layer = layer.resize(size, Image.Resampling.LANCZOS)
-        if not shadow:
-            return layer
-
-        shadow_color, radius, offset = shadow
-        alpha = layer.getchannel("A").filter(ImageFilter.GaussianBlur(max(0.6, radius)))
-        ink = Image.new("RGBA", size, tuple(shadow_color[:3]) + (0,))
-        ink.putalpha(alpha.point(lambda value: int(value * shadow_color[3] / 255.0)))
-        result = Image.new("RGBA", size, (0, 0, 0, 0))
-        result.alpha_composite(ink, (int(offset), int(offset)))
-        result.alpha_composite(layer)
-        return result
 
 
 def _scale_text_params(font_size, font_offset, canvas_size, animated):

@@ -2,36 +2,15 @@ import base64
 from io import BytesIO
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
+from PIL import Image, ImageFilter, ImageOps
 
 from app.log import logger
+from app.plugins.mediacovergenerator.style.title_layout import TitleLayout, soft_shadow
 from app.plugins.mediacovergenerator.style.style_static_2 import (
     darken_color,
     find_dominant_vibrant_colors,
 )
 from app.plugins.mediacovergenerator.utils.color_helper import ColorHelper
-
-
-def _wrap_english(draw, text, font, max_width):
-    if not text:
-        return []
-    bbox = draw.textbbox((0, 0), text, font=font)
-    if (bbox[2] - bbox[0]) <= max_width or " " not in text:
-        return [text]
-    words = text.split(" ")
-    lines = []
-    line = words[0]
-    for word in words[1:]:
-        test = f"{line} {word}"
-        tb = draw.textbbox((0, 0), test, font=font)
-        if (tb[2] - tb[0]) > max_width:
-            lines.append(line)
-            line = word
-        else:
-            line = test
-    if line:
-        lines.append(line)
-    return lines
 
 
 def create_style_static_4(
@@ -46,10 +25,6 @@ def create_style_static_4(
     bg_color_config=None,
 ):
     try:
-        zh_font_path, en_font_path = font_path
-        title_zh, title_en = title
-        zh_font_size, en_font_size = font_size
-        zh_font_offset, title_spacing, en_line_spacing = font_offset
 
         width = 1920
         height = 1080
@@ -86,56 +61,15 @@ def create_style_static_4(
         mixed = np.clip(mixed, 0, 255).astype(np.uint8)
         canvas = Image.fromarray(mixed).convert("RGBA")
 
-        text_layer = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
-        shadow_layer = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
-        draw = ImageDraw.Draw(text_layer)
-        sdraw = ImageDraw.Draw(shadow_layer)
-
-        zh_font = ImageFont.truetype(zh_font_path, int(max(1, float(zh_font_size))))
-        en_font = ImageFont.truetype(en_font_path, int(max(1, float(en_font_size))))
-
-        cx = canvas_size[0] // 2
-        cy = canvas_size[1] // 2
-
-        text_color = (255, 255, 255, 230)
-        shadow_color = darken_color(tint, 0.65) + (92,)
-
-        zh_bbox = draw.textbbox((0, 0), title_zh, font=zh_font)
-        zh_w = zh_bbox[2] - zh_bbox[0]
-        zh_h = zh_bbox[3] - zh_bbox[1]
-
-        lines = _wrap_english(draw, title_en, en_font, zh_w)
-        line_gap = int(max(1, float(en_line_spacing)))
-        en_h = 0
-        line_sizes = []
-        for i, line in enumerate(lines):
-            lb = draw.textbbox((0, 0), line, font=en_font)
-            lw = lb[2] - lb[0]
-            lh = lb[3] - lb[1]
-            line_sizes.append((line, lw, lh))
-            en_h += lh + (line_gap if i < len(lines) - 1 else 0)
-
-        spacing = int(float(title_spacing)) if lines else 0
-        total_h = zh_h + spacing + en_h
-        y0 = cy - total_h // 2 + int(float(zh_font_offset))
-
-        zh_x = cx - zh_w // 2
-        zh_y = y0
-
-        for off in range(3, 11, 2):
-            sdraw.text((zh_x + off, zh_y + off), title_zh, font=zh_font, fill=shadow_color)
-        draw.text((zh_x, zh_y), title_zh, font=zh_font, fill=text_color)
-
-        ey = zh_y + zh_h + spacing
-        for line, lw, lh in line_sizes:
-            ex = cx - lw // 2
-            for off in range(2, 8, 2):
-                sdraw.text((ex + off, ey + off), line, font=en_font, fill=shadow_color)
-            draw.text((ex, ey), line, font=en_font, fill=text_color)
-            ey += lh + line_gap
-
-        merged = Image.alpha_composite(canvas, shadow_layer.filter(ImageFilter.GaussianBlur(radius=8)))
-        merged = Image.alpha_composite(merged, text_layer)
+        layout = TitleLayout(
+            title, font_path, font_size, font_offset, canvas_size[1] / 1080.0, canvas_size[0] * 0.78,
+            uppercase_subtitle=False, tracking=0.03,
+        )
+        merged = Image.alpha_composite(canvas, layout.render_centered(
+            canvas_size, canvas_size[0] / 2.0, canvas_size[1] / 2.0,
+            main_fill=(255, 255, 255, 235), sub_fill=(255, 255, 255, 235),
+            shadow=soft_shadow(darken_color(tint, 0.65), canvas_size[1]),
+        ))
 
         buf = BytesIO()
         merged.save(buf, format="PNG", optimize=True)

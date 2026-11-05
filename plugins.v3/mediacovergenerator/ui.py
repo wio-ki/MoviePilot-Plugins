@@ -757,8 +757,9 @@ def _title_tab(ctx: Dict[str, Any]) -> List[dict]:
 
 # 表单字段留空时生效的默认值，用来判断当前参数是否正好等于某个预设
 TYPOGRAPHY_DEFAULTS = {
-    "zh_font_size": 170, "en_font_size": 75, "title_scale": 1.0, "zh_font_offset": 0,
-    "title_spacing": 40, "en_line_spacing": 40, "blur_size": 50, "color_ratio": 0.8,
+    "zh_font_size": 290, "en_font_size": 165, "title_scale": 1.0, "zh_font_offset": 0,
+    "title_spacing": 44, "en_line_spacing": 40, "zh_letter_spacing": 20, "en_letter_spacing": 4,
+    "blur_size": 50, "color_ratio": 0.8,
 }
 
 
@@ -773,7 +774,10 @@ def _typography_picker() -> Dict[str, Any]:
         checks = ['!zh_font_custom', '!en_font_custom']
         for field, value in values.items():
             if field in TYPOGRAPHY_DEFAULTS:
-                checks.append(f"Number({field} || {json.dumps(TYPOGRAPHY_DEFAULTS[field])}) === {json.dumps(value)}")
+                # 0 是有效取值，只有留空才按默认值比较
+                checks.append(
+                    f"Number({field} === 0 ? 0 : ({field} || {json.dumps(TYPOGRAPHY_DEFAULTS[field])})) === {json.dumps(value)}"
+                )
             else:
                 checks.append(f"{field} === {json.dumps(value)}")
         cards.append(
@@ -817,16 +821,20 @@ def _typography_tab(ctx: Dict[str, Any]) -> List[dict]:
         _section(
             "mdi-format-size", "排版", "以 1080p 为基准，其他分辨率会等比缩放；留空使用默认值",
             _row(
-                _col(_text("zh_font_size", "主标题字号", "默认 170", number=True, icon_name="mdi-format-size", min=1), 4),
-                _col(_text("en_font_size", "副标题字号", "默认 75", number=True, icon_name="mdi-format-size", min=1), 4),
+                _col(_text("zh_font_size", "主标题字号", "默认 290，放不下时自动缩小", number=True, icon_name="mdi-format-size", min=1), 4),
+                _col(_text("en_font_size", "副标题字号", "默认 165，放不下时自动缩小", number=True, icon_name="mdi-format-size", min=1), 4),
                 _col(_text("title_scale", "整体缩放", "默认 1.0", number=True, icon_name="mdi-arrow-expand-all",
                            min=0.1, step=0.05), 4),
                 _col(_text("zh_font_offset", "主标题上下偏移", "上移填负值，默认 0", number=True,
                            icon_name="mdi-arrow-up-down"), 4),
-                _col(_text("title_spacing", "主副标题间距", "默认 40", number=True, icon_name="mdi-arrow-collapse-vertical",
+                _col(_text("title_spacing", "主副标题间距", "默认 44", number=True, icon_name="mdi-arrow-collapse-vertical",
                            min=0), 4),
                 _col(_text("en_line_spacing", "副标题行距", "默认 40", number=True, icon_name="mdi-format-line-height",
                            min=0), 4),
+                _col(_text("zh_letter_spacing", "主标题字距", "字号的百分比，默认 20，两字标题会更开", number=True,
+                           icon_name="mdi-format-letter-spacing", min=0), 4),
+                _col(_text("en_letter_spacing", "副标题字距", "字号的百分比，默认 4", number=True,
+                           icon_name="mdi-format-letter-spacing", min=0), 4),
                 _col(_text("blur_size", "背景模糊强度", "数字越大越模糊，默认 50", number=True, icon_name="mdi-blur",
                            min=0), 4),
             ),
@@ -914,8 +922,9 @@ def default_form_model() -> Dict[str, Any]:
         "cover_style_base": "static_1",
         "cover_style_variant": "static",
         "multi_1_blur": True,
-        "zh_font_preset": "chaohei",
-        "en_font_preset": "EmblemaOne",
+        "zh_font_preset": "pangmen",
+        "en_font_preset": "CaveatBrush",
+        "typography_v2": True,
         "zh_font_custom": "",
         "en_font_custom": "",
         "zh_font_size": None,
@@ -923,6 +932,8 @@ def default_form_model() -> Dict[str, Any]:
         "zh_font_offset": None,
         "title_spacing": None,
         "en_line_spacing": None,
+        "zh_letter_spacing": None,
+        "en_letter_spacing": None,
         "blur_size": 50,
         "color_ratio": 0.8,
         "title_scale": 1.0,

@@ -2,7 +2,7 @@ import base64
 from collections import Counter
 import io
 from pathlib import Path
-from PIL import Image, ImageFilter, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageFilter, ImageDraw, ImageOps
 import numpy as np
 import os
 import math
@@ -10,6 +10,7 @@ import random  # 添加随机模块
 import colorsys
 import traceback
 from app.log import logger
+from app.plugins.mediacovergenerator.style.title_layout import TitleLayout, soft_shadow
 from app.plugins.mediacovergenerator.utils.color_helper import ColorHelper
 
 """
@@ -71,182 +72,6 @@ def add_shadow(img, offset=(5, 5), shadow_color=(0, 0, 0, 100), blur_radius=3):
     shadow_img = Image.alpha_composite(shadow, result)
 
     return shadow_img
-
-
-# 单行文字
-def draw_text_on_image(
-    image, text, position, font_path, default_font_path, font_size, fill_color=(255, 255, 255, 255),
-    shadow=False, shadow_color=None, shadow_offset=10, shadow_alpha=75
-):
-    """
-    在图像上绘制文字，可选择添加阴影效果
-
-    参数:
-        image: PIL.Image对象
-        text: 要绘制的文字
-        position: 文字位置 (x, y)
-        font_path: 字体文件路径
-        default_font_path: 默认字体路径
-        font_size: 字体大小
-        fill_color: 文字颜色，RGBA格式
-        shadow: 是否添加阴影效果
-        shadow_color: 阴影颜色，RGB格式，如果为None则自动生成
-        shadow_offset: 阴影偏移量
-        shadow_alpha: 阴影透明度(0-255)
-
-    返回:
-        添加了文字的图像
-    """
-    position = (int(round(float(position[0]))), int(round(float(position[1]))))
-
-    # 创建一个可绘制的图像副本
-    img_copy = image.copy()
-    text_layer = Image.new('RGBA', img_copy.size, (255, 255, 255, 0))
-    shadow_layer = Image.new('RGBA', img_copy.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(text_layer)
-    shadow_draw = ImageDraw.Draw(shadow_layer)
-    font_size = int(max(1, round(float(font_size))))
-    shadow_offset = int(max(1, round(float(shadow_offset))))
-    font = ImageFont.truetype(font_path, font_size)
-
-    # 如果需要添加阴影
-    if shadow:
-        fill_color = (fill_color[0], fill_color[1], fill_color[2], 229)
-        if shadow_color is None:
-            if len(fill_color) >= 3:
-                r = max(0, int(fill_color[0] * 0.7))
-                g = max(0, int(fill_color[1] * 0.7))
-                b = max(0, int(fill_color[2] * 0.7))
-                shadow_color_with_alpha = (r, g, b, shadow_alpha)
-            else:
-                shadow_color_with_alpha = (50, 50, 50, shadow_alpha)
-        else:
-            # 确保 shadow_color 是 RGB 或 RGBA
-            if len(shadow_color) == 3:
-                shadow_color_with_alpha = shadow_color + (shadow_alpha,)
-            elif len(shadow_color) == 4:
-                shadow_color_with_alpha = shadow_color[:3] + (shadow_alpha,) # 修正：取前三个元素
-            else:
-                raise ValueError("shadow_color 格式不正确")  # 抛出异常，明确错误
-
-        for offset in range(3, shadow_offset + 1, 2):
-            shadow_draw.text(
-                (position[0] + offset, position[1] + offset),
-                text,
-                font=font,
-                fill=shadow_color_with_alpha
-            )
-    # 绘制主文字
-    draw.text(position, text, font=font, fill=fill_color)
-    blurred_shadow = shadow_layer.filter(ImageFilter.GaussianBlur(radius=shadow_offset))
-    combined = Image.alpha_composite(img_copy, blurred_shadow)
-    img_copy = Image.alpha_composite(combined, text_layer)
-
-    return img_copy
-
-# 多行文字
-def draw_multiline_text_on_image(
-    image,
-    text,
-    position,
-    font_path,
-    default_font_path,
-    font_size,
-    line_spacing=10,
-    fill_color=(255, 255, 255, 255),
-    shadow=False,
-    shadow_color=None,
-    shadow_offset=4,
-    shadow_alpha=100,
-    is_multiline=False,
-):
-    """
-    在图像上绘制多行文字，根据空格自动换行，可选择添加阴影效果
-
-    参数:
-        image: PIL.Image对象
-        text: 要绘制的文字
-        position: 第一行文字位置 (x, y)
-        font_path: 字体文件路径
-        default_font_path: 默认字体路径
-        font_size: 字体大小
-        line_spacing: 行间距
-        fill_color: 文字颜色，RGBA格式
-        shadow: 是否添加阴影效果
-        shadow_color: 阴影颜色，RGB格式，如果为None则自动生成
-        shadow_offset: 阴影偏移量
-        shadow_alpha: 阴影透明度(0-255)
-
-    返回:
-        添加了文字的图像和行数
-    """
-    position = (int(round(float(position[0]))), int(round(float(position[1]))))
-
-    # 创建一个可绘制的图像副本
-    img_copy = image.copy()
-    text_layer = Image.new('RGBA', img_copy.size, (255, 255, 255, 0))
-    draw = ImageDraw.Draw(text_layer)
-    font_size = int(max(1, round(float(font_size))))
-    shadow_offset = int(max(1, round(float(shadow_offset))))
-    line_spacing = int(round(float(line_spacing)))
-    font = ImageFont.truetype(font_path, font_size)
-
-    # 按空格分割文本
-    lines = text.split(" ")
-
-    # 如果未指定阴影颜色，则根据填充颜色生成
-    if shadow:
-        fill_color = (fill_color[0], fill_color[1], fill_color[2], 229)
-        if shadow_color is None:
-            # 使用文字颜色的暗化版本作为阴影
-            if len(fill_color) >= 3:
-                # 暗化颜色
-                r = max(0, int(fill_color[0] * 0.7))
-                g = max(0, int(fill_color[1] * 0.7))
-                b = max(0, int(fill_color[2] * 0.7))
-                shadow_color_with_alpha = (r, g, b, shadow_alpha)
-            else:
-                # 默认灰色阴影
-                shadow_color_with_alpha = (50, 50, 50, shadow_alpha)
-        else:
-            # 确保 shadow_color 是 RGB 或 RGBA
-            if len(shadow_color) == 3:
-                shadow_color_with_alpha = shadow_color + (shadow_alpha,)
-            elif len(shadow_color) == 4:
-                shadow_color_with_alpha = shadow_color[:3] + (shadow_alpha,)
-            else:
-                raise ValueError("shadow_color 格式不正确")
-
-    # 如果只有一行，直接绘制并返回
-    if len(lines) <= 1 or not is_multiline:
-        if shadow:
-            for offset in range(3, shadow_offset + 1, 2):
-                draw.text(
-                    (position[0] + offset, position[1] + offset),
-                    text,
-                    font=font,
-                    fill=shadow_color_with_alpha
-                )
-        draw.text(position, text, font=font, fill=fill_color)
-        img_copy = Image.alpha_composite(img_copy, text_layer)
-        return img_copy, 1
-
-    # 绘制多行文本
-    x, y = position
-    for i, line in enumerate(lines):
-        current_y = y + i * (font_size + line_spacing)
-
-        if shadow:
-            for offset in range(3, shadow_offset + 1, 2):
-                draw.text(
-                    (x + offset, current_y + offset),
-                    line,
-                    font=font,
-                    fill=shadow_color_with_alpha
-                )
-        draw.text((x, current_y), line, font=font, fill=fill_color)
-    img_copy = Image.alpha_composite(img_copy, text_layer)
-    return img_copy, len(lines)
 
 
 def get_random_color(image_path):
@@ -805,7 +630,6 @@ def create_style_static_3(library_dir, title, font_path, font_size=(170,75), fon
 
     try:
         zh_font_size, en_font_size = font_size
-        zh_font_offset, title_spacing, en_line_spacing = font_offset
 
         # 按目标分辨率直接生成，避免先画 1080p 再缩放导致的性能问题
         if resolution_config and resolution_config.width > 0 and resolution_config.height > 0:
@@ -838,8 +662,6 @@ def create_style_static_3(library_dir, title, font_path, font_size=(170,75), fon
                 zh_font_size = zh_font_size / scale_ratio
                 en_font_size = en_font_size / scale_ratio
 
-        zh_font_path, en_font_path = font_path
-        title_zh, title_en = title
         # logger.info(f"[3/4] 正在生成海报...")
         # logger.info("-" * 40)
         poster_folder = Path(library_dir)
@@ -1110,83 +932,22 @@ def create_style_static_3(library_dir, title, font_path, font_size=(170,75), fon
                 255,
             )
 
-        # 根据name匹配template_mapping中的配置
-        library_ch_name = title_zh  # 默认使用输入的name作为中文名
-        library_eng_name = title_en  # 默认英文名为空
-
         text_shadow_color = darken_color(blur_color, 0.58)
-        zh_font_size = float(zh_font_size) * scale
-        result = draw_text_on_image(
-            result, library_ch_name, (s(73.32), s(427.34) + zh_font_size * zh_font_offset), zh_font_path, "ch.ttf", int(max(1, round(zh_font_size))),
-            shadow=is_blur, shadow_color=text_shadow_color
+        # 标题放在海报墙左侧，色块跟着副标题走
+        layout = TitleLayout(
+            title, font_path, (float(zh_font_size) * scale, float(en_font_size) * scale), font_offset, scale, template_width * 0.37,
+            uppercase_subtitle=False, tracking=0.03, sub_indent=s(50),
         )
-
-        # 如果有英文名，才添加英文名文字
-        if library_eng_name:
-            # 动态调整字体大小，但统一使用一个字体大小
-            # base_font_size = 50 * float(en_font_size)  # 默认字体大小
-            base_font_size = float(en_font_size) * scale  # 默认字体大小
-            line_spacing = s(en_line_spacing)  # 行间距
-
-            draw = ImageDraw.Draw(result)
-
-            # 计算行数和调整字体大小
-            word_count = len(library_eng_name.split())
-            max_chars_per_line = max([len(word) for word in library_eng_name.split()])
-
-            # 根据单词数量或最长单词长度调整字体大小
-            # 根据单词数量或最长单词长度调整字体大小
-            if max_chars_per_line > 10 or word_count > 3:
-                # 字体大小与文本长度成反比
-                scale_factor = (10 / max(max_chars_per_line, word_count * 3)) ** 0.8
-                # 限制缩小比例，防止过小
-                scale_factor = max(scale_factor, 0.46)
-
-                font_size = base_font_size * scale_factor
-
-                # 设置最小字体大小限制，确保文字不会太小
-                font_size = max(font_size, 30)
-            else:
-                font_size = base_font_size
-
-            zh_font = ImageFont.truetype(zh_font_path, int(max(1, round(zh_font_size))))
-            en_font = ImageFont.truetype(en_font_path, int(font_size))
-
-            zh_bbox = draw.textbbox((0, 0), title_zh, font=zh_font)
-            zh_text_w = zh_bbox[2] - zh_bbox[0]
-
-            en_bbox = draw.textbbox((0, 0), library_eng_name, font=en_font)
-            en_text_w = en_bbox[2] - en_bbox[0]
-
-            is_multiline = True if en_text_w > zh_text_w else False
-            # 打印调试信息
-            # logger.debug(f"英文名 '{library_eng_name}' 单词数量: {word_count}, 最长单词长度: {max_chars_per_line}")
-            # logger.debug(f"使用字体大小: {font_size:.2f}")
-
-
-            # 使用多行文本绘制
-            result, line_count = draw_multiline_text_on_image(
-                result,
-                library_eng_name,
-                (s(124.68), s(624.55) + s(title_spacing)),
-                en_font_path, "en.otf",
-                int(font_size),
-                line_spacing,
-                shadow=is_blur,
-                shadow_color=text_shadow_color,
-                is_multiline=is_multiline,
-            )
-
-            # 根据行数调整色块高度
-            color_block_position = (s(84.38), s(620.06) + s(title_spacing))
-            # 基础高度为55，每增加一行增加(font_size + line_spacing)的高度
-            color_block_height = base_font_size + line_spacing + (line_count - 1) * (int(font_size) + line_spacing)
-            color_block_size = (s(21.51), color_block_height)
-
-            # logger.debug(f"色块高度调整为: {color_block_height} (行数: {line_count})")
-
+        title_y = (template_height - layout.height) / 2.0
+        result = Image.alpha_composite(result, layout.render(
+            result.size, s(73.32), title_y,
+            main_fill=(255, 255, 255, 235), sub_fill=(255, 255, 255, 235),
+            shadow=soft_shadow(text_shadow_color, template_height) if is_blur else None,
+        ))
+        if layout.sub_lines:
+            block_top, block_bottom = layout.sub_box(title_y)
             result = draw_color_block(
-                result, color_block_position, color_block_size, random_color
+                result, (s(73.32), block_top), (s(12), block_bottom - block_top), random_color
             )
         # 保存结果
         def image_to_base64(image, format="auto", quality=85):
