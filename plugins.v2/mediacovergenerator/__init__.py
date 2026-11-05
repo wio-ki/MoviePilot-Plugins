@@ -108,6 +108,7 @@ COVER_NAME_PATTERN = re.compile(
     r"^(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})(?:__(.+))?\.(jpg|jpeg|png|gif|apng|webp)$",
     re.IGNORECASE,
 )
+LIVE_TV_TYPE = "livetv"
 NUMBERED_IMAGE_PATTERN = re.compile(r"^[1-9][0-9]*\.jpg$", re.IGNORECASE)
 DEFAULT_ZH_FONT_SIZE = 170
 DEFAULT_EN_FONT_SIZE = 75
@@ -125,7 +126,7 @@ class MediaCoverGenerator(_PluginBase):
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/emby.png"
     # 插件版本
     # 插件版本
-    plugin_version = "0.11.1"
+    plugin_version = "0.11.2"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -209,6 +210,7 @@ class MediaCoverGenerator(_PluginBase):
     _bg_color_mode = "auto"
     _custom_bg_color = ""
     _title_config_error = ""
+    _failure_reason = ""
 
     def __init__(self):
         super().__init__()
@@ -825,23 +827,25 @@ class MediaCoverGenerator(_PluginBase):
 
         # 先清除信号再标记运行中：任务线程启动的这段时间里点「停止」也不会丢失
         self._event.clear()
-        self._task = {"running": True, "total": 0, "done": 0, "current": ""}
+        task = {"running": True, "total": 0, "done": 0, "current": ""}
+        self._task = task
         threading.Thread(
             target=self.__run_in_background,
-            args=((library or "").strip() or None,),
+            args=((library or "").strip() or None, task),
             name="MediaCoverGenerator",
             daemon=True,
         ).start()
         logger.info(f"【MediaCoverGenerator】已启动后台生成，风格: {self._cover_style}，媒体库: {library or '全部'}")
         return self.__api_response(True, "封面生成任务已在后台启动")
 
-    def __run_in_background(self, library_key: Optional[str]):
+    def __run_in_background(self, library_key: Optional[str], task: Dict[str, Any]):
         try:
             self.__update_all_libraries(library_key=library_key)
         except Exception as e:
             logger.error(f"【MediaCoverGenerator】后台生成失败: {e}", exc_info=True)
         finally:
-            if not self._update_lock.locked():
+            # 任务没能真正开始时才需要复位；这里只认自己的状态，不能覆盖下一个任务
+            if self._task is task:
                 self._task = {"running": False}
 
     def __is_running(self) -> bool:
@@ -1146,15 +1150,16 @@ class MediaCoverGenerator(_PluginBase):
                 "server": library.get("server", ""),
                 "key": key,
                 "encoded_key": quote(key, safe=""),
-                "active": not self._include_libraries or key in self._include_libraries,
+                "active": self.__in_batch(key, library.get("type")),
                 "status": status_map.get(key),
                 "thumb": self.__thumbnail(cover["file"], (224, 126), 60) if cover else None,
             })
 
-        last_time, last_message = self.__run_summary()
+        # 先读运行状态再读结果：任务恰好在两次读取之间结束时，也不会显示空闲却配上一轮的结果
         task = dict(self._task)
         if self._update_lock.locked():
             task["running"] = True
+        last_time, last_message = self.__run_summary()
         image_cache, font_cache = self.__cache_sizes()
         # 横幅背景会被模糊，很小的图就够了
         hero_image = self.__thumbnail(all_covers[0]["file"], (160, 90), 50) if all_covers else None
@@ -1509,6 +1514,7 @@ class MediaCoverGenerator(_PluginBase):
         self._run_style = self._cover_style
         self._current_updating_items.add(update_key)
         self._task = {"running": True, "total": 1, "done": 0, "current": f"{server}：{library['Name']}（入库更新）"}
+        self._failure_reason = ""
         message = ""
         try:
             # 安全地获取字体和翻译
@@ -1529,7 +1535,7 @@ class MediaCoverGenerator(_PluginBase):
             # 停止信号只针对当前任务，不能留给下一次入库更新
             self._event.clear()
             self._update_lock.release()
-        self.__record_library_result(server, library_id, library['Name'], bool(updated), message)
+        self.__record_library_result(server, library_id, library['Name'], bool(updated), message or self._failure_reason)
         if updated:
             self._monitor_batch_updated.add(update_key)
             self.update_cover_history(
@@ -1604,7 +1610,7 @@ class MediaCoverGenerator(_PluginBase):
                     if library_key:
                         if key != library_key:
                             continue
-                    elif self._include_libraries and key not in self._include_libraries:
+                    elif not self.__in_batch(key, library.get("CollectionType")):
                         logger.info(f"{server}：{library['Name']} 不在列表中，跳过更新封面")
                         continue
                     targets.append((server, service, library, library_id))
@@ -1615,6 +1621,7 @@ class MediaCoverGenerator(_PluginBase):
                     stopped = True
                     break
                 self._task["current"] = f"{server}：{library['Name']}"
+                self._failure_reason = ""
                 message = ""
                 try:
                     updated = self.__update_library(service, library)
@@ -1625,7 +1632,8 @@ class MediaCoverGenerator(_PluginBase):
                 if self._event.is_set() and not updated:
                     stopped = True
                     break
-                self.__record_library_result(server, library_id, library['Name'], bool(updated), message)
+                self.__record_library_result(server, library_id, library['Name'], bool(updated),
+                                             message or self._failure_reason)
                 if updated:
                     logger.info(f"媒体库 {server}：{library['Name']} 封面更新成功")
                     total_success += 1
@@ -1659,6 +1667,17 @@ class MediaCoverGenerator(_PluginBase):
         if send_notification and self._notify:
             self.post_message(mtype=NotificationType.Plugin, title="媒体库封面更新", text=tips)
         return tips
+
+    def __in_batch(self, key: str, library_type: Optional[str]) -> bool:
+        """
+        判断媒体库是否参与批量更新。
+
+        电视直播的封面常常是手动设置的，而自动取到的多半只是台标，
+        所以「全部媒体库」不包含它，需要单独勾选或单独点生成。
+        """
+        if self._include_libraries:
+            return key in self._include_libraries
+        return library_type != LIVE_TV_TYPE
 
     def __update_library(self, service, library):
         library_name = library['Name']
@@ -1868,6 +1887,8 @@ class MediaCoverGenerator(_PluginBase):
             return self.__handle_boxset_library(service, library, title)
         elif library_type == "playlists":
             return self.__handle_playlist_library(service, library, title)
+        elif library_type == LIVE_TV_TYPE:
+            return self.__handle_live_tv_library(service, library, title)
         elif library_type == "music":
             include_types = 'MusicAlbum,Audio'
         else:
@@ -1917,8 +1938,40 @@ class MediaCoverGenerator(_PluginBase):
             else:
                 return self.__update_grid_image(service, library, title, items[:required_items])
         else:
+            self._failure_reason = "媒体库里没有可用的图片"
             logger.warning(f"媒体库 {service.name}：{library['Name']} 无法找到有效的图片项目 (筛选类型: {include_types})")
             return False
+
+    def __handle_live_tv_library(self, service, library, title):
+        """电视直播优先用正在播出节目的海报，没有时用频道图片（通常是台标）。"""
+        required_items = self.__get_required_items()
+        self._seen_keys = set()
+        valid_items = []
+        common = 'api_key=[APIKEY]&UserId=[USER]&EnableImages=true&Limit=100'
+        for url in (
+            f'[HOST]emby/LiveTv/Programs?{common}&IsAiring=true',
+            f'[HOST]emby/LiveTv/Channels?{common}',
+        ):
+            if self._event.is_set():
+                return False
+            try:
+                res = service.instance.get_data(url=url)
+                items = res.json().get("Items", []) if res else []
+            except Exception as err:
+                logger.warning(f"获取电视直播内容失败：{str(err)}")
+                items = []
+            random.shuffle(items)
+            valid_items.extend(self.__filter_valid_items(items))
+            if len(valid_items) >= required_items:
+                break
+
+        if not valid_items:
+            self._failure_reason = "没有找到节目或频道图片，可以使用自定义图片目录"
+            logger.warning(f"媒体库 {service.name}：{library['Name']} {self._failure_reason}")
+            return False
+        if self.__is_single_image_style():
+            return self.__update_single_image(service, library, title, valid_items[0])
+        return self.__update_grid_image(service, library, title, valid_items[:required_items])
 
     def __handle_boxset_library(self, service, library, title):
 
@@ -2264,26 +2317,45 @@ class MediaCoverGenerator(_PluginBase):
         )
 
     def __get_server_libraries(self, service):
-        try:
-            if not service:
-                return []
-            try:
-                if service.type == 'emby':
-                    url = f'[HOST]emby/Library/VirtualFolders/Query?api_key=[APIKEY]'
-                else:
-                    url = f'[HOST]emby/Library/VirtualFolders/?api_key=[APIKEY]'
-                res = service.instance.get_data(url=url)
-                if res:
-                    data = res.json()
-                    if service.type == 'emby':
-                        return data.get("Items", [])
-                    else:
-                        return data
-            except Exception as err:
-                logger.error(f"获取媒体库列表失败：{str(err)}")
+        if not service:
             return []
+        libraries = []
+        try:
+            if service.type == 'emby':
+                url = f'[HOST]emby/Library/VirtualFolders/Query?api_key=[APIKEY]'
+            else:
+                url = f'[HOST]emby/Library/VirtualFolders/?api_key=[APIKEY]'
+            res = service.instance.get_data(url=url)
+            if res:
+                data = res.json()
+                libraries = data.get("Items", []) if service.type == 'emby' else data
         except Exception as err:
             logger.error(f"获取媒体库列表失败：{str(err)}")
+        return [*libraries, *self.__get_live_tv_views(service, libraries)]
+
+    def __get_live_tv_views(self, service, libraries) -> List[Dict[str, Any]]:
+        """电视直播不是虚拟文件夹，VirtualFolders 接口查不到，要从用户视图里补上。"""
+        try:
+            res = service.instance.get_data(url='[HOST]emby/Users/[USER]/Views?api_key=[APIKEY]')
+            if not res:
+                return []
+            known_ids = {str(library.get("Id") or library.get("ItemId")) for library in libraries}
+            views = []
+            for item in res.json().get("Items", []):
+                item_id = item.get("Id")
+                if item.get("CollectionType") != LIVE_TV_TYPE or not item_id or str(item_id) in known_ids:
+                    continue
+                views.append({
+                    "Name": item.get("Name") or "电视直播",
+                    "Id": item_id,
+                    "ItemId": item_id,
+                    "CollectionType": LIVE_TV_TYPE,
+                    "Locations": [],
+                })
+            return views
+        except Exception as err:
+            # 视图只用于补充电视直播，失败时不影响普通媒体库
+            logger.debug(f"获取电视直播视图失败：{str(err)}")
             return []
 
     @staticmethod
@@ -2327,6 +2399,7 @@ class MediaCoverGenerator(_PluginBase):
                         "value": f"{server}-{library_id}",
                         "server": server,
                         "library": library['Name'],
+                        "type": library.get("CollectionType") or "",
                     }
                     lib_items.append(lib_item)
             return lib_items
@@ -2518,7 +2591,9 @@ class MediaCoverGenerator(_PluginBase):
             if res and res.status_code in [200, 204]:
                 return True
             else:
-                logger.error(f"设置「{library['Name']}」封面失败，错误码：{res.status_code if res else 'No response'}")
+                status_code = res.status_code if res is not None else '无响应'
+                self._failure_reason = f"媒体服务器拒绝了封面上传（{status_code}）"
+                logger.error(f"设置「{library['Name']}」封面失败，错误码：{status_code}")
                 return False
         except Exception as err:
             logger.error(f"设置「{library['Name']}」封面失败：{str(err)}")

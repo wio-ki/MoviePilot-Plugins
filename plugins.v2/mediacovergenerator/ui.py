@@ -417,7 +417,9 @@ def _libraries_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
                               text="成功" if status.get("ok") else "失败"))
         if not library.get("active"):
             chips.append(node("span", cls="mcg-chip", text="未纳入批量更新"))
-        if status:
+        if status and not status.get("ok") and status.get("message"):
+            note = status["message"]
+        elif status:
             note = f"{status.get('time', '')} · {status.get('style', '')}"
         else:
             note = f"{library.get('server', '')} · 尚未生成"
@@ -686,7 +688,7 @@ def _basic_tab(ctx: Dict[str, Any]) -> List[dict]:
                     {"title": "最新发行", "value": "PremiereDate"},
                 ], hint="决定从媒体库里挑选哪些条目的图片", icon_name="mdi-sort"), 6),
                 _col(_select("include_libraries", "批量更新的媒体库", ctx["library_items_expr"], multiple=True,
-                             chips=True, clearable=True, hint="留空表示全部媒体库",
+                             chips=True, clearable=True, hint="留空表示全部媒体库；电视直播不包含在内，需要时单独勾选",
                              icon_name="mdi-folder-multiple-image"), 12),
             ),
         ),
@@ -873,7 +875,7 @@ def _motion_tab() -> List[dict]:
 def _storage_tab() -> List[dict]:
     return [
         _section(
-            "mdi-folder-image", "自定义图片", "不想用媒体库图片时，可以指定自己的素材",
+            "mdi-folder-image", "自定义图片", "不想用媒体库图片时，可以指定自己的素材。电视直播通常只有台标，建议在这里放图",
             _row(
                 _col(_text("covers_input", "自定义图片目录",
                            "放在与媒体库同名的子目录，如 /mnt/custom/电影/a.jpg，填 /mnt/custom。插件不会改动该目录",
