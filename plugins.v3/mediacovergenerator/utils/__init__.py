@@ -1,0 +1,1 @@
+"""MediaCoverGenerator utils package."""
