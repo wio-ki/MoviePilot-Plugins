@@ -22,6 +22,10 @@ REPO = Path(__file__).resolve().parent.parent
 PLUGIN_DIRS = [REPO / "plugins.v3" / "mediacovergenerator", REPO / "plugins.v2" / "mediacovergenerator"]
 FONTS = (str(REPO / "fonts" / "chaohei.ttf"), str(REPO / "fonts" / "EmblemaOne.woff2"))
 TITLE = ("光影典藏", "CINEMA COLLECTION")
+FONT_FILES = {
+    "chaohei": "chaohei.ttf", "yasong": "yasong.ttf", "EmblemaOne": "EmblemaOne.woff2", "Melete": "Melete.otf",
+    "Phosphate": "phosphate.ttf", "JosefinSans": "josefinsans.woff2", "LilitaOne": "lilitaone.woff2",
+}
 
 PALETTES = [
     ((16, 24, 58), (178, 62, 96), (252, 176, 92)),
@@ -129,6 +133,7 @@ def render_all():
     from app.plugins.mediacovergenerator.style.style_static_2 import create_style_static_2
     from app.plugins.mediacovergenerator.style.style_static_3 import create_style_static_3
     from app.plugins.mediacovergenerator.style.style_static_4 import create_style_static_4
+    from app.plugins.mediacovergenerator.ui_presets import TYPOGRAPHY_PRESETS
     from app.plugins.mediacovergenerator.utils.image_manager import ResolutionConfig
 
     resolution = ResolutionConfig("720p")
@@ -162,19 +167,44 @@ def render_all():
             7: premium.create_style_static_7(poster_dir, TITLE, FONTS, is_blur=True, **common),
             8: premium.create_style_static_8(backdrop, TITLE, FONTS, **common),
         }
-    if not all(results.values()):
-        raise SystemExit(f"风格渲染失败: {[key for key, value in results.items() if not value]}")
-    return {index: decode(data) for index, data in results.items()}
+        # 字体排版预设统一用标题居中的氤氲风格展示，差异都来自字体和排版参数
+        typography = {}
+        for preset in TYPOGRAPHY_PRESETS:
+            values = preset["values"]
+            fonts = (str(REPO / "fonts" / FONT_FILES[values["zh_font_preset"]]),
+                     str(REPO / "fonts" / FONT_FILES[values["en_font_preset"]]))
+            typography[preset["key"]] = create_style_static_4(
+                str(backdrop), TITLE, fonts,
+                font_size=(values["zh_font_size"] * scale, values["en_font_size"] * scale),
+                font_offset=(values["zh_font_offset"], values["title_spacing"] * scale, values["en_line_spacing"] * scale),
+                blur_size=values["blur_size"],
+                color_ratio=values["color_ratio"],
+                resolution_config=resolution,
+                bg_color_config={"mode": "auto"},
+            )
+    failed = [key for key, value in {**results, **typography}.items() if not value]
+    if failed:
+        raise SystemExit(f"风格渲染失败: {failed}")
+    return (
+        {index: decode(data) for index, data in results.items()},
+        {key: decode(data) for key, data in typography.items()},
+    )
 
 
-def write_outputs(images):
+def to_data_uri(image):
+    buffer = BytesIO()
+    image.resize((320, 180), Image.Resampling.LANCZOS).save(buffer, format="WEBP", quality=62, method=6)
+    return "data:image/webp;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
+
+
+def write_outputs(images, typography):
     lines = ['"""风格预览小图，由 scripts/render_previews.py 生成，请勿手工修改。"""', "", "PREVIEWS = {"]
     for index, image in sorted(images.items()):
         image.resize((480, 270), Image.Resampling.LANCZOS).save(REPO / "images" / f"style_{index}.jpeg", quality=88)
-        buffer = BytesIO()
-        image.resize((320, 180), Image.Resampling.LANCZOS).save(buffer, format="WEBP", quality=62, method=6)
-        encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
-        lines.append(f'    {index}: "data:image/webp;base64,{encoded}",')
+        lines.append(f'    {index}: "{to_data_uri(image)}",')
+    lines += ["}", "", "TYPOGRAPHY_PREVIEWS = {"]
+    for key, image in typography.items():
+        lines.append(f'    "{key}": "{to_data_uri(image)}",')
     lines += ["}", ""]
     text = "\n".join(lines)
     for plugin_dir in PLUGIN_DIRS:
@@ -184,4 +214,4 @@ def write_outputs(images):
 
 if __name__ == "__main__":
     install_stubs()
-    write_outputs(render_all())
+    write_outputs(*render_all())

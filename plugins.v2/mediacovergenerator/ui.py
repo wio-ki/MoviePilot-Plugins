@@ -7,7 +7,8 @@
 import json
 from typing import Any, Dict, List, Optional
 
-from app.plugins.mediacovergenerator.ui_previews import PREVIEWS
+from app.plugins.mediacovergenerator.ui_presets import TYPOGRAPHY_PRESETS
+from app.plugins.mediacovergenerator.ui_previews import PREVIEWS, TYPOGRAPHY_PREVIEWS
 
 # Vuetify 组件自带主题类，会重置 CSS 变量，所以点缀色要用具体色值传给 color 属性
 ACCENT = "#B0843F"
@@ -151,6 +152,7 @@ CSS = """
 /* 风格画廊 */
 .mcg-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(245px, 1fr)); gap: 14px; }
 .mcg-form .mcg-gallery { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+.mcg-form .mcg-gallery.mcg-gallery-three { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
 .mcg-style {
   position: relative; display: block; border-radius: 14px; overflow: hidden; cursor: pointer; background: var(--mcg-raise);
   outline: 1px solid var(--mcg-line); outline-offset: -1px; transition: transform .2s ease, box-shadow .2s ease, outline-color .2s ease;
@@ -751,8 +753,54 @@ def _title_tab(ctx: Dict[str, Any]) -> List[dict]:
     ]
 
 
+# 表单字段留空时生效的默认值，用来判断当前参数是否正好等于某个预设
+TYPOGRAPHY_DEFAULTS = {
+    "zh_font_size": 170, "en_font_size": 75, "title_scale": 1.0, "zh_font_offset": 0,
+    "title_spacing": 40, "en_line_spacing": 40, "blur_size": 50, "color_ratio": 0.8,
+}
+
+
+def _typography_picker() -> Dict[str, Any]:
+    """一键排版卡片：点击后填好字体和全部排版参数，之后仍可手动微调。"""
+    cards = []
+    for preset in TYPOGRAPHY_PRESETS:
+        values = preset["values"]
+        # 预设使用内置字体，同时清空自定义字体，否则自定义字体会继续优先生效
+        assignments = [f"{field} = {json.dumps(value)}" for field, value in values.items()]
+        assignments += ['zh_font_custom = ""', 'en_font_custom = ""']
+        checks = ['!zh_font_custom', '!en_font_custom']
+        for field, value in values.items():
+            if field in TYPOGRAPHY_DEFAULTS:
+                checks.append(f"Number({field} || {json.dumps(TYPOGRAPHY_DEFAULTS[field])}) === {json.dumps(value)}")
+            else:
+                checks.append(f"{field} === {json.dumps(value)}")
+        cards.append(
+            node(
+                "div",
+                content=[
+                    node("img", src=TYPOGRAPHY_PREVIEWS.get(preset["key"], ""), alt=preset["name"], loading="lazy"),
+                    div("mcg-style-tick", icon("mdi-check", 16)),
+                    div(
+                        "mcg-style-meta",
+                        div("mcg-style-name", node("span", text=preset["name"])),
+                        div("mcg-style-desc", text=preset["desc"]),
+                    ),
+                ],
+                **{
+                    "class": "{{ (%s) ? 'mcg-style mcg-style-on' : 'mcg-style' }}" % " && ".join(checks),
+                    "onClick": "event => { %s }" % "; ".join(assignments),
+                },
+            )
+        )
+    return div("mcg-gallery mcg-gallery-three", *cards)
+
+
 def _typography_tab(ctx: Dict[str, Any]) -> List[dict]:
     return [
+        _section(
+            "mdi-auto-fix", "一键排版", "点一下即可填好字体、字号、间距和背景参数，可继续手动微调，保存后生效",
+            _typography_picker(),
+        ),
         _section(
             "mdi-format-font", "字体", "预设字体会自动下载；也可以填字体链接或容器内的本地路径",
             _row(
@@ -870,6 +918,9 @@ def default_form_model() -> Dict[str, Any]:
         "en_font_custom": "",
         "zh_font_size": None,
         "en_font_size": None,
+        "zh_font_offset": None,
+        "title_spacing": None,
+        "en_line_spacing": None,
         "blur_size": 50,
         "color_ratio": 0.8,
         "title_scale": 1.0,
