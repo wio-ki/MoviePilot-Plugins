@@ -51,44 +51,44 @@ class StyleInfo:
 
 STYLE_CATALOG = [
     StyleInfo(
-        1, "序幕", "满屏竖幅画廊，一幅展开，标题和标签落在展开的画面里", "画幅轮流展开，标题随之移动", 6, True, MINT,
+        1, "序幕", "满屏竖幅画廊，一幅展开，标题和标签落在展开的画面里", "画幅舒展换位，标题淡出再升起", 6, True, MINT,
         TypeSpec("glowbold", "interbold", "intersemi", 192, 60,
                  main_tracking=0.01, main_tracking_latin=-0.02, spacing=34),
     ),
     StyleInfo(
-        2, "巨幕", "满幅大图配粗宋体片名，角落的玻璃小窗预告下一张", "大图斜向划过换幕", 4, False, MINT,
+        2, "巨幕", "满幅大图配粗宋体片名，角落的玻璃小窗预告下一张", "镜头推近叠化，小窗上滑换片", 4, False, MINT,
         TypeSpec("serifblack", "dmserif", "intersemi", 240, 60,
                  main_tracking=0.03, main_tracking_latin=-0.005, spacing=40),
     ),
     StyleInfo(
-        3, "流光", "黑底上的超大标题，一半白字一半透出画面", "画面在字里来回流动", 3, False, MINT,
-        TypeSpec("glowheavy", "interblack", "intersemi", 480, 66,
-                 main_tracking=0.0, main_tracking_latin=-0.03, spacing=44),
+        3, "流光", "压暗的画面上，巨大的标题像窗口一样透出明亮的原图", "流光扫过文字，镜头穿过笔画冲进下一张", 4, False, MINT,
+        TypeSpec("glowheavy", "interblack", "intersemi", 560, 60,
+                 main_tracking=0.0, main_tracking_latin=-0.03, spacing=40),
     ),
     StyleInfo(
-        4, "预告", "薄荷绿斜角飘带领起标题，右侧是平行四边形的大图", "画面沿斜边切换", 4, False, MINT,
+        4, "预告", "薄荷绿斜角飘带领起标题，右侧是平行四边形的大图", "斜切成条，错开滑入", 4, False, MINT,
         TypeSpec("glowbold", "interbold", "intersemi", 214, 60,
                  main_tracking=0.01, main_tracking_latin=-0.02, spacing=38),
     ),
     StyleInfo(
-        5, "拼贴", "错落的圆角拼贴，长体标题放在左下的卡片里", "拼贴逐格换图", 8, True, MINT,
-        TypeSpec("glowcond", "anton", "intersemi", 214, 60,
-                 main_tracking=0.0, main_tracking_latin=0.0, spacing=30),
+        5, "环幕", "站在弧形巨幕中间，两侧画面朝你包过来，标题居中", "整圈弧幕平稳转动", 6, True, MINT,
+        TypeSpec("glowheavy", "interblack", "intersemi", 214, 60,
+                 main_tracking=0.02, main_tracking_latin=-0.025, spacing=30),
     ),
     StyleInfo(
-        6, "榜单", "深色长卡，竖排副标题、镂空大字和圆角大图并排", "字中画面流动", 3, False, MINT,
-        TypeSpec("glowheavy", "interblack", "intersemi", 410, 60,
-                 main_tracking=-0.005, main_tracking_latin=-0.035, spacing=30),
-    ),
-    StyleInfo(
-        7, "详情", "虚化背景上的预告大卡，右侧标题和播放键，下方露出同系列", "大卡换图，底排缩略图传送", 6, False, MINT,
+        6, "景深", "大卡后面层层后退的卡片，标题落在最前面一张上", "前卡飞向镜头，后卡依次上前", 5, False, MINT,
         TypeSpec("glowbold", "interbold", "intersemi", 186, 60,
                  main_tracking=0.01, main_tracking_latin=-0.02, spacing=30),
     ),
     StyleInfo(
-        8, "轮播", "栏目标题配左右箭头，下方一排带序号的横版卡片", "卡片整排滑动", 6, False, MINT,
-        TypeSpec("glowbold", "interbold", "intersemi", 176, 60,
-                 main_tracking=0.01, main_tracking_latin=-0.02, spacing=26),
+        7, "详情", "虚化背景上的预告大卡，右侧标题和播放键，下方露出同系列", "缩略图放大成主卡，其余左移补位", 6, False, MINT,
+        TypeSpec("glowbold", "interbold", "intersemi", 186, 60,
+                 main_tracking=0.01, main_tracking_latin=-0.02, spacing=30),
+    ),
+    StyleInfo(
+        8, "扇面", "海报沿大圆弧排成扇形，粗宋体标题居中在上方", "扇面转动一格，带一点回弹", 8, True, MINT,
+        TypeSpec("serifblack", "dmserif", "intersemi", 196, 58,
+                 main_tracking=0.03, main_tracking_latin=-0.005, spacing=18),
     ),
 ]
 STYLE_COUNT = len(STYLE_CATALOG)

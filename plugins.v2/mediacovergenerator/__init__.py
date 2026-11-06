@@ -1,4 +1,7 @@
 import base64
+import hmac
+import importlib.util
+import secrets
 import datetime
 import hashlib
 import json
@@ -108,6 +111,8 @@ FONT_FALLBACKS = {
 ANIMATION_RESOLUTIONS = ("320x180", "400x225", "480x270")
 DEFAULT_ANIMATION_RESOLUTION = "400x225"
 HISTORY_PAGE_SIZE = 8
+# 本地预览的动图尺寸，和图库卡片差不多大
+PREVIEW_SIZE = (320, 180)
 LIBRARY_CACHE_SECONDS = 120
 THUMBNAIL_CACHE_SIZE = 256
 
@@ -120,7 +125,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标（前端按地址缓存图标，换图时要换文件名）
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/animated-cover.png"
     # 插件版本
-    plugin_version = "0.15.0"
+    plugin_version = "0.16.0"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -154,6 +159,8 @@ class MediaCoverGenerator(_PluginBase):
     _current_updating_items = set()
     _covers_output = ''
     _covers_input = ''
+    # 正在生成本地预览：用固定的预览参数，不记入封面历史
+    _preview_mode = False
     _zh_font_url = ''
     _en_font_url = ''
     _zh_font_path = ''
@@ -774,6 +781,8 @@ class MediaCoverGenerator(_PluginBase):
             ("/set_style_variant", self.api_set_style_variant, "切换静态或动态"),
             ("/style_target", self.api_style_target, "选择要设置风格的媒体库"),
             ("/clear_library_style", self.api_clear_library_style, "让媒体库恢复跟随默认风格"),
+            ("/generate_preview", self.api_generate_preview, "用媒体库的真实图片生成风格预览"),
+            ("/clear_preview", self.api_clear_preview, "删除本地预览，恢复示例图"),
         ]
         response_model = self.__response_model()
         result: List[Dict[str, Any]] = []
@@ -798,7 +807,23 @@ class MediaCoverGenerator(_PluginBase):
                 "response_model": None,
                 "summary": "获取已保存封面图片",
             })
+        # 图片标签带不了登录凭据，动态预览走匿名路由，靠每次生成都换的随机令牌保护，只能取到生成好的预览。
+        # 不支持匿名路由的 MoviePilot 版本不注册，页面上仍有内嵌的静态预览
+        if self.__supports_anonymous_route():
+            for route_path in ("/local_preview", "local_preview"):
+                result.append({
+                    "path": route_path,
+                    "endpoint": self.api_local_preview,
+                    "methods": ["GET"],
+                    "allow_anonymous": True,
+                    "response_model": None,
+                    "summary": "获取本地生成的风格预览",
+                })
         return result
+
+    @staticmethod
+    def __supports_anonymous_route() -> bool:
+        return importlib.util.find_spec("app.adapters.web.plugin.routes") is not None
 
     @staticmethod
     def __response_model():
@@ -986,6 +1011,167 @@ class MediaCoverGenerator(_PluginBase):
         except Exception as e:
             logger.error(f"【MediaCoverGenerator】恢复默认风格失败: {e}", exc_info=True)
             return self.__api_response(False, f"恢复失败: {e}")
+
+    def api_generate_preview(self, library: str = "", tab: str = ""):
+        """用媒体库的真实图片生成 8 款风格的预览。只生成不上传，不会改动媒体库封面。"""
+        self.__set_page_tab(tab)
+        if not self._enabled:
+            return self.__api_response(False, "插件未启用，请先在设置页启用插件并保存")
+        if not self._servers:
+            return self.__api_response(False, "媒体服务器连接信息为空，请检查设置并保存后重试")
+        if self.__is_running():
+            return self.__api_response(False, "已有封面生成任务正在运行")
+        self._event.clear()
+        task = {"running": True, "total": STYLE_COUNT, "done": 0, "current": "准备预览素材"}
+        self._task = task
+        threading.Thread(target=self.__run_preview, args=((library or "").strip(), task),
+                         name="MediaCoverGeneratorPreview", daemon=True).start()
+        return self.__api_response(True, "预览正在后台生成，不会改动媒体库封面")
+
+    def api_clear_preview(self, tab: str = ""):
+        self.__set_page_tab(tab)
+        meta = self.__local_preview_meta()
+        if meta:
+            shutil.rmtree(self.__preview_root() / meta["token"], ignore_errors=True)
+        self.save_data("local_preview", {})
+        return self.__api_response(True, "已恢复示例图")
+
+    def api_local_preview(self, token: str = "", index: int = 0):
+        """返回一张动态预览。路径只由保存的令牌和序号组成，不接受外部传入的路径。"""
+        from fastapi.responses import FileResponse, Response
+        meta = self.__local_preview_meta()
+        if not meta or not hmac.compare_digest(str(token), meta["token"]) or index not in meta["styles"]:
+            return Response(status_code=404)
+        target = self.__preview_root() / meta["token"] / f"style_{index}.gif"
+        if not target.is_file():
+            return Response(status_code=404)
+        return FileResponse(path=str(target), media_type="image/gif", headers={"Cache-Control": "private, max-age=86400"})
+
+    def __preview_root(self) -> Path:
+        return self.get_data_path() / "preview"
+
+    def __local_preview_meta(self) -> Optional[Dict[str, Any]]:
+        meta = self.get_data("local_preview")
+        if not isinstance(meta, dict) or not meta.get("token") or not re.fullmatch(r"[\w-]+", str(meta["token"])):
+            return None
+        styles = [int(item) for item in meta.get("styles") or [] if isinstance(item, int) or str(item).isdigit()]
+        if not styles or not (self.__preview_root() / meta["token"]).is_dir():
+            return None
+        return {**meta, "styles": styles}
+
+    def __local_preview_context(self) -> Optional[Dict[str, Any]]:
+        """详情页用的预览信息。静态图内嵌在页面里，动图只放地址。"""
+        meta = self.__local_preview_meta()
+        if not meta:
+            return None
+        folder = self.__preview_root() / meta["token"]
+        styles: Dict[int, Dict[str, Optional[str]]] = {}
+        anonymous = self.__supports_anonymous_route()
+        for index in meta["styles"]:
+            still = self.__thumbnail(folder / f"style_{index}.jpg", (320, 180), 62)
+            if not still:
+                continue
+            has_gif = anonymous and (folder / f"style_{index}.gif").is_file()
+            styles[index] = {
+                "still": still,
+                "gif": f"/api/v1/{self.__api_prefix()}/local_preview?token={meta['token']}&index={index}" if has_gif else None,
+            }
+        if not styles:
+            return None
+        return {"library": meta.get("library") or "", "time": meta.get("time") or "", "styles": styles}
+
+    def __run_preview(self, library_key: str, task: Dict[str, Any]):
+        if not self._update_lock.acquire(blocking=False):
+            if self._task is task:
+                self._task = {"running": False}
+            return
+        folder = None
+        message = ""
+        try:
+            found = self.__find_library(library_key)
+            if not found:
+                message = "预览没有生成：没有找到可用的媒体库"
+                return
+            service, library = found
+            name = library["Name"]
+            self._preview_mode = True
+            try:
+                self.__get_fonts()
+            except Exception as error:
+                logger.warning(f"预览：准备字体失败: {error}")
+            token = secrets.token_urlsafe(18)
+            folder = self.__preview_root() / token
+            folder.mkdir(parents=True, exist_ok=True)
+            done: List[int] = []
+            for index in range(1, STYLE_COUNT + 1):
+                if self._event.is_set():
+                    break
+                self._run_style = f"animated_{index}"
+                task["current"] = f"预览 {name}：{style_info(index).name}"
+                self._failure_reason = ""
+                try:
+                    image_data = self.__build_library_image(service, library)
+                    if image_data and self.__store_preview(folder, index, image_data):
+                        done.append(index)
+                    else:
+                        logger.warning(f"预览：{style_info(index).name} 没有生成：{self._failure_reason}")
+                except Exception as error:
+                    logger.error(f"预览：{style_info(index).name} 生成失败: {error}", exc_info=True)
+                task["done"] = index
+            if not done:
+                shutil.rmtree(folder, ignore_errors=True)
+                message = "预览已停止" if self._event.is_set() else f"预览没有生成：{self._failure_reason or '媒体库里没有可用的图片'}"
+                return
+            previous = self.__local_preview_meta()
+            self.save_data("local_preview", {
+                "token": token, "library": name, "key": library_key,
+                "time": datetime.datetime.now().strftime("%m-%d %H:%M"), "styles": done,
+            })
+            if previous and previous["token"] != token:
+                shutil.rmtree(self.__preview_root() / previous["token"], ignore_errors=True)
+            message = f"预览已生成：用「{name}」生成了 {len(done)} 款，媒体库封面没有改动"
+            logger.info(message)
+        except Exception as error:
+            logger.error(f"生成预览失败: {error}", exc_info=True)
+            message = f"预览生成失败: {error}"
+            if folder:
+                shutil.rmtree(folder, ignore_errors=True)
+        finally:
+            self._preview_mode = False
+            self._run_style = None
+            self._current_updating_items.clear()
+            self._event.clear()
+            self._task = {"running": False}
+            if message:
+                try:
+                    self.save_data("last_run", {"time": datetime.datetime.now().strftime("%m-%d %H:%M"), "message": message})
+                except Exception as error:
+                    logger.debug(f"记录预览结果失败: {error}")
+            self._update_lock.release()
+
+    def __find_library(self, library_key: str):
+        """按键找到媒体库；没有指定时取第一个参与批量更新的媒体库。"""
+        fallback = None
+        for server, service in (self._servers or {}).items():
+            for library in self.__get_server_libraries(service) or []:
+                library_id = library.get("Id") if service.type == "emby" else library.get("ItemId")
+                key = f"{server}-{library_id}"
+                if library_key and key == library_key:
+                    return service, library
+                if not fallback and self.__in_batch(key, library.get("CollectionType")):
+                    fallback = (service, library)
+        return None if library_key else fallback
+
+    @staticmethod
+    def __store_preview(folder: Path, index: int, image_base64: str) -> bool:
+        raw = base64.b64decode(image_base64)
+        with Image.open(BytesIO(raw)) as image:
+            still = image.convert("RGB")
+            still.thumbnail((480, 270))
+            still.save(folder / f"style_{index}.jpg", quality=86)
+        if raw[:3] == b"GIF":
+            (folder / f"style_{index}.gif").write_bytes(raw)
+        return True
 
     def api_saved_cover_image(self, file: str = ""):
         target_file = self.__resolve_saved_cover_path(file)
@@ -1249,6 +1435,7 @@ class MediaCoverGenerator(_PluginBase):
         # 横幅背景会被模糊，很小的图就够了
         hero_image = self.__thumbnail(all_covers[0]["file"], (160, 90), 50) if all_covers else None
         return build_page({
+            "local_preview": self.__local_preview_context() if page_tab == "style" else None,
             "api_prefix": self.__api_prefix(),
             "enabled": self._enabled,
             "warnings": warnings,
@@ -1772,6 +1959,13 @@ class MediaCoverGenerator(_PluginBase):
         return library_type != LIVE_TV_TYPE
 
     def __update_library(self, service, library):
+        image_data = self.__build_library_image(service, library)
+        if image_data:
+            return self.__set_library_image(service, library, image_data)
+        return False
+
+    def __build_library_image(self, service, library):
+        """准备素材并生成封面图片，不上传。"""
         library_name = library['Name']
         logger.info(f"媒体库 {service.name}：{library_name} 开始准备更新封面")
         # 从配置获取标题和背景颜色
@@ -1784,10 +1978,7 @@ class MediaCoverGenerator(_PluginBase):
             image_data = self.__generate_cover(service.name, library_name, title, config_bg_color)
         else:
             image_data = self.__generate_from_server(service, library, title)
-
-        if image_data:
-            return self.__set_library_image(service, library, image_data)
-        return False
+        return image_data
 
     def __check_custom_image(self, library_name):
         if not self._covers_input:
@@ -1933,7 +2124,9 @@ class MediaCoverGenerator(_PluginBase):
             self._failure_reason = self._failure_reason or "没有可用的素材图片"
             return False
 
-        if animated:
+        if animated and self._preview_mode:
+            width, height = PREVIEW_SIZE
+        elif animated:
             width, height = (int(value) for value in self._animation_resolution.split("x"))
         else:
             width, height = int(self._resolution_config.width), int(self._resolution_config.height)
@@ -1950,9 +2143,9 @@ class MediaCoverGenerator(_PluginBase):
                 "custom_color": self._custom_bg_color,
                 "config_color": config_bg_color,
             },
-            animation_duration=self._animation_duration,
-            animation_fps=self._animation_fps,
-            animation_reduce_colors=self._animation_reduce_colors,
+            animation_duration=12 if self._preview_mode else self._animation_duration,
+            animation_fps=12 if self._preview_mode else self._animation_fps,
+            animation_reduce_colors="medium" if self._preview_mode else self._animation_reduce_colors,
             stop_event=self._event,
         )
 
@@ -2274,8 +2467,8 @@ class MediaCoverGenerator(_PluginBase):
             library_id = library.get("Id")
         else:
             library_id = library.get("ItemId")
-        # 更新ids
-        for item_id in reversed(updated_item_ids):
+        # 更新ids。预览只是看效果，不算这些图用过
+        for item_id in [] if self._preview_mode else reversed(updated_item_ids):
             self.update_cover_history(
                 server=service.name,
                 library_id=library_id,

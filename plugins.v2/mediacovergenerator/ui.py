@@ -284,12 +284,14 @@ def recommend_badge() -> Dict[str, Any]:
     return node("span", cls="mcg-rec", text="推荐")
 
 
-def _preview_media(entry, show_motion: Any) -> Dict[str, Any]:
-    """风格卡片的预览图。动态预览盖在静态图上，加载不出来时用户看到的仍是静态图。"""
-    children = [node("img", src=PREVIEWS.get(entry.index, ""), alt=entry.name, loading="lazy")]
-    if show_motion:
+def _preview_media(entry, show_motion: Any, local: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """风格卡片的预览图。动态预览盖在静态图上，加载不出来时用户看到的仍是静态图。local 是用媒体库生成的预览。"""
+    still = local["still"] if local else PREVIEWS.get(entry.index, "")
+    motion = local["gif"] if local else PREVIEW_GIF.format(index=entry.index)
+    children = [node("img", src=still, alt=entry.name, loading="lazy")]
+    if show_motion and motion:
         layers = [
-            div("mcg-style-motion", style=f"background-image:url({PREVIEW_GIF.format(index=entry.index)})"),
+            div("mcg-style-motion", style=f"background-image:url({motion})"),
             node("span", cls="mcg-gif-tag", text="GIF"),
         ]
         # 渲染器处理 show 时会改写 style.display，同一节点上再有字符串 style 就会抛错，整个页签都不显示。
@@ -413,6 +415,27 @@ def _style_targets(ctx: Dict[str, Any], target: Optional[Dict[str, Any]]) -> Lis
     return result
 
 
+def _local_preview_bar(ctx: Dict[str, Any], target: Optional[Dict[str, Any]]) -> List[dict]:
+    """用媒体库的真实图片生成预览。默认用当前选中的媒体库，否则用第一个参与更新的媒体库。"""
+    libraries = ctx["libraries"]
+    source = target or next((item for item in libraries if item.get("active")), None)
+    if not source:
+        return []
+    prefix = ctx["api_prefix"]
+    local = ctx.get("local_preview")
+    path = f"generate_preview?library={source['encoded_key']}&tab=style"
+    if local:
+        note = f"下面是你的媒体库「{local['library']}」的真实效果（{local['time']} 生成）。"
+        actions = [button("看示例图", "quiet", prefix, "clear_preview?tab=style", size="small"),
+                   button(f"用「{source['name']}」重新生成", "gold", prefix, path, size="small")]
+    else:
+        note = "想看看自己的片库用上这些风格的样子？只生成预览，不会改动媒体库封面。"
+        actions = [button(f"用「{source['name']}」生成预览", "gold", prefix, path, "mdi-image-multiple-outline", size="small")]
+    if ctx["task"].get("running"):
+        actions = []
+    return [div("mcg-target-bar mcg-local-bar", div(None, text=note), div("mcg-target-actions", *actions))]
+
+
 def _style_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
     prefix = ctx["api_prefix"]
     target = next((item for item in ctx["libraries"] if item["key"] == ctx["style_target"]), None)
@@ -432,7 +455,8 @@ def _style_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
             div(
                 None,
                 div("mcg-heading-title", text="封面风格"),
-                div("mcg-heading-note", text="点击卡片即可切换，下次生成时生效。预览图为示例素材。"),
+                div("mcg-heading-note", text="点击卡片即可切换，下次生成时生效。"
+                    + ("" if ctx.get("local_preview") else "预览图为示例素材。")),
             ),
             div(
                 "mcg-seg",
@@ -445,6 +469,8 @@ def _style_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
         )
     )
     children.extend(_style_targets(ctx, target))
+    children.extend(_local_preview_bar(ctx, target))
+    local_styles = (ctx.get("local_preview") or {}).get("styles") or {}
     cards = []
     for entry in STYLE_CATALOG:
         selected = entry.index == style_index
@@ -453,7 +479,7 @@ def _style_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
         cards.append(
             div(
                 "mcg-style" + (" mcg-style-on" if selected else ""),
-                _preview_media(entry, variant == "animated"),
+                _preview_media(entry, variant == "animated", local_styles.get(entry.index)),
                 div("mcg-style-tick", icon("mdi-check", 16)),
                 div(
                     "mcg-style-meta",
@@ -923,7 +949,7 @@ def _typography_tab(ctx: Dict[str, Any]) -> List[dict]:
                            min=0), 4),
                 _col(_text("zh_font_offset", "标题上下偏移", "上移填负值，默认 0", number=True,
                            icon_name="mdi-arrow-up-down"), 4),
-                _col(_text("blur_size", "背景虚化强度", "流光、预告、详情风格的虚化背景使用，默认 50", number=True, icon_name="mdi-blur",
+                _col(_text("blur_size", "背景虚化强度", "流光、预告、景深、详情、扇面的虚化背景使用，默认 50", number=True, icon_name="mdi-blur",
                            min=0), 4),
             ),
         ),

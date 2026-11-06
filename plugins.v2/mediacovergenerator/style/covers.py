@@ -1,5 +1,5 @@
 """
-八款封面风格的构图，取自流媒体站点常见的版块：竖幅画廊、满幅大图、预告横幅、榜单长卡、详情页和轮播。
+八款封面风格的构图。每款有自己的切换方式，切换也是设计的一部分，不共用同一种转场。
 
 每款风格是一个 Cover 子类：prepare() 预先算好不变的图层，frame(phase) 画出循环中某一时刻的画面。
 静态封面就是 phase=0 的高清帧，动图是同一套构图的低分辨率逐帧输出，所以两者外观一致。
@@ -18,11 +18,11 @@ from io import BytesIO
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps
+from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageOps
 
 from app.log import logger
 from app.plugins.mediacovergenerator.style.catalog import style_info
-from app.plugins.mediacovergenerator.style.typography import SUPERSAMPLE, TitleLayout, load_font, outline_from_mask
+from app.plugins.mediacovergenerator.style.typography import TitleLayout, outline_from_mask
 from app.plugins.mediacovergenerator.utils.color_helper import ColorHelper
 
 IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".bmp")
@@ -40,12 +40,30 @@ def ease(value):
     return 0.5 - 0.5 * math.cos(math.pi * value)
 
 
-def beats(phase, count, hold=0.72):
-    """把循环分成 count 拍，每拍先停留再转场。返回 (当前拍, 下一拍, 转场进度 0~1)。"""
+def ease_in_out(value):
+    """起步和收尾都更缓，大幅度的运动用它。"""
+    value = max(0.0, min(1.0, value))
+    return 4.0 * value ** 3 if value < 0.5 else 1.0 - (-2.0 * value + 2.0) ** 3 / 2.0
+
+
+def ease_out(value):
+    """快速出发、慢慢停稳。"""
+    value = max(0.0, min(1.0, value))
+    return 1.0 - (1.0 - value) ** 3
+
+
+def ease_back(value, overshoot=1.1):
+    """略微冲过头再回来，带一点弹性。"""
+    value = max(0.0, min(1.0, value)) - 1.0
+    return 1.0 + (overshoot + 1.0) * value ** 3 + overshoot * value ** 2
+
+
+def beats(phase, count, hold=0.72, curve=ease):
+    """把循环分成 count 拍，每拍先停留再转场。返回 (当前拍, 下一拍, 转场进度)。"""
     position = (phase % 1.0) * count
     current = int(position) % count
     local = position - int(position)
-    progress = ease((local - hold) / (1.0 - hold)) if local > hold else 0.0
+    progress = curve((local - hold) / (1.0 - hold)) if local > hold else 0.0
     return current, (current + 1) % count, progress
 
 
@@ -197,12 +215,47 @@ def polygon_mask(size, points, supersample=3):
     return mask.resize(size, Image.Resampling.LANCZOS)
 
 
-def diagonal_wipe(size, progress, slant=0.3, feather=0.14):
-    """从左向右的斜向划变遮罩，progress 从 0 到 1 时由全黑变全白。"""
-    x_axis, y_axis = axes(size)
-    travel = x_axis + (1.0 - y_axis) * slant
-    edge = progress * (1.0 + slant + feather) - feather
-    return Image.fromarray((smooth((edge - travel) / feather + 1.0) * 255.0).astype(np.uint8))
+def zoomed(image, factor):
+    """以中心放大后裁回原尺寸。"""
+    width, height = image.size
+    crop_w, crop_h = width / factor, height / factor
+    left, top = (width - crop_w) / 2.0, (height - crop_h) / 2.0
+    return image.resize((width, height), Image.Resampling.BILINEAR, box=(left, top, left + crop_w, top + crop_h))
+
+
+def with_alpha(layer, amount):
+    """整体调整图层的透明度。"""
+    if amount >= 1.0:
+        return layer
+    result = layer.copy()
+    result.putalpha(layer.getchannel("A").point(lambda value: int(value * max(0.0, amount))))
+    return result
+
+
+def perspective_coefficients(target, width, height):
+    """PIL 透视变换的系数：把输出坐标映射回源图。target 是四个角的落点，顺序为左上、右上、右下、左下。"""
+    source = ((0, 0), (width, 0), (width, height), (0, height))
+    matrix, values = [], []
+    for (x_pos, y_pos), (u_pos, v_pos) in zip(target, source):
+        matrix.append([x_pos, y_pos, 1, 0, 0, 0, -u_pos * x_pos, -u_pos * y_pos])
+        matrix.append([0, 0, 0, x_pos, y_pos, 1, -v_pos * x_pos, -v_pos * y_pos])
+        values += [u_pos, v_pos]
+    return np.linalg.solve(np.array(matrix, dtype=np.float64), np.array(values, dtype=np.float64)).tolist()
+
+
+def warp_onto(canvas, card, quad, supersample=2):
+    """把 RGBA 卡片按四个角的落点贴到画布上，超采样让斜边平滑。"""
+    x0 = max(0, int(math.floor(min(point[0] for point in quad))))
+    y0 = max(0, int(math.floor(min(point[1] for point in quad))))
+    x1 = min(canvas.width, int(math.ceil(max(point[0] for point in quad))))
+    y1 = min(canvas.height, int(math.ceil(max(point[1] for point in quad))))
+    if x1 <= x0 or y1 <= y0:
+        return
+    local = [((x_pos - x0) * supersample, (y_pos - y0) * supersample) for x_pos, y_pos in quad]
+    coefficients = perspective_coefficients(local, card.width, card.height)
+    warped = card.transform(((x1 - x0) * supersample, (y1 - y0) * supersample), Image.Transform.PERSPECTIVE,
+                            coefficients, Image.Resampling.BILINEAR)
+    canvas.alpha_composite(warped.resize((x1 - x0, y1 - y0), Image.Resampling.BOX), (x0, y0))
 
 
 def composite_at(canvas, layer, x_pos, y_pos):
@@ -227,22 +280,6 @@ def play_chip(height, width=None, fill=GHOST_WHITE, icon=CARD):
                            fill=fill + (255,))
     play_triangle(draw, (width * scale * 0.51, height * scale * 0.5), height * scale * 0.2, icon + (255,))
     return chip.resize((width, height), Image.Resampling.LANCZOS)
-
-
-def arrow_chip(size, direction):
-    """白底圆角的左右箭头。"""
-    scale = 4
-    size = int(size)
-    chip = Image.new("RGBA", (size * scale, size * scale), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(chip)
-    full = size * scale
-    draw.rounded_rectangle([(0, 0), (full - 1, full - 1)], radius=int(full * 0.26), fill=GHOST_WHITE + (255,))
-    arm = full * 0.17
-    tip = full * (0.40 if direction < 0 else 0.60)
-    back = tip + arm * 0.8 * (1 if direction < 0 else -1)
-    draw.line([(back, full / 2 - arm), (tip, full / 2), (back, full / 2 + arm)], fill=CARD + (255,),
-              width=max(2, int(full * 0.075)), joint="curve")
-    return chip.resize((size, size), Image.Resampling.LANCZOS)
 
 
 # ---------------------------------------------------------------- 风格基类
@@ -335,7 +372,7 @@ class Cover:
         return layer
 
     def title_block(self, max_width, sub_style="tag", button=False, main_fill=GHOST_WHITE, sub_fill=None, shadow=None,
-                    main_factor=1.0):
+                    main_factor=1.0, align="left"):
         """
         主标题加一行标签或副标题，返回 (RGBA 图层, 笔画左边距, 笔画高度)。
         图层四周留了边，投影不会被切掉；上下偏移由调用方加上。
@@ -362,16 +399,19 @@ class Cover:
         height = int(ink_h) + margin * 2
         layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         if main.main_lines:
-            layer.alpha_composite(main.render((width, height), margin, margin - main.offset_y,
+            layer.alpha_composite(main.render((width, height), margin, margin - main.offset_y, align=align,
                                               main_fill=main_fill + (255,), shadow=shadow))
         row_y = margin + main.main_height + gap
         cursor = float(margin)
+        if align == "center" and items:
+            total = sum(item.width for item in items) + 18 * s * (len(items) - 1)
+            cursor += (max_width - total) / 2.0
         for item in items:
             layer.alpha_composite(item, (int(cursor), int(row_y + (row_h - item.height) / 2.0)))
             cursor += item.width + 18 * s
         if text:
             color = sub_fill or SILVER
-            layer.alpha_composite(text.render((width, height), cursor, row_y - text.offset_y,
+            layer.alpha_composite(text.render((width, height), cursor, row_y - text.offset_y, align=align,
                                               sub_fill=color + (255,), shadow=shadow))
         return layer, margin, ink_h
 
@@ -380,7 +420,7 @@ class Cover:
 
 
 class Gallery(Cover):
-    """满屏竖幅画廊，一幅展开。标题在展开的画幅里，随它一起移动。"""
+    """满屏竖幅画廊，一幅展开。画幅舒展的同时，标题淡出再从新画幅里升起。"""
 
     STRIPS = 6
     START = 2
@@ -413,7 +453,7 @@ class Gallery(Cover):
         return min(self._panel_left(strip) + self.pad - self.margin, limit)
 
     def frame(self, phase):
-        current, following, progress = beats(phase, self.STRIPS)
+        current, following, progress = beats(phase, self.STRIPS, hold=0.6, curve=ease_in_out)
         active = (self.START + current) % self.STRIPS
         upcoming = (self.START + following) % self.STRIPS
         canvas = Image.new("RGB", self.size, (0, 0, 0))
@@ -435,8 +475,15 @@ class Gallery(Cover):
             canvas.paste(strip, (x0, 0))
         canvas = canvas.convert("RGBA")
         canvas.alpha_composite(self.overlay)
-        start, finish = self._block_x(active), self._block_x(upcoming)
-        composite_at(canvas, self.block, start + (finish - start) * progress, self.block_y)
+        # 标题不横穿画面：先淡出，再在新展开的画幅里淡入并轻轻升起
+        if progress < 0.42:
+            amount, strip, rise = 1.0 - progress / 0.42, active, 0.0
+        elif progress > 0.58:
+            amount = (progress - 0.58) / 0.42
+            strip, rise = upcoming, (1.0 - amount) * 34 * self.s
+        else:
+            return canvas
+        composite_at(canvas, with_alpha(self.block, amount), self._block_x(strip), self.block_y + rise)
         return canvas
 
 
@@ -476,14 +523,23 @@ class Titan(Cover):
                      H * 0.915 - ink_h - margin + self.spec.offset_y * s)
 
     def frame(self, phase):
-        current, following, progress = beats(phase, self.count)
+        current, following, progress = beats(phase, self.count, hold=0.58, curve=ease_in_out)
         image = self.frames[current]
         if progress > 0:
-            image = Image.composite(self.frames[following], image, diagonal_wipe(self.size, progress))
+            # 旧画面继续推近，新画面从稍近处退回原位，两者叠化
+            image = Image.blend(zoomed(image, 1.0 + 0.09 * progress),
+                                zoomed(self.frames[following], 1.09 - 0.09 * progress), progress)
         canvas = image.convert("RGBA")
         canvas.alpha_composite(self.overlay)
         card_now, card_next = self.cards[following], self.cards[(following + 1) % self.count]
-        card = card_now if progress <= 0 else Image.blend(card_now, card_next, progress)
+        if progress <= 0:
+            card = card_now
+        else:
+            # 小窗里下一张从下方推上来
+            shift = int(round(self.card_size[1] * progress))
+            card = Image.new("RGB", self.card_size)
+            card.paste(card_now, (0, -shift))
+            card.paste(card_next, (0, self.card_size[1] - shift))
         canvas.paste(card, self.card_box, self.card_mask)
         return canvas
 
@@ -492,62 +548,172 @@ class Titan(Cover):
 
 
 class Glint(Cover):
-    """黑底上的超大标题：左边白字，右边透出画面。分界线来回走动，走到尽头时悄悄换图。"""
+    """
+    整幅画面压暗虚化，巨大的标题像窗口一样透出明亮清晰的同一张图，字和背景严丝合缝。
+    停留时一道流光扫过文字；转场时字里先换成下一张，镜头穿过笔画冲进画面，全屏亮相后再退回来。
+    """
 
-    SLANT = 0.22
+    BEATS = 4
+    HOLD = 0.5
+    SWEEP_WIDTH = 0.11
 
     def prepare(self):
         W, H, s = self.W, self.H, self.s
-        canvas = self.backdrop(0, 0.2).convert("RGBA")
+        self.beat_count = max(1, min(self.BEATS, self.count))
+        blur = ImageFilter.GaussianBlur(max(1.0, self.blur_size * 0.16 * s))
         x_axis, y_axis = axes(self.size)
-        vignette = np.sqrt(((x_axis - 0.5) / 0.62) ** 2 + ((y_axis - 0.5) / 0.62) ** 2)
-        canvas.alpha_composite(rgba_from_alpha(INK, np.clip(0.55 + vignette * 0.45, 0, 1)))
+        vignette = np.sqrt(((x_axis - 0.5) / 0.72) ** 2 + ((y_axis - 0.5) / 0.72) ** 2)
+        shade = rgba_from_alpha((3, 3, 6), np.clip(0.22 + vignette * 0.44, 0, 1) * self.scrim_strength())
 
-        main = self.layout(W * 0.86, part="main")
-        sub = self.layout(W * 0.8, part="sub")
-        has_sub = self.has_sub()
-        gap = self.spec.spacing * s if has_sub else 0.0
-        total = main.main_height + gap + (sub.height if has_sub else 0.0)
+        main = self.layout(W * 0.88, part="main")
+        tag = self.label(fill=GHOST_WHITE)
+        gap = self.spec.spacing * s if tag is not None else 0.0
+        total = main.main_height + (gap + tag.height if tag is not None else 0.0)
         top = (H - total) / 2.0 + self.spec.offset_y * s
-        if has_sub:
-            canvas.alpha_composite(sub.render(self.size, W * 0.1, top - sub.offset_y, align="center",
-                                              sub_fill=GHOST_WHITE + (235,)))
-        main_top = top + (sub.height + gap if has_sub else 0.0)
-        self.mask = main.render(self.size, W * 0.07, main_top - main.offset_y, align="center").getchannel("A")
+        # 文字蒙版画大一倍，推近时边缘才不糊
+        self.mask_scale = 2
+        large = (W * self.mask_scale, H * self.mask_scale)
+        big = TitleLayout(self.title, self.fonts, self.spec, self.s * self.mask_scale, W * 0.88 * self.mask_scale, part="main")
+        self.mask_large = big.render(large, W * 0.06 * self.mask_scale, (top - main.offset_y) * self.mask_scale, align="center").getchannel("A")
+        self.mask = self.mask_large.resize(self.size, Image.Resampling.LANCZOS)
         self.box = self.mask.getbbox() or (int(W * 0.2), int(H * 0.3), int(W * 0.8), int(H * 0.7))
-        # 文字外缘一圈淡描边，暗图透进字里也能看清字形
-        ring = Image.new("RGBA", self.size, GHOST_WHITE + (0,))
-        ring.putalpha(outline_from_mask(self.mask, max(1, round(1.4 * s)), 0.3))
-        canvas.alpha_composite(ring)
-        self.base = canvas.convert("RGB")
 
-        self.span = (self.box[2] - self.box[0], self.box[3] - self.box[1])
-        self.text_mask = np.asarray(self.mask.crop(self.box), dtype=np.float32) / 255.0
-        self.pan_w = int(self.span[0] * 1.22)
-        self.fills = [lift(self.fit(index, (self.pan_w, self.span[1])), floor=88, saturation=1.45)
-                      for index in range(self.count)]
-        columns, rows = np.meshgrid(np.arange(self.span[0], dtype=np.float32), np.arange(self.span[1], dtype=np.float32))
+        # 字外缘的亮边和字后的暗影，让字从画面里浮出来
+        self.edge = Image.new("RGBA", self.size, GHOST_WHITE + (0,))
+        self.edge.putalpha(outline_from_mask(self.mask, max(1, round(2.2 * s)), 0.82))
+        glow = self.mask.filter(ImageFilter.GaussianBlur(max(2.0, 44 * s))).point(lambda value: int(min(255, value * 1.2)))
+        soften = ImageFilter.GaussianBlur(max(0.5, 1.6 * s))
+
+        self.full, self.bright, self.dim, self.plain = [], [], [], []
+        for index in range(self.beat_count):
+            picture = ImageEnhance.Contrast(self.fit(index, self.size)).enhance(1.06)
+            self.full.append(picture)
+            # 字里的画面提亮、提纯并去掉碎细节，字形始终清楚
+            stretched = ImageOps.autocontrast(picture.filter(soften), cutoff=2)
+            self.bright.append(ImageEnhance.Brightness(lift(stretched, floor=74, saturation=1.55)).enhance(1.12))
+            dark = ImageEnhance.Brightness(ImageEnhance.Color(picture.filter(blur)).enhance(0.8)).enhance(0.36).convert("RGBA")
+            dark.alpha_composite(shade)
+            dark = dark.convert("RGB")
+            self.plain.append(dark)
+            # 字后面透出一层取自这张图色调的背光
+            lit = dark.copy()
+            lit.paste(self._glow_color(picture), (0, 0), glow.point(lambda value: int(value * 0.62)))
+            self.dim.append(lit)
+
+        self.tag = tag
+        self.tag_at = None
+        if tag is not None:
+            self.tag_at = (int((W - tag.width) / 2.0), int(top + main.main_height + gap))
+        self.focus = self._thickest_point()
+
+        columns, rows = np.meshgrid(np.arange(W, dtype=np.float32), np.arange(H, dtype=np.float32))
         self.columns, self.rows = columns, rows
-        self.feather = max(1.0, self.span[0] * 0.012)
+
+    @staticmethod
+    def _glow_color(picture):
+        """这张图最鲜艳的颜色，提亮后做背光。"""
+        small = picture.convert("HSV").resize((32, 18), Image.Resampling.BILINEAR)
+        data = np.asarray(small, dtype=np.float32).reshape(-1, 3)
+        weights = (data[:, 1] / 255.0) * (data[:, 2] / 255.0) + 0.01
+        hue_x = np.sum(np.cos(data[:, 0] / 255.0 * math.tau) * weights)
+        hue_y = np.sum(np.sin(data[:, 0] / 255.0 * math.tau) * weights)
+        hue = (math.atan2(hue_y, hue_x) / math.tau) % 1.0
+        swatch = Image.new("HSV", (1, 1), (int(hue * 255), 190, 215)).convert("RGB")
+        return swatch.getpixel((0, 0))
+
+    def _thickest_point(self):
+        """找到笔画最粗的地方，镜头从这里穿过去。同时算出穿透需要的放大倍数。"""
+        probe = self.mask.point(lambda value: 255 if value > 127 else 0)
+        radius = 0
+        current = probe
+        while radius < 200:
+            shrunk = current.filter(ImageFilter.MinFilter(3))
+            if not shrunk.getbbox():
+                break
+            current = shrunk
+            radius += 1
+        rows, columns = np.nonzero(np.asarray(current))
+        if len(rows):
+            pick = len(rows) // 2
+            center = (float(columns[pick]), float(rows[pick]))
+        else:
+            center = ((self.box[0] + self.box[2]) / 2.0, (self.box[1] + self.box[3]) / 2.0)
+        diagonal = math.hypot(self.W, self.H)
+        self.zoom_peak = min(90.0, diagonal / max(1.0, radius + 1.0))
+        return center
+
+    def _zoomed_mask(self, zoom, shift):
+        """把文字蒙版以 focus 为中心放大，并让 focus 向画面中心移动 shift（0~1）。"""
+        focus_x, focus_y = self.focus
+        target_x = focus_x + (self.W / 2.0 - focus_x) * shift
+        target_y = focus_y + (self.H / 2.0 - focus_y) * shift
+        unit = self.mask_scale / zoom
+        coefficients = (unit, 0, (focus_x - target_x / zoom) * self.mask_scale, 0, unit, (focus_y - target_y / zoom) * self.mask_scale)
+        layer = self.mask_large.transform(self.size, Image.Transform.AFFINE, coefficients, Image.Resampling.BICUBIC)
+        # 放大后边缘会变软，收紧一下
+        gain = min(6.0, 1.0 + zoom * 0.25)
+        return layer.point(lambda value: int(max(0, min(255, (value - 128) * gain + 128))))
+
+    def _sweep(self, canvas, position):
+        """沿斜线扫过文字的一道高光，只落在字上。"""
+        left, top, right, bottom = self.box
+        width = right - left
+        center = left + (position * 1.5 - 0.25) * width
+        slanted = self.columns[top:bottom, left:right] + (self.rows[top:bottom, left:right] - top) * 0.32
+        band = np.exp(-(((slanted - center) / max(1.0, width * self.SWEEP_WIDTH)) ** 2))
+        strength = np.asarray(self.mask.crop(self.box), dtype=np.float32) * band * 0.62
+        canvas.paste(GHOST_WHITE, (left, top), Image.fromarray(strength.astype(np.uint8)))
 
     def frame(self, phase):
-        current, following, progress = beats(phase, self.count, hold=0.62)
-        local = (phase * self.count) % 1.0
-        shown = current if progress < 0.5 else following
-        # 分界线先向右走到尽头（全白），换图后再退回一半的位置
-        boundary = 0.5 + 0.68 * math.sin(math.pi * progress)
-        edge = boundary * self.span[0] + (self.rows - self.span[1] / 2.0) * self.SLANT
-        reveal = np.clip((self.columns - edge) / self.feather + 0.5, 0.0, 1.0)
+        position = (phase % 1.0) * self.beat_count
+        current = int(position) % self.beat_count
+        following = (current + 1) % self.beat_count
+        local = position - int(position)
 
-        # 画面在字里慢慢平移，换图时已经全白，看不出跳变
-        pan = local if progress < 0.5 else local - 1.0
-        offset = int(round((self.pan_w - self.span[0]) * (0.5 + 0.5 * pan)))
-        fill = self.fills[shown].crop((offset, 0, offset + self.span[0], self.span[1]))
+        if local <= self.HOLD:
+            canvas = self.dim[current].copy()
+            canvas.paste(self.bright[current], (0, 0), self.mask)
+            if 0.08 < local / self.HOLD < 0.82:
+                self._sweep(canvas, (local / self.HOLD - 0.08) / 0.74)
+            canvas = canvas.convert("RGBA")
+            canvas.alpha_composite(self.edge)
+            if self.tag is not None:
+                canvas.alpha_composite(self.tag, self.tag_at)
+            return canvas
 
-        canvas = self.base.copy()
-        canvas.paste(GHOST_WHITE, self.box[:2], self.mask.crop(self.box))
-        alpha = Image.fromarray((self.text_mask * reveal * 255.0).astype(np.uint8))
-        canvas.paste(fill, self.box[:2], alpha)
+        raw = (local - self.HOLD) / (1.0 - self.HOLD)
+        peak = math.log(max(1.01, self.zoom_peak))
+        tag_alpha = 0.0
+        if raw < 0.16:
+            # 第一段：字里换成下一张，字不动
+            mix_amount = ease(raw / 0.16)
+            ground, inside = self.dim[current], Image.blend(self.bright[current], self.bright[following], mix_amount)
+            zoom, shift, reveal, tag_alpha = 1.0, 0.0, 0.0, 1.0
+        elif raw < 0.46:
+            # 第二段：镜头穿过笔画，冲进下一张
+            move = ease_in_out((raw - 0.16) / 0.3)
+            ground, inside = Image.blend(self.dim[current], self.plain[current], min(1.0, move * 4.0)), self.bright[following]
+            zoom, shift, reveal = math.exp(peak * move), ease(move * 1.3), move
+            tag_alpha = max(0.0, 1.0 - move * 5.0)
+        elif raw < 0.7:
+            # 第三段：全屏亮相
+            return self.full[following].copy()
+        else:
+            # 第四段：退回来，背景也换成下一张
+            move = ease_out((raw - 0.7) / 0.3)
+            ground, inside = Image.blend(self.plain[following], self.dim[following], max(0.0, move * 2.0 - 1.0)), self.bright[following]
+            zoom, shift, reveal = math.exp(peak * (1.0 - move)), ease((1.0 - move) * 1.3), 1.0 - move
+            tag_alpha = max(0.0, move * 3.0 - 2.0)
+
+        picture = Image.blend(inside, self.full[following], reveal) if reveal > 0 else inside
+        layer = self.mask if zoom <= 1.0 else self._zoomed_mask(zoom, shift)
+        canvas = ground.copy()
+        canvas.paste(picture, (0, 0), layer)
+        canvas = canvas.convert("RGBA")
+        if zoom <= 1.02:
+            canvas.alpha_composite(self.edge)
+        if self.tag is not None and tag_alpha > 0:
+            canvas.alpha_composite(with_alpha(self.tag, tag_alpha), self.tag_at)
         return canvas
 
 
@@ -555,7 +721,9 @@ class Glint(Cover):
 
 
 class Trailer(Cover):
-    """虚化背景上的预告横幅：左上角斜角飘带，右边平行四边形的大图和一条细斜栏。"""
+    """虚化背景上的预告横幅：左上角斜角飘带，右边平行四边形的大图和一条细斜栏。换图时斜切成几条错开滑入。"""
+
+    BANDS = 5
 
     def prepare(self):
         W, H, s = self.W, self.H, self.s
@@ -566,8 +734,20 @@ class Trailer(Cover):
         bar_left, bar_right = right + W * 0.022, right + W * 0.06
         bar_points = [(bar_left, top), (bar_right, top), (bar_right - skew, bottom), (bar_left - skew, bottom)]
         self.window_mask = polygon_mask(self.size, main_points)
+        # 把窗口沿斜边切成几条，换图时一条条错开滑入，方向交替
+        self.skew_ratio = skew / float(bottom - top)
+        self.bands = []
+        for band in range(self.BANDS):
+            first = left + (right - left) * band / self.BANDS
+            second = left + (right - left) * (band + 1) / self.BANDS
+            self.bands.append(polygon_mask(self.size, [(first, top), (second, top), (second - skew, bottom), (first - skew, bottom)]))
         self.bar_mask = polygon_mask(self.size, bar_points)
-        self.full = [ImageEnhance.Contrast(self.fit(index, self.size)).enhance(1.05) for index in range(self.count)]
+        self.window_at = (int(left - skew), top)
+        window_size = (int(right - left + skew) + 1, bottom - top)
+        self.bar_at = (int(bar_left - skew), top)
+        bar_size = (int(bar_right - bar_left + skew) + 1, bottom - top)
+        self.windows = [ImageEnhance.Contrast(self.fit(index, window_size)).enhance(1.05) for index in range(self.count)]
+        self.bars = [self.fit(index, bar_size) for index in range(self.count)]
         self.grounds = [self.backdrop(index, 0.36) for index in range(self.count)]
 
         x_axis, _y_axis = axes(self.size)
@@ -598,167 +778,174 @@ class Trailer(Cover):
                                                 sub_fill=CARD + (255,)))
 
     def frame(self, phase):
-        current, following, progress = beats(phase, self.count)
-        ground, window = self.grounds[current], self.full[current]
-        bar = self.full[following]
-        if progress > 0:
-            wipe = diagonal_wipe(self.size, progress, slant=0.1, feather=0.1)
+        position = (phase % 1.0) * self.count
+        current, following = int(position) % self.count, (int(position) + 1) % self.count
+        local = position - int(position)
+        hold = 0.56
+        raw = (local - hold) / (1.0 - hold) if local > hold else 0.0
+        progress = ease(raw)
+        ground = self.grounds[current]
+        window = Image.new("RGB", self.size)
+        window.paste(self.windows[current], self.window_at)
+        bar = self.bars[following]
+        if raw > 0:
             ground = Image.blend(ground, self.grounds[following], progress)
-            window = Image.composite(self.full[following], window, wipe)
-            bar = Image.blend(bar, self.full[(following + 1) % self.count], progress)
+            bar = Image.blend(bar, self.bars[(following + 1) % self.count], progress)
+            incoming = self.windows[following]
+            for band, mask in enumerate(self.bands):
+                # 每条晚一点出发，方向交替，沿斜边滑入
+                start = band * 0.1
+                amount = ease_out((raw - start) / (1.0 - 0.1 * (self.BANDS - 1)))
+                if amount <= 0:
+                    continue
+                offset_y = int(round((1.0 - amount) * self.H * (1 if band % 2 else -1)))
+                offset_x = int(round(-offset_y * self.skew_ratio))
+                moved = window.copy()
+                moved.paste(incoming, (self.window_at[0] + offset_x, self.window_at[1] + offset_y))
+                window.paste(moved, (0, 0), mask)
         canvas = ground.convert("RGBA")
         canvas.alpha_composite(self.shade)
         canvas.paste(window, (0, 0), self.window_mask)
-        canvas.paste(bar, (0, 0), self.bar_mask)
+        bar_layer = Image.new("RGB", self.size)
+        bar_layer.paste(bar, self.bar_at)
+        canvas.paste(bar_layer, (0, 0), self.bar_mask)
         canvas.alpha_composite(self.overlay)
         return canvas
 
 
-# ---------------------------------------------------------------- 风格 5：拼贴
+# ---------------------------------------------------------------- 风格 5：环幕
 
 
-class Bento(Cover):
-    """错落的圆角拼贴，左下角一张深色卡片放标题。每次只有一格换图。"""
-
-    # (列, 上边, 下边)，上下边是可用高度的比例
-    CELLS = ((0, 0.0, 0.625), (1, 0.0, 0.25), (1, 0.25, 0.625), (2, 0.0, 0.43), (2, 0.43, 1.0),
-             (3, 0.0, 0.64), (3, 0.64, 1.0))
-    TITLE = (0, 1, 0.625, 1.0)
+class Surround(Cover):
+    """站在弧形巨幕中间看：正面一幅，两侧朝观众包过来。整圈平稳转动，标题固定在正面下方。"""
 
     def prepare(self):
         W, H, s = self.W, self.H, self.s
-        gap = int(W * 0.0115)
-        margin = gap
-        column_w = (W - margin * 2 - gap * 3) / 4.0
-        usable = H - margin * 2
-        radius = int(30 * s)
+        self.ground = Image.new("RGBA", self.size, mix((6, 6, 8), self.tint, 0.04 * self.ratio) + (255,))
+        self.card_size = (int(W * 0.415), int(H * 0.87))
+        radius = int(26 * s)
+        mask = rounded_mask(self.card_size, radius)
+        self.cards = []
+        for index in range(self.count):
+            card = ImageEnhance.Contrast(self.fit(index, self.card_size)).enhance(1.05).convert("RGBA")
+            card.putalpha(mask)
+            self.cards.append(card)
+        self.radius = W * 0.62
+        self.focal = W * 0.98
+        self.step = (self.card_size[0] + W * 0.022) / self.radius
 
-        def box_of(first, last, upper, lower):
-            x0 = margin + first * (column_w + gap)
-            x1 = margin + last * (column_w + gap) + column_w
-            y0 = margin + usable * upper + (gap / 2.0 if upper > 0 else 0.0)
-            y1 = margin + usable * lower - (gap / 2.0 if lower < 1 else 0.0)
-            return tuple(int(round(value)) for value in (x0, y0, x1, y1))
+        _x_axis, y_axis = axes(self.size)
+        self.overlay = rgba_from_alpha((4, 4, 6), np.clip(smooth((y_axis - 0.46) / 0.54) * 0.95 * self.scrim_strength(), 0, 1))
+        block, margin, ink_h = self.title_block(W * 0.74, align="center", shadow=self.text_shadow(150))
+        composite_at(self.overlay, block, W * 0.13 - margin, H * 0.925 - ink_h - margin + self.spec.offset_y * s)
+        self._cached = None
 
-        ground = np.full((H, W, 3), self.base_color(), dtype=np.float32)
-        if not self.animated:
-            # 静态图加一点细微的颗粒，避免大面积纯黑显得单薄
-            ground += np.random.default_rng(1492).normal(0.0, 2.0, (H, W))[..., None]
-        canvas = Image.fromarray(np.clip(ground, 0, 255).astype(np.uint8)).convert("RGBA")
-
-        first, last, upper, lower = self.TITLE
-        title_box = box_of(first, last, upper, lower)
-        plate_size = (title_box[2] - title_box[0], title_box[3] - title_box[1])
-        plate = Image.new("RGBA", plate_size, self.card_color() + (255,))
-        plate.alpha_composite(border_layer(plate_size, radius, (255, 255, 255, 20), 2 * s))
-        canvas.paste(plate, title_box[:2], rounded_mask(plate_size, radius))
-
-        pad = plate_size[0] * 0.075
-        # 卡片高度有限，长标题折行后放不下时继续缩小主标题
-        for factor in (1.0, 0.88, 0.76, 0.64, 0.54, 0.46):
-            block, block_margin, ink_h = self.title_block(plate_size[0] - pad * 2, sub_style="text",
-                                                          sub_fill=self.accent, main_factor=factor)
-            if ink_h <= plate_size[1] * 0.84:
-                break
-        composite_at(canvas, block, title_box[0] + pad - block_margin,
-                     title_box[1] + (plate_size[1] - ink_h) / 2.0 - block_margin + self.spec.offset_y * s)
-
-        self.base = canvas.convert("RGB")
-        self.cells = [box_of(column, column, top, bottom) for column, top, bottom in self.CELLS]
-        self.masks, self.pictures = {}, []
-        total = len(self.cells)
-        # 每格在两张图之间来回切换：前半圈依次换成 B，后半圈依次换回 A，首尾自然相接
-        shift = max(1, min(self.count - 1, total)) if self.count > 1 else 0
-        for index, box in enumerate(self.cells):
-            size = (box[2] - box[0], box[3] - box[1])
-            self.masks[index] = rounded_mask(size, radius)
-            self.pictures.append((self.fit(index, size), self.fit(index + shift, size)))
-        # 换图顺序跳着走，相邻的格子不会连续变化
-        self.order = [(index * 3) % total for index in range(total)]
+    def _quad(self, angle):
+        half_w, half_h = self.card_size[0] / 2.0, self.card_size[1] / 2.0
+        center_x = self.radius * math.sin(angle)
+        center_z = -self.radius * (1.0 - math.cos(angle))
+        corners = []
+        for local_x, local_y in ((-half_w, -half_h), (half_w, -half_h), (half_w, half_h), (-half_w, half_h)):
+            world_x = center_x + local_x * math.cos(angle)
+            world_z = center_z - local_x * math.sin(angle)
+            scale = self.focal / max(self.focal * 0.25, self.focal + world_z)
+            corners.append((self.W / 2.0 + world_x * scale, self.H / 2.0 + local_y * scale))
+        return corners
 
     def frame(self, phase):
-        total = len(self.cells)
-        canvas = self.base.copy()
-        current, _following, progress = beats(phase, total * 2, hold=0.45)
-        for rank, cell in enumerate(self.order):
-            # 这一格在第 rank 拍换成 B，在第 rank+total 拍换回 A
-            if current == rank:
-                amount = progress
-            elif current == rank + total:
-                amount = 1.0 - progress
-            elif rank < current < rank + total:
-                amount = 1.0
-            else:
-                amount = 0.0
-            first, second = self.pictures[cell]
-            if amount <= 0.0:
-                picture = first
-            elif amount >= 1.0:
-                picture = second
-            else:
-                picture = Image.blend(first, second, amount)
-            canvas.paste(picture, self.cells[cell][:2], self.masks[cell])
+        current, _following, progress = beats(phase, self.count, hold=0.66, curve=ease_in_out)
+        key = (current, round(progress, 4))
+        if self._cached and self._cached[0] == key:
+            return self._cached[1]
+        canvas = self.ground.copy()
+        slots = []
+        for slot in range(-2, 4):
+            position = slot - progress
+            angle = position * self.step
+            if abs(angle) < math.radians(84):
+                slots.append((abs(position), slot, angle))
+        # 远的先画，正面最后画
+        for distance, slot, angle in sorted(slots, reverse=True):
+            card = self.cards[(current + slot) % self.count]
+            shade = 1.0 - min(0.5, distance * 0.36)
+            warp_onto(canvas, ImageEnhance.Brightness(card).enhance(shade), self._quad(angle))
+        canvas.alpha_composite(self.overlay)
+        self._cached = (key, canvas)
         return canvas
 
 
-# ---------------------------------------------------------------- 风格 6：榜单
+# ---------------------------------------------------------------- 风格 6：景深
 
 
-class Ranking(Cover):
-    """深色长卡：竖排副标题、透出画面的大字和圆角大图并排。"""
+class Depth(Cover):
+    """大卡后面层层后退的卡片。最前面的一张迎着镜头飞出并消失，后面的依次上前。"""
+
+    LEVELS = 3
 
     def prepare(self):
         W, H, s = self.W, self.H, self.s
-        canvas = Image.new("RGBA", self.size, self.base_color() + (255,))
-        card_box = (int(W * 0.022), int(H * 0.04), W - int(W * 0.022), H - int(H * 0.04))
-        card_size = (card_box[2] - card_box[0], card_box[3] - card_box[1])
-        canvas.paste(self.card_color() + (255,), card_box[:2], rounded_mask(card_size, int(44 * s)))
+        self.grounds = [self.backdrop(index, 0.34) for index in range(self.count)]
+        self.front_size = (int(W * 0.7), int(H * 0.72))
+        self.center = (W / 2.0, H * 0.595)
+        radius = int(38 * s)
+        mask = rounded_mask(self.front_size, radius)
+        border = border_layer(self.front_size, radius, (255, 255, 255, 44), 2 * s)
+        self.cards = []
+        for index in range(self.count):
+            card = ImageEnhance.Contrast(self.fit(index, self.front_size)).enhance(1.05).convert("RGBA")
+            card.alpha_composite(border)
+            card.putalpha(mask)
+            self.cards.append(card)
 
-        pad = int(W * 0.016)
-        self.photo_box = (int(W * 0.615), card_box[1] + pad, card_box[2] - pad, card_box[3] - pad)
-        self.photo_size = (self.photo_box[2] - self.photo_box[0], self.photo_box[3] - self.photo_box[1])
-        self.photo_mask = rounded_mask(self.photo_size, int(32 * s))
+        # 文字和压暗固定在最前面那张的位置上，每张卡上前时都正好接住
+        left = int(self.center[0] - self.front_size[0] / 2.0)
+        top = int(self.center[1] - self.front_size[1] / 2.0)
+        self.overlay = Image.new("RGBA", self.size, (0, 0, 0, 0))
+        _x_axis, y_axis = axes(self.front_size)
+        scrim = rgba_from_alpha((4, 4, 6), np.clip(smooth((y_axis - 0.3) / 0.7) * 0.94 * self.scrim_strength(), 0, 1))
+        scrim.putalpha(ImageChops.multiply(scrim.getchannel("A"), mask))
+        self.overlay.alpha_composite(scrim, (left, top))
+        pad = self.front_size[0] * 0.05
+        block, margin, ink_h = self.title_block(self.front_size[0] * 0.86, button=True, shadow=self.text_shadow(130))
+        composite_at(self.overlay, block, left + pad - margin,
+                     top + self.front_size[1] * 0.92 - ink_h - margin + self.spec.offset_y * s)
+        shadow_box = (left, top, left + self.front_size[0], top + self.front_size[1])
+        self.front_shadow = shadow_layer(self.size, shadow_box, radius, 30 * s, 0.6, 12 * s)
+        self.overlay_alpha = None
 
-        has_sub = self.has_sub()
-        zone_left = W * (0.098 if has_sub else 0.055)
-        zone_right = W * 0.595
-        center_y = H * 0.5 + self.spec.offset_y * s
-
-        main = self.layout(zone_right - zone_left, part="main")
-        self.mask = main.render_centered(self.size, (zone_left + zone_right) / 2.0, center_y).getchannel("A")
-        box = self.mask.getbbox() or (int(zone_left), int(H * 0.3), int(zone_right), int(H * 0.7))
-        self.text_box = box
-
-        # 文字外缘一圈淡描边，暗图透进字里也不会和底色糊在一起
-        ring = Image.new("RGBA", self.size, GHOST_WHITE + (0,))
-        ring.putalpha(outline_from_mask(self.mask, max(1, round(1.4 * s)), 0.16))
-        canvas.alpha_composite(ring)
-
-        if has_sub:
-            vertical = self.layout(H * 0.76, part="sub").rotated(fill=SILVER + (255,))
-            canvas.alpha_composite(vertical, (int(W * 0.06 - vertical.width / 2.0), int(H / 2.0 - vertical.height / 2.0)))
-
-        self.base = canvas.convert("RGB")
-        self.pan_w = int((box[2] - box[0]) * 1.24)
-        self.pan_h = box[3] - box[1]
-        self.fills = [lift(self.fit(index, (self.pan_w, self.pan_h)), floor=72, saturation=1.45) for index in range(self.count)]
-        self.photos = [ImageEnhance.Contrast(self.fit(index, self.photo_size)).enhance(1.05) for index in range(self.count)]
-
-    def _fill(self, index, phase):
-        offset = int(round((self.pan_w - (self.text_box[2] - self.text_box[0])) * (0.5 - 0.5 * math.cos(math.tau * phase))))
-        return self.fills[index].crop((offset, 0, offset + self.text_box[2] - self.text_box[0], self.pan_h))
+    def _draw(self, canvas, card, level):
+        """level 为 0 是最前面，越大越靠后，负数表示已经飞向镜头。"""
+        if level >= 0:
+            scale, rise, shade = 1.0 - 0.105 * level, level * self.H * 0.098, 1.0 - 0.24 * level
+            fade = 1.0 if level <= self.LEVELS - 1 else max(0.0, self.LEVELS - level)
+        else:
+            scale, rise, shade = 1.0 - level * 0.34, level * self.H * 0.05, 1.0
+            fade = max(0.0, 1.0 + level * 1.15)
+        if fade <= 0:
+            return
+        size = (max(2, int(self.front_size[0] * scale)), max(2, int(self.front_size[1] * scale)))
+        layer = card.resize(size, Image.Resampling.BILINEAR)
+        if shade < 1.0:
+            layer = ImageEnhance.Brightness(layer).enhance(max(0.2, shade))
+        composite_at(canvas, with_alpha(layer, fade), self.center[0] - size[0] / 2.0, self.center[1] - rise - size[1] / 2.0)
 
     def frame(self, phase):
-        current, following, progress = beats(phase, self.count)
-        local = (phase * self.count) % 1.0
-        canvas = self.base.copy()
-        fill = self._fill(current, local * 0.5)
-        photo = self.photos[current]
-        if progress > 0:
-            fill = Image.blend(fill, self._fill(following, (local - 1.0) * 0.5), progress)
-            photo = Image.composite(self.photos[following], photo, diagonal_wipe(self.photo_size, progress, slant=0.2))
-        canvas.paste(fill, self.text_box[:2], self.mask.crop(self.text_box))
-        canvas.paste(photo, self.photo_box[:2], self.photo_mask)
+        current, following, progress = beats(phase, self.count, hold=0.62, curve=ease_in_out)
+        ground = self.grounds[current] if progress <= 0 else Image.blend(self.grounds[current], self.grounds[following], progress)
+        canvas = ground.convert("RGBA")
+        for depth in range(self.LEVELS, 1, -1):
+            self._draw(canvas, self.cards[(current + depth) % self.count], depth - progress)
+        if progress <= 0:
+            self._draw(canvas, self.cards[(current + 1) % self.count], 1.0)
+            canvas.alpha_composite(self.front_shadow)
+            self._draw(canvas, self.cards[current], 0.0)
+            canvas.alpha_composite(self.overlay)
+            return canvas
+        # 投影压在正在上前的那张下面。文字留在原位，飞出的卡片从文字前面掠过
+        canvas.alpha_composite(self.front_shadow)
+        self._draw(canvas, self.cards[(current + 1) % self.count], 1.0 - progress)
+        canvas.alpha_composite(self.overlay)
+        self._draw(canvas, self.cards[current], -progress)
         return canvas
 
 
@@ -766,13 +953,13 @@ class Ranking(Cover):
 
 
 class Detail(Cover):
-    """虚化背景上一张带播放键的大卡，右边标题和播放按钮，下方露出一排同系列的缩略图。"""
+    """虚化背景上一张带播放键的大卡，右边标题和播放按钮，下方一排缩略图。第一张缩略图放大成新的主卡，其余左移补位。"""
 
     def prepare(self):
         W, H, s = self.W, self.H, self.s
-        self.grounds = [self.backdrop(index, 0.4) for index in range(self.count)]
+        self.grounds = [self.backdrop(index, 0.32) for index in range(self.count)]
         _x_axis, y_axis = axes(self.size)
-        shade = 0.42 + smooth((y_axis - 0.45) / 0.45) * 0.56
+        shade = 0.62 + smooth((y_axis - 0.45) / 0.45) * 0.36
         self.shade = rgba_from_alpha(self.base_color(), np.clip(shade * self.scrim_strength(), 0, 1))
 
         self.hero_box = (int(W * 0.046), int(H * 0.085))
@@ -809,88 +996,115 @@ class Detail(Cover):
             self.thumbs.append(thumb.convert("RGB"))
 
     def frame(self, phase):
-        current, following, progress = beats(phase, self.count)
+        current, following, progress = beats(phase, self.count, hold=0.6, curve=ease_in_out)
         ground = self.grounds[current] if progress <= 0 else Image.blend(self.grounds[current], self.grounds[following], progress)
         canvas = ground.convert("RGBA")
         canvas.alpha_composite(self.shade)
         canvas.alpha_composite(self.overlay)
         hero = self.heroes[current]
         if progress > 0:
-            hero = Image.composite(self.heroes[following], hero, diagonal_wipe(self.hero_size, progress, slant=0.2))
+            hero = ImageEnhance.Brightness(hero).enhance(1.0 - 0.45 * progress)
         canvas.paste(hero, self.hero_box, self.hero_mask)
-        canvas.alpha_composite(self.badge, self.badge_at)
+        if progress <= 0:
+            canvas.alpha_composite(self.badge, self.badge_at)
+
+        # 底排整体左移一格；第一张缩略图不动，它要放大成新的主卡
         step = self.thumb_size[0] + self.thumb_gap
-        for slot in range(6):
+        for slot in range(1 if progress > 0 else 0, 7):
             x_pos = int(round(self.thumb_x + (slot - progress) * step))
             if x_pos >= self.W or x_pos + self.thumb_size[0] <= 0:
                 continue
             canvas.paste(self.thumbs[(current + 1 + slot) % self.count], (x_pos, self.thumb_y), self.thumb_mask)
+        if progress <= 0:
+            return canvas
+
+        grow = ease_out(progress)
+        width = int(self.thumb_size[0] + (self.hero_size[0] - self.thumb_size[0]) * grow)
+        height = int(self.thumb_size[1] + (self.hero_size[1] - self.thumb_size[1]) * grow)
+        x_pos = int(self.thumb_x + (self.hero_box[0] - self.thumb_x) * grow)
+        y_pos = int(self.thumb_y + (self.hero_box[1] - self.thumb_y) * grow)
+        flying = ImageOps.fit(self.heroes[following], (width, height), method=Image.Resampling.BILINEAR)
+        radius = int(30 * self.s + 6 * self.s * grow)
+        canvas.alpha_composite(shadow_layer(self.size, (x_pos, y_pos, x_pos + width, y_pos + height), radius, 26 * self.s, 0.55, 10 * self.s))
+        canvas.paste(flying, (x_pos, y_pos), rounded_mask((width, height), radius))
+        if progress > 0.8:
+            canvas.alpha_composite(with_alpha(self.badge, (progress - 0.8) / 0.2), self.badge_at)
         return canvas
 
 
-# ---------------------------------------------------------------- 风格 8：轮播
+# ---------------------------------------------------------------- 风格 8：扇面
 
 
-class Carousel(Cover):
-    """栏目标题配左右箭头，下方一排带序号的横版卡片，两端露出半张。卡片整排滑动。"""
+class Fan(Cover):
+    """海报沿大圆弧排成扇形，标题居中在上方。整把扇子转动一格，停下时带一点回弹。"""
+
+    STEP = math.radians(17.0)
 
     def prepare(self):
         W, H, s = self.W, self.H, self.s
-        self.ground = Image.new("RGB", self.size, self.base_color())
-        self.overlay = Image.new("RGBA", self.size, (0, 0, 0, 0))
+        self.grounds = [self.backdrop(index, 0.3) for index in range(self.count)]
+        _x_axis, y_axis = axes(self.size)
+        self.shade = rgba_from_alpha(self.base_color(), np.clip((0.86 - y_axis * 0.5) * self.scrim_strength(), 0, 1))
 
-        margin_x = W * 0.036
-        block, margin, ink_h = self.title_block(W * 0.74, sub_style="text")
-        title_top = H * 0.07 + self.spec.offset_y * s
-        composite_at(self.overlay, block, margin_x - margin, title_top - margin)
-
-        arrow = int(92 * s)
-        arrow_gap = int(18 * s)
-        arrow_y = int(H * 0.075)
-        right = int(W - margin_x)
-        self.overlay.alpha_composite(arrow_chip(arrow, 1), (right - arrow, arrow_y))
-        self.overlay.alpha_composite(arrow_chip(arrow, -1), (right - arrow * 2 - arrow_gap, arrow_y))
-
-        self.card_w = int(W * 0.452)
-        self.card_h = int(H * 0.585)
-        self.gap = int(W * 0.019)
-        row_top = max(int(H * 0.36), int(title_top + ink_h + 44 * s))
-        self.row_y = min(row_top, H - int(H * 0.05) - self.card_h)
-        self.row_x = margin_x
-        radius = int(36 * s)
-        self.mask = rounded_mask((self.card_w, self.card_h), radius)
-
-        notch_w, notch_h = int(142 * s), int(92 * s)
-        font = load_font(self.fonts[1], 54 * s * SUPERSAMPLE)
-        self.cards = []
+        self.poster_h = int(H * 0.69)
+        self.poster_w = int(self.poster_h * 0.68)
+        self.orbit = H * 1.42
+        self.pivot = (W / 2.0, H * 0.67 + self.orbit)
+        scale = 2
+        size = (self.poster_w * scale, self.poster_h * scale)
+        radius = int(30 * s * scale)
+        mask = rounded_mask(size, radius, supersample=2)
+        border = border_layer(size, radius, (255, 255, 255, 60), 3 * s * scale)
+        self.posters = []
         for index in range(self.count):
-            card = ImageEnhance.Contrast(self.fit(index, (self.card_w, self.card_h))).enhance(1.05).convert("RGBA")
-            notch = Image.new("RGBA", (notch_w * SUPERSAMPLE, notch_h * SUPERSAMPLE), (0, 0, 0, 0))
-            draw = ImageDraw.Draw(notch)
-            # 只有右下角是圆角，贴着卡片的左上角
-            draw.rounded_rectangle([(-200, -200), (notch.width - 1, notch.height - 1)],
-                                   radius=int(26 * s * SUPERSAMPLE), fill=self.card_color() + (255,))
-            draw.text((notch.width / 2.0, notch.height / 2.0), f"{index + 1:02d}", font=font,
-                      fill=GHOST_WHITE + (255,), anchor="mm")
-            card.alpha_composite(notch.resize((notch_w, notch_h), Image.Resampling.LANCZOS))
-            card.alpha_composite(border_layer((self.card_w, self.card_h), radius, (255, 255, 255, 26), 2 * s))
-            self.cards.append(card.convert("RGB"))
+            poster = ImageEnhance.Contrast(self.fit(index, size)).enhance(1.05).convert("RGBA")
+            poster.alpha_composite(border)
+            poster.putalpha(mask)
+            self.posters.append(poster)
+
+        self.overlay = Image.new("RGBA", self.size, (0, 0, 0, 0))
+        block, margin, _ink_h = self.title_block(W * 0.8, sub_style="text", align="center", sub_fill=self.accent,
+                                                 shadow=self.text_shadow(150))
+        composite_at(self.overlay, block, W * 0.1 - margin, H * 0.05 - margin + self.spec.offset_y * s)
+        self._cached = None
+
+    def _draw(self, canvas, poster, position):
+        angle = position * self.STEP
+        center_x = self.pivot[0] + math.sin(angle) * self.orbit
+        center_y = self.pivot[1] - math.cos(angle) * self.orbit
+        distance = abs(position)
+        shade = 1.0 - min(0.52, distance * 0.2)
+        layer = ImageEnhance.Brightness(poster).enhance(shade) if shade < 1.0 else poster
+        turned = layer.rotate(-math.degrees(angle), resample=Image.Resampling.BILINEAR, expand=True)
+        final = turned.resize((max(1, turned.width // 2), max(1, turned.height // 2)), Image.Resampling.BOX)
+        x_pos, y_pos = center_x - final.width / 2.0, center_y - final.height / 2.0
+        glow = final.getchannel("A").filter(ImageFilter.GaussianBlur(max(1.0, 14 * self.s)))
+        shadow = Image.new("RGBA", final.size, (0, 0, 0, 0))
+        shadow.putalpha(glow.point(lambda value: int(value * 0.5)))
+        composite_at(canvas, shadow, x_pos, y_pos + 8 * self.s)
+        composite_at(canvas, final, x_pos, y_pos)
 
     def frame(self, phase):
-        current, _following, progress = beats(phase, self.count, hold=0.74)
-        canvas = self.ground.copy()
-        step = self.card_w + self.gap
-        for slot in range(4):
-            x_pos = int(round(self.row_x + (slot - progress) * step))
-            if x_pos >= self.W or x_pos + self.card_w <= 0:
+        current, following, progress = beats(phase, self.count, hold=0.66, curve=ease_back)
+        key = (current, round(progress, 4))
+        if self._cached and self._cached[0] == key:
+            return self._cached[1]
+        blend = max(0.0, min(1.0, progress))
+        ground = self.grounds[current] if blend <= 0 else Image.blend(self.grounds[current], self.grounds[following], blend)
+        canvas = ground.convert("RGBA")
+        canvas.alpha_composite(self.shade)
+        slots = sorted(range(-4, 6), key=lambda slot: -abs(slot - progress))
+        for slot in slots:
+            position = slot - progress
+            if abs(position) > 4.6:
                 continue
-            canvas.paste(self.cards[(current + slot) % self.count], (x_pos, self.row_y), self.mask)
-        canvas = canvas.convert("RGBA")
+            self._draw(canvas, self.posters[(current + slot) % self.count], position)
         canvas.alpha_composite(self.overlay)
+        self._cached = (key, canvas)
         return canvas
 
 
-DESIGNS = {1: Gallery, 2: Titan, 3: Glint, 4: Trailer, 5: Bento, 6: Ranking, 7: Detail, 8: Carousel}
+DESIGNS = {1: Gallery, 2: Titan, 3: Glint, 4: Trailer, 5: Surround, 6: Depth, 7: Detail, 8: Fan}
 
 
 # ---------------------------------------------------------------- 输出
