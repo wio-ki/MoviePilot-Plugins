@@ -106,13 +106,13 @@ THUMBNAIL_CACHE_SIZE = 256
 
 class MediaCoverGenerator(_PluginBase):
     # 插件名称
-    plugin_name = "Emby媒体库封面生成"
+    plugin_name = "动态封面工坊"
     # 插件描述
-    plugin_desc = "生成媒体库封面，8 款风格各有静态图和 GIF 动图，支持 Emby/Jellyfin"
-    # 插件图标
-    plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/emby.png"
+    plugin_desc = "让媒体库封面动起来：8 款 GIF 动态风格，Hills、yamby、小幻影视都能播放，支持 Emby/Jellyfin"
+    # 插件图标（前端按地址缓存图标，换图时要换文件名）
+    plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/animated-cover.png"
     # 插件版本
-    plugin_version = "0.13.1"
+    plugin_version = "0.14.0"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -152,9 +152,11 @@ class MediaCoverGenerator(_PluginBase):
     _en_font_path = ''
     _title_config = ''
     _current_config = {}
-    _cover_style = 'static_1'
+    _cover_style = 'animated_1'
     _cover_style_base = 'static_1'
-    _cover_style_variant = 'static'
+    _cover_style_variant = 'animated'
+    _library_styles = {}
+    _style_target = ''
     _font_path = ''
     _covers_path = ''
     _tab = 'style-tab'
@@ -231,6 +233,7 @@ class MediaCoverGenerator(_PluginBase):
         (data_path / 'input').mkdir(parents=True, exist_ok=True)
         self._covers_path = data_path / 'input'
         self._font_path = data_path / 'fonts'
+        self._library_styles = self.__load_library_styles()
         if config:
             self._enabled = config.get("enabled")
             self._update_now = config.get("update_now")
@@ -248,7 +251,7 @@ class MediaCoverGenerator(_PluginBase):
             self._en_font_url = config.get("en_font_url")
             self._zh_font_path = config.get("zh_font_path")
             self._en_font_path = config.get("en_font_path")
-            self._cover_style = config.get("cover_style", "static_1")
+            self._cover_style = config.get("cover_style", "animated_1")
 
             # 样式命名升级兼容（仅对旧配置执行一次迁移）
             if not config.get("style_naming_v2"):
@@ -426,7 +429,7 @@ class MediaCoverGenerator(_PluginBase):
 
     def __compose_cover_style(self, base_style: str, variant: str) -> str:
         base = base_style if base_style in STATIC_STYLES else "static_1"
-        mode = variant if variant in ["static", "animated"] else "static"
+        mode = variant if variant in ["static", "animated"] else "animated"
         suffix = base.split("_")[-1]
         return base if mode == "static" else f"animated_{suffix}"
 
@@ -435,7 +438,27 @@ class MediaCoverGenerator(_PluginBase):
             return f"static_{cover_style.split('_')[-1]}", "animated"
         if cover_style in ALL_STYLES:
             return cover_style, "static"
-        return "static_1", "static"
+        return "static_1", "animated"
+
+    def __load_library_styles(self) -> Dict[str, str]:
+        """媒体库单独设置的风格存在插件数据里，这样保存设置页时不会被表单内容覆盖。"""
+        stored = self.get_data("library_styles")
+        if not isinstance(stored, dict):
+            return {}
+        return {str(key): style for key, style in stored.items() if style in ALL_STYLES}
+
+    def __library_style(self, key: str) -> str:
+        """媒体库实际使用的风格：单独设置过的用自己的，其余跟随默认风格。"""
+        return self._library_styles.get(key) or self._cover_style
+
+    def __set_library_style(self, key: str, style: Optional[str]):
+        """保存媒体库的单独风格；style 为空表示恢复跟随默认。"""
+        if style:
+            self._library_styles[key] = style
+        else:
+            self._library_styles.pop(key, None)
+        self.save_data("library_styles", self._library_styles)
+        logger.info(f"【MediaCoverGenerator】媒体库 {key} 的风格已设为: {style or '跟随默认'}")
 
     def __current_style(self) -> str:
         """当前生成使用的风格。任务开始时固定下来，运行中切换风格不影响正在处理的媒体库。"""
@@ -723,6 +746,8 @@ class MediaCoverGenerator(_PluginBase):
             ("/set_cover_style", self.api_set_cover_style, "保存封面风格"),
             ("/select_style", self.api_select_style, "按序号选择封面风格"),
             ("/set_style_variant", self.api_set_style_variant, "切换静态或动态"),
+            ("/style_target", self.api_style_target, "选择要设置风格的媒体库"),
+            ("/clear_library_style", self.api_clear_library_style, "让媒体库恢复跟随默认风格"),
         ]
         response_model = self.__response_model()
         result: List[Dict[str, Any]] = []
@@ -881,8 +906,8 @@ class MediaCoverGenerator(_PluginBase):
             logger.error(f"【MediaCoverGenerator】保存封面风格失败: {e}", exc_info=True)
             return self.__api_response(False, f"保存风格失败: {e}")
 
-    def __get_cover_style_parts(self) -> Tuple[str, int]:
-        style = (self._cover_style or "static_1").strip()
+    def __get_cover_style_parts(self, style: Optional[str] = None) -> Tuple[str, int]:
+        style = (style or self._cover_style or "animated_1").strip()
         variant = "animated" if style.startswith("animated_") else "static"
         try:
             index = int(style.split("_")[-1])
@@ -890,26 +915,51 @@ class MediaCoverGenerator(_PluginBase):
             index = 1
         return variant, max(1, min(STYLE_COUNT, index))
 
-    def api_select_style(self, index: int = 1, tab: str = ""):
+    def __save_target_style(self, library: str, style: str):
+        """library 为空时保存默认风格，否则只保存这个媒体库的风格。"""
+        if library:
+            self.__set_library_style(library, style)
+        else:
+            self.__apply_style(style)
+
+    def api_select_style(self, index: int = 1, tab: str = "", library: str = ""):
         self.__set_page_tab(tab)
         try:
-            variant, _ = self.__get_cover_style_parts()
-            self.__apply_style(f"{variant}_{max(1, min(STYLE_COUNT, int(index)))}")
+            key = (library or "").strip()
+            self._style_target = key
+            variant, _ = self.__get_cover_style_parts(self.__library_style(key))
+            self.__save_target_style(key, f"{variant}_{max(1, min(STYLE_COUNT, int(index)))}")
             return self.__api_response(True, "风格已切换")
         except Exception as e:
             logger.error(f"【MediaCoverGenerator】选择风格失败: {e}", exc_info=True)
             return self.__api_response(False, f"选择风格失败: {e}")
 
-    def api_set_style_variant(self, variant: str = "static", tab: str = ""):
+    def api_set_style_variant(self, variant: str = "animated", tab: str = "", library: str = ""):
         self.__set_page_tab(tab)
         try:
-            _, index = self.__get_cover_style_parts()
-            safe_variant = "animated" if variant == "animated" else "static"
-            self.__apply_style(f"{safe_variant}_{index}")
+            key = (library or "").strip()
+            self._style_target = key
+            _, index = self.__get_cover_style_parts(self.__library_style(key))
+            safe_variant = "static" if variant == "static" else "animated"
+            self.__save_target_style(key, f"{safe_variant}_{index}")
             return self.__api_response(True, "已切换")
         except Exception as e:
             logger.error(f"【MediaCoverGenerator】切换静态/动态失败: {e}", exc_info=True)
             return self.__api_response(False, f"切换失败: {e}")
+
+    def api_style_target(self, library: str = "", tab: str = ""):
+        self.__set_page_tab(tab)
+        self._style_target = (library or "").strip()
+        return self.__api_response(True, "")
+
+    def api_clear_library_style(self, library: str = "", tab: str = ""):
+        self.__set_page_tab(tab)
+        try:
+            self.__set_library_style((library or "").strip(), None)
+            return self.__api_response(True, "已恢复跟随默认风格")
+        except Exception as e:
+            logger.error(f"【MediaCoverGenerator】恢复默认风格失败: {e}", exc_info=True)
+            return self.__api_response(False, f"恢复失败: {e}")
 
     def api_saved_cover_image(self, file: str = ""):
         target_file = self.__resolve_saved_cover_path(file)
@@ -1012,6 +1062,7 @@ class MediaCoverGenerator(_PluginBase):
         拼装插件配置页面
         """
         self._page_tab = "style"
+        self._style_target = ""
         self._history_visible = HISTORY_PAGE_SIZE
         zh_font_items, en_font_items, _, _ = self.__get_font_presets()
         libraries = self.__libraries_for_form()
@@ -1077,7 +1128,7 @@ class MediaCoverGenerator(_PluginBase):
         checks.append({
             "ok": has_ffmpeg,
             "title": "ffmpeg 可用" if has_ffmpeg else "未找到 ffmpeg",
-            "note": "" if has_ffmpeg else "动图需要 ffmpeg，静态封面不受影响",
+            "note": "" if has_ffmpeg else "动态封面需要 ffmpeg，没有时会自动生成静态封面",
         })
         return checks
 
@@ -1155,7 +1206,13 @@ class MediaCoverGenerator(_PluginBase):
                 "active": self.__in_batch(key, library.get("type")),
                 "status": status_map.get(key),
                 "thumb": self.__thumbnail(cover["file"], (224, 126), 60) if cover else None,
+                "own_style": self._library_styles.get(key) or "",
             })
+        for library in libraries:
+            if library["own_style"]:
+                own_variant, own_index = self.__get_cover_style_parts(library["own_style"])
+                library["own_variant"], library["own_index"] = own_variant, own_index
+        style_target = self._style_target if any(item["key"] == self._style_target for item in libraries) else ""
 
         # 先读运行状态再读结果：任务恰好在两次读取之间结束时，也不会显示空闲却配上一轮的结果
         task = dict(self._task)
@@ -1171,6 +1228,7 @@ class MediaCoverGenerator(_PluginBase):
             "warnings": warnings,
             "style_index": style_index,
             "style_variant": style_variant,
+            "style_target": style_target,
             "task": task,
             "page_tab": page_tab,
             "hero_image": hero_image,
@@ -1513,7 +1571,8 @@ class MediaCoverGenerator(_PluginBase):
             logger.info(f"媒体库 {server} 正在执行全量更新，跳过入库监控任务 {title_year}")
             return False
         self._monitor_sort = 'DateCreated'
-        self._run_style = self._cover_style
+        run_style = self.__library_style(f"{server}-{library_id}")
+        self._run_style = run_style
         self._current_updating_items.add(update_key)
         self._task = {"running": True, "total": 1, "done": 0, "current": f"{server}：{library['Name']}（入库更新）"}
         self._failure_reason = ""
@@ -1537,7 +1596,8 @@ class MediaCoverGenerator(_PluginBase):
             # 停止信号只针对当前任务，不能留给下一次入库更新
             self._event.clear()
             self._update_lock.release()
-        self.__record_library_result(server, library_id, library['Name'], bool(updated), message or self._failure_reason)
+        self.__record_library_result(server, library_id, library['Name'], bool(updated),
+                                     message or self._failure_reason, run_style)
         if updated:
             self._monitor_batch_updated.add(update_key)
             self.update_cover_history(
@@ -1550,13 +1610,13 @@ class MediaCoverGenerator(_PluginBase):
             logger.warning(f"媒体库 {server}：{library['Name']} 封面更新失败（入库监控）")
         return updated
 
-    def __record_library_result(self, server, library_id, library_name, ok: bool, message: str = ""):
+    def __record_library_result(self, server, library_id, library_name, ok: bool, message: str = "", style: str = ""):
         """记录每个媒体库最近一次的生成结果，显示在详情页。"""
         try:
             status_map = self.get_data("library_status") or {}
             if not isinstance(status_map, dict):
                 status_map = {}
-            variant, index = self.__get_cover_style_parts()
+            variant, index = self.__get_cover_style_parts(style)
             status_map[f"{server}-{library_id}"] = {
                 "ok": ok,
                 "name": library_name,
@@ -1585,7 +1645,10 @@ class MediaCoverGenerator(_PluginBase):
         # 手动启动时信号已在接口里清除，这里再清一次会吞掉启动瞬间发出的停止请求
         if not self._task.get("running"):
             self._event.clear()
-        self._run_style = self._cover_style
+        # 任务开始时固定下来，运行中改设置不影响这一轮
+        default_style = self._cover_style
+        library_styles = dict(self._library_styles)
+        self._run_style = default_style
         self._task = {"running": True, "total": 0, "done": 0, "current": ""}
         total_success = 0
         total_fail = 0
@@ -1598,8 +1661,8 @@ class MediaCoverGenerator(_PluginBase):
                 logger.error(f"初始化过程中出错: {e}")
                 logger.warning("将尝试继续执行，但可能影响封面生成质量")
 
-            variant, index = self.__get_cover_style_parts()
-            logger.info(f"当前风格 {style_label(index, variant)}")
+            variant, index = self.__get_cover_style_parts(default_style)
+            logger.info(f"默认风格 {style_label(index, variant)}，{len(library_styles)} 个媒体库单独设置")
             targets = []
             for server, service in self._servers.items():
                 libraries = self.__get_server_libraries(service)
@@ -1625,6 +1688,7 @@ class MediaCoverGenerator(_PluginBase):
                 self._task["current"] = f"{server}：{library['Name']}"
                 self._failure_reason = ""
                 message = ""
+                self._run_style = library_styles.get(f"{server}-{library_id}") or default_style
                 try:
                     updated = self.__update_library(service, library)
                 except Exception as error:
@@ -1635,7 +1699,7 @@ class MediaCoverGenerator(_PluginBase):
                     stopped = True
                     break
                 self.__record_library_result(server, library_id, library['Name'], bool(updated),
-                                             message or self._failure_reason)
+                                             message or self._failure_reason, self._run_style)
                 if updated:
                     logger.info(f"媒体库 {server}：{library['Name']} 封面更新成功")
                     total_success += 1
@@ -1811,6 +1875,9 @@ class MediaCoverGenerator(_PluginBase):
 
         style = self.__current_style()
         animated = style in ANIMATED_STYLES
+        if animated and not shutil.which("ffmpeg"):
+            logger.warning("未找到 ffmpeg，无法生成动态封面，这次改为生成静态封面")
+            animated = False
         index = self.__current_index()
         info = style_info(index)
 

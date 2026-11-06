@@ -8,7 +8,8 @@ TYPOGRAPHY_PRESETS = [
     {
         "key": "auto",
         "name": "跟随风格",
-        "desc": "每款风格用设计好的字体和字号，推荐",
+        "desc": "每款风格用设计好的字体和字号",
+        "recommended": True,
         "values": {"zh_font_preset": "auto", "en_font_preset": "auto"},
     },
     {

@@ -13,6 +13,8 @@ from app.plugins.mediacovergenerator.ui_previews import PREVIEWS, TYPOGRAPHY_PRE
 
 # Vuetify 组件自带主题类，会重置 CSS 变量，所以点缀色要用具体色值传给 color 属性
 ACCENT = "#B0843F"
+# 动态预览放在仓库里，不进页面数据：页面每次操作都会整个重新下载。加载失败时露出下面的静态图
+PREVIEW_GIF = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/images/style_{index}.gif"
 
 PAGE_TABS = [
     ("style", "风格", "mdi-palette-swatch-outline"),
@@ -134,7 +136,27 @@ CSS = """
 
 /* 分段选择 */
 .mcg-seg { display: inline-flex; padding: 3px; border-radius: 10px; background: var(--mcg-raise-strong); }
-.mcg-seg-item { font-size: 13px; padding: 5px 14px; border-radius: 8px; cursor: pointer; color: var(--mcg-muted); }
+.mcg-seg-item { display: inline-flex; align-items: center; font-size: 13px; padding: 5px 14px; border-radius: 8px; cursor: pointer; color: var(--mcg-muted); }
+.mcg-rec {
+  display: inline-flex; align-items: center; flex: none; margin-left: 6px; padding: 3px 7px; border-radius: 6px;
+  font-size: 11px; line-height: 1; font-weight: 700; letter-spacing: .04em; white-space: nowrap;
+  background: linear-gradient(135deg, #F7BE62, #EE7F3F); color: #2A1606; box-shadow: 0 1px 6px rgba(238,127,63,.42);
+}
+
+/* 选择要设置风格的媒体库 */
+.mcg-targets { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 14px; }
+.mcg-targets-label { font-size: 12.5px; color: var(--mcg-muted); margin-right: 4px; }
+.mcg-target {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 5px 11px; border-radius: 8px; cursor: pointer;
+  background: var(--mcg-raise-strong); color: var(--mcg-muted); max-width: 240px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mcg-target:hover { color: var(--mcg-ink); }
+.mcg-target-on { background: var(--mcg-gold); color: #1C160E; font-weight: 600; }
+.mcg-target-on:hover { color: #1C160E; }
+.mcg-target-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--mcg-gold); }
+.mcg-target-on .mcg-target-dot { background: #1C160E; }
+.mcg-target-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; font-size: 13px; line-height: 1.6; background: var(--mcg-gold-soft); border-radius: 12px; padding: 9px 12px 9px 14px; margin-bottom: 14px; }
+.mcg-target-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .mcg-seg-item:hover { color: var(--mcg-ink); }
 .mcg-seg-on { background: rgb(var(--v-theme-surface)); color: var(--mcg-ink); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.14); }
 
@@ -149,6 +171,9 @@ CSS = """
 .mcg-style:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(0,0,0,.20); }
 .mcg-style-on { outline: 2px solid var(--mcg-gold); outline-offset: -2px; }
 .mcg-style img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
+.mcg-style-media { position: relative; overflow: hidden; }
+.mcg-style-motion { position: absolute; inset: 0; background-size: cover; background-position: center; }
+.mcg-gif-tag { position: absolute; right: 8px; bottom: 8px; padding: 3px 6px; border-radius: 5px; font-size: 10px; line-height: 1; font-weight: 700; letter-spacing: .08em; background: rgba(12,10,8,.74); color: #F7D9A4; }
 .mcg-style-meta { padding: 10px 12px 12px; }
 .mcg-style-name { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 14px; font-weight: 600; }
 .mcg-style-desc { font-size: 12px; color: var(--mcg-muted); margin-top: 4px; line-height: 1.5; }
@@ -166,6 +191,7 @@ CSS = """
 .mcg-lib-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mcg-lib-note { font-size: 12px; color: var(--mcg-muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mcg-lib-chips { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
+.mcg-lib-actions { flex: none; display: flex; flex-direction: column; gap: 6px; }
 
 /* 历史 */
 .mcg-history { display: grid; grid-template-columns: repeat(auto-fill, minmax(205px, 1fr)); gap: 14px; }
@@ -254,6 +280,24 @@ def style_label(index: int, variant: str) -> str:
     return f"{entry.name} · 静态"
 
 
+def recommend_badge() -> Dict[str, Any]:
+    return node("span", cls="mcg-rec", text="推荐")
+
+
+def _preview_media(entry, show_motion: Any) -> Dict[str, Any]:
+    """风格卡片的预览图。动态预览盖在静态图上，加载不出来时用户看到的仍是静态图。"""
+    children = [node("img", src=PREVIEWS.get(entry.index, ""), alt=entry.name, loading="lazy")]
+    if show_motion:
+        layers = [
+            div("mcg-style-motion", style=f"background-image:url({PREVIEW_GIF.format(index=entry.index)})"),
+            node("span", cls="mcg-gif-tag", text="GIF"),
+        ]
+        # 渲染器处理 show 时会改写 style.display，同一节点上再有字符串 style 就会抛错，整个页签都不显示。
+        # 所以条件放在外层，样式留在内层
+        children += [div(None, *layers, show=show_motion)] if isinstance(show_motion, str) else layers
+    return div("mcg-style-media", *children)
+
+
 # ---------------------------------------------------------------- 详情页
 
 
@@ -295,17 +339,19 @@ def _hero(ctx: Dict[str, Any]) -> Dict[str, Any]:
             "mcg-hero-body",
             div(
                 None,
-                div("mcg-eyebrow", text="MEDIA COVER STUDIO"),
-                node("h2", text="封面工坊"),
-                div("mcg-hero-sub", text="挑选风格，一键为媒体库生成封面。详细参数在右下角的齿轮设置里。"),
+                div("mcg-eyebrow", text="ANIMATED COVER STUDIO"),
+                node("h2", text="动态封面工坊"),
+                div("mcg-hero-sub", text="让媒体库封面动起来。每款风格都能生成 GIF 动态封面，详细参数在右下角的齿轮设置里。"),
             ),
             div("mcg-hero-actions", *action_groups),
         )
     )
+    own_styles = sum(1 for library in ctx["libraries"] if library.get("own_style"))
     stats = [
         ("状态", status_value),
-        ("当前风格", style_label(ctx["style_index"], ctx["style_variant"])),
-        ("媒体库", f"{ctx['library_active']} / {len(ctx['libraries'])}" if ctx["libraries"] else "—"),
+        ("默认风格", style_label(ctx["style_index"], ctx["style_variant"])),
+        ("媒体库", (f"{ctx['library_active']} / {len(ctx['libraries'])}"
+                    + (f" · {own_styles} 个单独设置" if own_styles else "")) if ctx["libraries"] else "—"),
         ("上次运行", ctx.get("last_run_text") or "尚未运行"),
     ]
     children.append(
@@ -331,9 +377,50 @@ def _source_label(entry) -> str:
     return "海报" if entry.poster else "背景图"
 
 
+def _style_targets(ctx: Dict[str, Any], target: Optional[Dict[str, Any]]) -> List[dict]:
+    """选择风格应用到哪里：所有媒体库（默认风格），或者某一个媒体库。"""
+    libraries = ctx["libraries"]
+    if not libraries:
+        return []
+    prefix = ctx["api_prefix"]
+    chips = [
+        div("mcg-targets-label", text="应用到"),
+        node("span", cls="mcg-target" + (" mcg-target-on" if not target else ""), text="所有媒体库",
+             events=post(prefix, "style_target?tab=style")),
+    ]
+    for library in libraries:
+        content = [node("span", text=library["name"])]
+        if library.get("own_style"):
+            content.append(node("span", cls="mcg-target-dot", title="已单独设置风格"))
+        selected = target is not None and library["key"] == target["key"]
+        chips.append(node("span", cls="mcg-target" + (" mcg-target-on" if selected else ""), content=content,
+                          title=library["name"],
+                          events=post(prefix, f"style_target?library={library['encoded_key']}&tab=style")))
+    result = [div("mcg-targets", *chips)]
+    if target:
+        if target.get("own_style"):
+            label = style_label(target["own_index"], target["own_variant"])
+            note = f"「{target['name']}」单独使用「{label}」，不受默认风格影响。"
+            actions = [button("恢复跟随默认", "quiet", prefix,
+                              f"clear_library_style?library={target['encoded_key']}&tab=style", size="small")]
+        else:
+            label = style_label(ctx["style_index"], ctx["style_variant"])
+            note = f"「{target['name']}」现在跟随默认风格「{label}」。点下面的卡片可以给它单独设置。"
+            actions = []
+        actions.append(button("生成这个媒体库", "gold", prefix,
+                              f"generate_now?library={target['encoded_key']}&tab=style", size="small"))
+        result.append(div("mcg-target-bar", div(None, text=note), div("mcg-target-actions", *actions)))
+    return result
+
+
 def _style_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
     prefix = ctx["api_prefix"]
-    variant = ctx["style_variant"]
+    target = next((item for item in ctx["libraries"] if item["key"] == ctx["style_target"]), None)
+    if target and target.get("own_style"):
+        variant, style_index = target["own_variant"], target["own_index"]
+    else:
+        variant, style_index = ctx["style_variant"], ctx["style_index"]
+    target_query = f"&library={target['encoded_key']}" if target else ""
     children: List[dict] = []
     if ctx["warnings"]:
         children.append(
@@ -349,22 +436,24 @@ def _style_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
             ),
             div(
                 "mcg-seg",
+                node("span", cls="mcg-seg-item" + (" mcg-seg-on" if variant == "animated" else ""),
+                     content=[node("span", text="动态"), recommend_badge()],
+                     events=post(prefix, f"set_style_variant?variant=animated&tab=style{target_query}")),
                 node("span", cls="mcg-seg-item" + (" mcg-seg-on" if variant == "static" else ""), text="静态",
-                     events=post(prefix, "set_style_variant?variant=static&tab=style")),
-                node("span", cls="mcg-seg-item" + (" mcg-seg-on" if variant == "animated" else ""), text="动态",
-                     events=post(prefix, "set_style_variant?variant=animated&tab=style")),
+                     events=post(prefix, f"set_style_variant?variant=static&tab=style{target_query}")),
             ),
         )
     )
+    children.extend(_style_targets(ctx, target))
     cards = []
     for entry in STYLE_CATALOG:
-        selected = entry.index == ctx["style_index"]
+        selected = entry.index == style_index
         chips = [node("span", cls="mcg-chip", text=_source_label(entry))]
         motion_note = f"动态：{entry.motion}" if variant == "animated" else entry.desc
         cards.append(
             div(
                 "mcg-style" + (" mcg-style-on" if selected else ""),
-                node("img", src=PREVIEWS.get(entry.index, ""), alt=entry.name, loading="lazy"),
+                _preview_media(entry, variant == "animated"),
                 div("mcg-style-tick", icon("mdi-check", 16)),
                 div(
                     "mcg-style-meta",
@@ -372,7 +461,7 @@ def _style_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
                         node("span", content=chips, style="display:inline-flex;gap:4px;")),
                     div("mcg-style-desc", text=motion_note),
                 ),
-                events=post(prefix, f"select_style?index={entry.index}&tab=style"),
+                events=post(prefix, f"select_style?index={entry.index}&tab=style{target_query}"),
             )
         )
     children.append(div("mcg-gallery", *cards))
@@ -388,7 +477,7 @@ def _libraries_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
             div(
                 None,
                 div("mcg-heading-title", text="媒体库"),
-                div("mcg-heading-note", text="可以只更新某一个媒体库，方便试用新风格。"),
+                div("mcg-heading-note", text="每个媒体库可以用同一款风格，也可以单独设置；还可以只更新其中一个，方便试用新风格。"),
             ),
         )
     ]
@@ -401,7 +490,11 @@ def _libraries_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
 
     rows = []
     for library in libraries:
-        chips = []
+        if library.get("own_style"):
+            chips = [node("span", cls="mcg-chip mcg-chip-gold",
+                          text=style_label(library["own_index"], library["own_variant"]))]
+        else:
+            chips = [node("span", cls="mcg-chip", text="跟随默认风格")]
         status = library.get("status") or {}
         if status:
             chips.append(node("span", cls="mcg-chip " + ("mcg-chip-ok" if status.get("ok") else "mcg-chip-bad"),
@@ -419,16 +512,20 @@ def _libraries_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
         else:
             art = div("mcg-lib-art", icon("mdi-image-outline", 22))
         info = [div("mcg-lib-name", text=library["name"], title=library["name"]),
-                div("mcg-lib-note", text=note, title=status.get("message") or note)]
-        if chips:
-            info.append(div("mcg-lib-chips", *chips))
+                div("mcg-lib-note", text=note, title=status.get("message") or note),
+                div("mcg-lib-chips", *chips)]
         rows.append(
             div(
                 "mcg-lib",
                 art,
                 div("mcg-lib-info", *info),
-                button("生成", "quiet", prefix, f"generate_now?library={library['encoded_key']}&tab=libraries",
-                       size="small"),
+                div(
+                    "mcg-lib-actions",
+                    button("生成", "quiet", prefix, f"generate_now?library={library['encoded_key']}&tab=libraries",
+                           size="small"),
+                    button("换风格", "quiet", prefix, f"style_target?library={library['encoded_key']}&tab=style",
+                           size="small"),
+                ),
             )
         )
     children.append(div("mcg-libs", *rows))
@@ -611,7 +708,13 @@ def _switch(model: str, label: str, hint: str = "") -> Dict[str, Any]:
     return node("VSwitch", **props)
 
 
-def _toggle(model: str, label: str, options: List[tuple]) -> Dict[str, Any]:
+def _toggle(model: str, label: str, options: List[tuple], recommended: Any = None) -> Dict[str, Any]:
+    buttons = []
+    for value, title in options:
+        content = [node("span", text=title)]
+        if recommended is not None and value == recommended:
+            content.append(recommend_badge())
+        buttons.append(node("VBtn", value=value, style="flex:1;", cls="text-none", content=content))
     return div(
         None,
         div("mcg-toggle-label", text=label),
@@ -619,7 +722,7 @@ def _toggle(model: str, label: str, options: List[tuple]) -> Dict[str, Any]:
             "VBtnToggle",
             model=model, mandatory=True, divided=True, density="comfortable", color=ACCENT,
             variant="outlined", style="width:100%;",
-            content=[node("VBtn", text=title, value=value, style="flex:1;", cls="text-none") for value, title in options],
+            content=buttons,
         ),
     )
 
@@ -633,13 +736,15 @@ def _style_picker() -> Dict[str, Any]:
             node(
                 "div",
                 content=[
-                    node("img", src=PREVIEWS.get(entry.index, ""), alt=entry.name, loading="lazy"),
+                    _preview_media(entry, "{{ cover_style_variant === 'animated' }}"),
                     div("mcg-style-tick", icon("mdi-check", 16)),
                     div(
                         "mcg-style-meta",
                         div("mcg-style-name", node("span", text=entry.name),
                             node("span", content=chips, style="display:inline-flex;gap:4px;")),
-                        div("mcg-style-desc", text=entry.desc),
+                        div("mcg-style-desc", text=f"动态：{entry.motion}",
+                            show="{{ cover_style_variant === 'animated' }}"),
+                        div("mcg-style-desc", text=entry.desc, show="{{ cover_style_variant !== 'animated' }}"),
                     ),
                 ],
                 **{
@@ -687,10 +792,12 @@ def _basic_tab(ctx: Dict[str, Any]) -> List[dict]:
 def _style_tab() -> List[dict]:
     return [
         _section(
-            "mdi-palette-swatch-outline", "封面风格", "预览图为示例素材，实际效果取决于媒体库的图片",
-            _style_picker(),
+            "mdi-palette-swatch-outline", "封面风格",
+            "这里是所有媒体库的默认风格。想给某个媒体库单独设置，到插件详情页「风格」页上方选择媒体库",
             div(None, _toggle("cover_style_variant", "输出类型",
-                              [("static", "静态图片"), ("animated", "GIF 动图")]), style="margin-top:16px;max-width:320px;"),
+                              [("animated", "GIF 动态封面"), ("static", "静态图片")], recommended="animated"),
+                style="margin-bottom:16px;max-width:380px;"),
+            _style_picker(),
         ),
         _section(
             "mdi-image-outline", "选图与输出", "这些选项对所有风格生效",
@@ -766,7 +873,10 @@ def _typography_picker() -> Dict[str, Any]:
                     div("mcg-style-tick", icon("mdi-check", 16)),
                     div(
                         "mcg-style-meta",
-                        div("mcg-style-name", node("span", text=preset["name"])),
+                        div("mcg-style-name",
+                            node("span", content=[node("span", text=preset["name"])]
+                                 + ([recommend_badge()] if preset.get("recommended") else []),
+                                 style="display:inline-flex;align-items:center;")),
                         div("mcg-style-desc", text=preset["desc"]),
                     ),
                 ],
@@ -824,10 +934,10 @@ def _motion_tab() -> List[dict]:
     return [
         div(
             "mcg-notice", icon("mdi-information-outline"),
-            div(None, text="动图输出 GIF。客户端请求的宽度小于动图宽度时，Emby 会把它压成静态图，所以尺寸越小越容易动起来。首帧就是完整封面，只显示静态图的客户端也能看到成品。需要容器内有 ffmpeg。"),
+            div(None, text="Hills、yamby、小幻影视都能播放。客户端请求的宽度小于动图宽度时，Emby 会把它压成静态图，所以尺寸越小越容易动起来。首帧就是完整封面，只显示静态图的客户端也能看到成品。需要容器内有 ffmpeg，没有时自动生成静态封面。"),
         ),
         _section(
-            "mdi-play-box-multiple-outline", "GIF 动图", "只有输出类型选择「GIF 动图」时才生效。画面大部分时间静止、只在转场时运动，一张通常 1 到 4 MB",
+            "mdi-play-box-multiple-outline", "GIF 动图", "只有使用动态封面时才生效。画面大部分时间静止、只在转场时运动，一张通常 1 到 4 MB",
             _row(
                 _col(_select("animation_resolution", "尺寸", [
                     {"title": "480×270（最清晰，部分客户端会变静态）", "value": "480x270"},
@@ -886,9 +996,9 @@ def default_form_model() -> Dict[str, Any]:
         "sort_by": "Random",
         "title_config": "",
         "tab": "basic-tab",
-        "cover_style": "static_1",
+        "cover_style": "animated_1",
         "cover_style_base": "static_1",
-        "cover_style_variant": "static",
+        "cover_style_variant": "animated",
         "zh_font_preset": "auto",
         "en_font_preset": "auto",
         "covers_v3": True,
