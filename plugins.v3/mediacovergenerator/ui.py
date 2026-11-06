@@ -7,23 +7,12 @@
 import json
 from typing import Any, Dict, List, Optional
 
+from app.plugins.mediacovergenerator.style.catalog import STYLE_CATALOG, STYLE_COUNT, style_info
 from app.plugins.mediacovergenerator.ui_presets import TYPOGRAPHY_PRESETS
 from app.plugins.mediacovergenerator.ui_previews import PREVIEWS, TYPOGRAPHY_PREVIEWS
 
 # Vuetify 组件自带主题类，会重置 CSS 变量，所以点缀色要用具体色值传给 color 属性
 ACCENT = "#B0843F"
-
-STYLE_CATALOG = [
-    {"index": 1, "name": "叠影", "desc": "层叠卡片配柔和模糊背景", "kind": "单图", "motion": "卡片翻转"},
-    {"index": 2, "name": "斜切", "desc": "大幅剧照与色块斜向分割", "kind": "单图", "motion": "帷幕切换"},
-    {"index": 3, "name": "九宫", "desc": "倾斜海报列，信息密度高", "kind": "多图", "motion": "斜向滚动"},
-    {"index": 4, "name": "氤氲", "desc": "全屏模糊渐变，标题居中", "kind": "单图", "motion": "模糊渐变"},
-    {"index": 5, "name": "影院", "desc": "满幅剧照压暗，左下大标题", "kind": "单图", "motion": "运镜轮播", "new": True},
-    {"index": 6, "name": "磨砂", "desc": "满幅剧照上的毛玻璃标题牌", "kind": "单图", "motion": "玻璃轮播", "new": True},
-    {"index": 7, "name": "长廊", "desc": "透视海报墙向远处延伸", "kind": "多图", "motion": "海报流动", "new": True},
-    {"index": 8, "name": "刊物", "desc": "纸张底色的杂志式排版", "kind": "单图", "motion": "画框轮播", "new": True},
-]
-STYLE_COUNT = len(STYLE_CATALOG)
 
 PAGE_TABS = [
     ("style", "风格", "mdi-palette-swatch-outline"),
@@ -33,7 +22,7 @@ PAGE_TABS = [
 ]
 
 TITLE_EXAMPLE = """# 按媒体库名称配置封面标题，名称需与媒体库完全一致
-# 第三行背景色可选，仅在「背景色来源」选择「从标题配置读取」时生效
+# 第三行点缀色可选，仅在「点缀色」选择「从标题配置读取」时生效
 电影:
   - 电影
   - MOVIES
@@ -259,10 +248,10 @@ def button(label: str, kind: str, api_prefix: str, path: str, prepend: Optional[
 
 
 def style_label(index: int, variant: str) -> str:
-    entry = next((item for item in STYLE_CATALOG if item["index"] == index), STYLE_CATALOG[0])
+    entry = style_info(index)
     if variant == "animated":
-        return f"{entry['name']} · {entry['motion']}"
-    return f"{entry['name']} · 静态"
+        return f"{entry.name} · {entry.motion}"
+    return f"{entry.name} · 静态"
 
 
 # ---------------------------------------------------------------- 详情页
@@ -338,6 +327,10 @@ def _hero(ctx: Dict[str, Any]) -> Dict[str, Any]:
     return div("mcg-hero", *children)
 
 
+def _source_label(entry) -> str:
+    return "海报" if entry.poster else "背景图"
+
+
 def _style_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
     prefix = ctx["api_prefix"]
     variant = ctx["style_variant"]
@@ -365,23 +358,21 @@ def _style_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
     )
     cards = []
     for entry in STYLE_CATALOG:
-        selected = entry["index"] == ctx["style_index"]
-        chips = [node("span", cls="mcg-chip", text=entry["kind"])]
-        if entry.get("new"):
-            chips.insert(0, node("span", cls="mcg-chip mcg-chip-gold", text="新"))
-        motion_note = f"动态：{entry['motion']}" if variant == "animated" else entry["desc"]
+        selected = entry.index == ctx["style_index"]
+        chips = [node("span", cls="mcg-chip", text=_source_label(entry))]
+        motion_note = f"动态：{entry.motion}" if variant == "animated" else entry.desc
         cards.append(
             div(
                 "mcg-style" + (" mcg-style-on" if selected else ""),
-                node("img", src=PREVIEWS.get(entry["index"], ""), alt=entry["name"], loading="lazy"),
+                node("img", src=PREVIEWS.get(entry.index, ""), alt=entry.name, loading="lazy"),
                 div("mcg-style-tick", icon("mdi-check", 16)),
                 div(
                     "mcg-style-meta",
-                    div("mcg-style-name", node("span", text=entry["name"]),
+                    div("mcg-style-name", node("span", text=entry.name),
                         node("span", content=chips, style="display:inline-flex;gap:4px;")),
                     div("mcg-style-desc", text=motion_note),
                 ),
-                events=post(prefix, f"select_style?index={entry['index']}&tab=style"),
+                events=post(prefix, f"select_style?index={entry.index}&tab=style"),
             )
         )
     children.append(div("mcg-gallery", *cards))
@@ -636,21 +627,19 @@ def _toggle(model: str, label: str, options: List[tuple]) -> Dict[str, Any]:
 def _style_picker() -> Dict[str, Any]:
     cards = []
     for entry in STYLE_CATALOG:
-        value = f"static_{entry['index']}"
-        chips = [node("span", cls="mcg-chip", text=entry["kind"])]
-        if entry.get("new"):
-            chips.insert(0, node("span", cls="mcg-chip mcg-chip-gold", text="新"))
+        value = f"static_{entry.index}"
+        chips = [node("span", cls="mcg-chip", text=_source_label(entry))]
         cards.append(
             node(
                 "div",
                 content=[
-                    node("img", src=PREVIEWS.get(entry["index"], ""), alt=entry["name"], loading="lazy"),
+                    node("img", src=PREVIEWS.get(entry.index, ""), alt=entry.name, loading="lazy"),
                     div("mcg-style-tick", icon("mdi-check", 16)),
                     div(
                         "mcg-style-meta",
-                        div("mcg-style-name", node("span", text=entry["name"]),
+                        div("mcg-style-name", node("span", text=entry.name),
                             node("span", content=chips, style="display:inline-flex;gap:4px;")),
-                        div("mcg-style-desc", text=entry["desc"]),
+                        div("mcg-style-desc", text=entry.desc),
                     ),
                 ],
                 **{
@@ -701,33 +690,33 @@ def _style_tab() -> List[dict]:
             "mdi-palette-swatch-outline", "封面风格", "预览图为示例素材，实际效果取决于媒体库的图片",
             _style_picker(),
             div(None, _toggle("cover_style_variant", "输出类型",
-                              [("static", "静态图片"), ("animated", "动态图")]), style="margin-top:16px;max-width:320px;"),
+                              [("static", "静态图片"), ("animated", "GIF 动图")]), style="margin-top:16px;max-width:320px;"),
         ),
         _section(
             "mdi-image-outline", "选图与输出", "这些选项对所有风格生效",
             _row(
-                _col(_toggle("use_primary", "优先使用", [(True, "海报图"), (False, "背景图")]), 4),
-                _col(_toggle("multi_1_blur", "九宫风格背景", [(True, "模糊"), (False, "纯色渐变")]), 4),
+                _col(_toggle("use_primary", "素材图片", [("auto", "跟随风格"), (True, "海报"), (False, "背景图")]), 6),
                 _col(_select("resolution", "静态图分辨率", [
                     {"title": "1080p（1920×1080）", "value": "1080p"},
                     {"title": "720p（1280×720）", "value": "720p"},
                     {"title": "480p（854×480）", "value": "480p"},
-                ], icon_name="mdi-monitor-screenshot"), 4),
+                ], icon_name="mdi-monitor-screenshot"), 6),
             ),
         ),
         _section(
-            "mdi-palette-outline", "背景色", "风格中用于压暗、混合或点缀的颜色",
+            "mdi-palette-outline", "点缀色", "标题线条、胶囊标签等处使用的颜色。默认每款风格有自己的颜色，同一排封面看起来更统一",
             _row(
-                _col(_select("bg_color_mode", "背景色来源", [
-                    {"title": "从图片自动提取", "value": "auto"},
+                _col(_select("bg_color_mode", "颜色来源", [
+                    {"title": "风格默认", "value": "auto"},
+                    {"title": "从图片提取", "value": "image"},
                     {"title": "统一使用自定义颜色", "value": "custom"},
                     {"title": "从标题配置读取", "value": "config"},
                 ], icon_name="mdi-eyedropper-variant"), 6),
-                _col(_text("color_ratio", "颜色混合占比", "0 到 1，越大颜色越浓", number=True,
+                _col(_text("color_ratio", "底色和压暗强度", "0 到 1，默认 0.8。越大底色越贴近图片色调，图上的压暗也越重", number=True,
                            icon_name="mdi-format-color-fill", min=0, max=1, step=0.05), 6),
                 node("VCol", cols=12, show="{{ bg_color_mode === 'custom' }}", content=[
                     _text("custom_bg_color", "自定义颜色", "支持 #十六进制、rgb(...)、颜色英文名",
-                          icon_name="mdi-eyedropper", placeholder="#B5845C"),
+                          icon_name="mdi-eyedropper", placeholder="#58DDA3"),
                     node("VColorPicker", model="custom_bg_color", mode="hexa", showSwatches=True, hideInputs=True,
                          elevation=0, cls="mt-3", style="background:transparent;"),
                 ]),
@@ -755,31 +744,20 @@ def _title_tab(ctx: Dict[str, Any]) -> List[dict]:
     ]
 
 
-# 表单字段留空时生效的默认值，用来判断当前参数是否正好等于某个预设
-TYPOGRAPHY_DEFAULTS = {
-    "zh_font_size": 290, "en_font_size": 165, "title_scale": 1.0, "zh_font_offset": 0,
-    "title_spacing": 44, "en_line_spacing": 40, "zh_letter_spacing": 20, "en_letter_spacing": 4,
-    "blur_size": 50, "color_ratio": 0.8,
-}
-
-
 def _typography_picker() -> Dict[str, Any]:
-    """一键排版卡片：点击后填好字体和全部排版参数，之后仍可手动微调。"""
+    """一键换字体的卡片。字号、字距仍由风格决定；选「跟随风格」时连手动填写的参数也一起清空。"""
+    numeric_fields = ("zh_font_size", "en_font_size", "zh_font_offset", "title_spacing", "en_line_spacing",
+                      "zh_letter_spacing", "en_letter_spacing")
     cards = []
     for preset in TYPOGRAPHY_PRESETS:
         values = preset["values"]
-        # 预设使用内置字体，同时清空自定义字体，否则自定义字体会继续优先生效
+        # 同时清空自定义字体，否则自定义字体会继续优先生效
         assignments = [f"{field} = {json.dumps(value)}" for field, value in values.items()]
         assignments += ['zh_font_custom = ""', 'en_font_custom = ""']
+        if preset["key"] == "auto":
+            assignments += [f"{field} = null" for field in numeric_fields] + ["title_scale = 1"]
         checks = ['!zh_font_custom', '!en_font_custom']
-        for field, value in values.items():
-            if field in TYPOGRAPHY_DEFAULTS:
-                # 0 是有效取值，只有留空才按默认值比较
-                checks.append(
-                    f"Number({field} === 0 ? 0 : ({field} || {json.dumps(TYPOGRAPHY_DEFAULTS[field])})) === {json.dumps(value)}"
-                )
-            else:
-                checks.append(f"{field} === {json.dumps(value)}")
+        checks += [f"{field} === {json.dumps(value)}" for field, value in values.items()]
         cards.append(
             node(
                 "div",
@@ -804,38 +782,38 @@ def _typography_picker() -> Dict[str, Any]:
 def _typography_tab(ctx: Dict[str, Any]) -> List[dict]:
     return [
         _section(
-            "mdi-auto-fix", "一键排版", "点一下即可填好字体、字号、间距和背景参数，可继续手动微调，保存后生效",
+            "mdi-auto-fix", "字体搭配", "每款风格都有设计好的字体和字号。想换字体可以点这里，字号和间距仍然跟随风格",
             _typography_picker(),
         ),
         _section(
-            "mdi-format-font", "字体", "预设字体会自动下载；也可以填字体链接或容器内的本地路径",
+            "mdi-format-font", "字体", "内置字体会自动下载；也可以填字体链接或容器内的本地路径",
             _row(
                 _col(_select("zh_font_preset", "主标题字体", ctx["zh_font_items"], icon_name="mdi-ideogram-cjk",
                              hint="标题含中文时请选中文字体"), 6),
                 _col(_select("en_font_preset", "副标题字体", ctx["en_font_items"], icon_name="mdi-format-font",
-                             hint="副标题含中文而字体不支持时，会自动改用主标题字体"), 6),
-                _col(_text("zh_font_custom", "自定义主标题字体", "链接或路径，留空使用预设", icon_name="mdi-link-variant"), 6),
-                _col(_text("en_font_custom", "自定义副标题字体", "链接或路径，留空使用预设", icon_name="mdi-link-variant"), 6),
+                             hint="副标题含中文而字体不支持时，会自动换成能显示的字体"), 6),
+                _col(_text("zh_font_custom", "自定义主标题字体", "链接或路径，留空使用上面的选择", icon_name="mdi-link-variant"), 6),
+                _col(_text("en_font_custom", "自定义副标题字体", "链接或路径，留空使用上面的选择", icon_name="mdi-link-variant"), 6),
             ),
         ),
         _section(
-            "mdi-format-size", "排版", "以 1080p 为基准，其他分辨率会等比缩放；留空使用默认值",
+            "mdi-format-size", "精细调整", "以 1080p 为基准，其他分辨率会等比缩放。全部留空就是每款风格的原始设计，填了才覆盖",
             _row(
-                _col(_text("zh_font_size", "主标题字号", "默认 290，放不下时自动缩小", number=True, icon_name="mdi-format-size", min=1), 4),
-                _col(_text("en_font_size", "副标题字号", "默认 165，放不下时自动缩小", number=True, icon_name="mdi-format-size", min=1), 4),
-                _col(_text("title_scale", "整体缩放", "默认 1.0", number=True, icon_name="mdi-arrow-expand-all",
+                _col(_text("title_scale", "整体缩放", "默认 1.0，同时缩放字号和间距", number=True, icon_name="mdi-arrow-expand-all",
                            min=0.1, step=0.05), 4),
-                _col(_text("zh_font_offset", "主标题上下偏移", "上移填负值，默认 0", number=True,
+                _col(_text("zh_font_size", "主标题字号", "留空跟随风格，放不下时自动缩小", number=True, icon_name="mdi-format-size", min=1), 4),
+                _col(_text("en_font_size", "副标题字号", "留空跟随风格，放不下时自动缩小", number=True, icon_name="mdi-format-size", min=1), 4),
+                _col(_text("zh_letter_spacing", "主标题字距", "字号的百分比，可以为负。留空跟随风格", number=True,
+                           icon_name="mdi-format-letter-spacing"), 4),
+                _col(_text("en_letter_spacing", "副标题字距", "字号的百分比，可以为负。留空跟随风格", number=True,
+                           icon_name="mdi-format-letter-spacing"), 4),
+                _col(_text("title_spacing", "主副标题间距", "留空跟随风格", number=True, icon_name="mdi-arrow-collapse-vertical",
+                           min=0), 4),
+                _col(_text("en_line_spacing", "副标题行距", "副标题折行时使用。留空跟随风格", number=True, icon_name="mdi-format-line-height",
+                           min=0), 4),
+                _col(_text("zh_font_offset", "标题上下偏移", "上移填负值，默认 0", number=True,
                            icon_name="mdi-arrow-up-down"), 4),
-                _col(_text("title_spacing", "主副标题间距", "默认 44", number=True, icon_name="mdi-arrow-collapse-vertical",
-                           min=0), 4),
-                _col(_text("en_line_spacing", "副标题行距", "默认 40", number=True, icon_name="mdi-format-line-height",
-                           min=0), 4),
-                _col(_text("zh_letter_spacing", "主标题字距", "字号的百分比，默认 20，两字标题会更开", number=True,
-                           icon_name="mdi-format-letter-spacing", min=0), 4),
-                _col(_text("en_letter_spacing", "副标题字距", "字号的百分比，默认 4", number=True,
-                           icon_name="mdi-format-letter-spacing", min=0), 4),
-                _col(_text("blur_size", "背景模糊强度", "数字越大越模糊，默认 50", number=True, icon_name="mdi-blur",
+                _col(_text("blur_size", "玻璃模糊强度", "悬卡风格的玻璃侧栏使用，默认 50", number=True, icon_name="mdi-blur",
                            min=0), 4),
             ),
         ),
@@ -846,35 +824,25 @@ def _motion_tab() -> List[dict]:
     return [
         div(
             "mcg-notice", icon("mdi-information-outline"),
-            div(None, text="动态图固定输出 320×180，由 ffmpeg 合成。只有输出类型选择「动态图」时，这里的参数才会生效。"),
+            div(None, text="动图输出 GIF，Hills、小幻影视、yamby 等客户端都按图片处理。首帧就是完整封面，只显示静态图的客户端也能看到成品。需要容器内有 ffmpeg。"),
         ),
         _section(
-            "mdi-play-box-multiple-outline", "动画", "时长和帧率越高，生成越慢、文件越大",
+            "mdi-play-box-multiple-outline", "GIF 动图", "只有输出类型选择「GIF 动图」时才生效。画面大部分时间静止、只在转场时运动，一张通常 1 到 4 MB",
             _row(
-                _col(_text("animation_duration", "循环时长（秒）", "默认 8", number=True, icon_name="mdi-clock-outline", min=1), 3),
-                _col(_text("animation_fps", "帧率", "默认 24", number=True, icon_name="mdi-speedometer", min=1, max=60), 3),
-                _col(_select("animation_format", "输出格式", [
-                    {"title": "APNG（画质更好）", "value": "apng"},
-                    {"title": "GIF（兼容性更好）", "value": "gif"},
-                ], icon_name="mdi-file-video"), 3),
-                _col(_select("animation_reduce_colors", "颜色压缩", [
-                    {"title": "关闭（保真优先）", "value": "off"},
-                    {"title": "中等", "value": "medium"},
-                    {"title": "强（体积最小）", "value": "strong"},
-                ], icon_name="mdi-palette-outline"), 3),
-                _col(_text("animated_2_image_count", "轮播图片数量", "3 到 9 张，叠影、斜切、氤氲、影院、磨砂、刊物使用",
-                           number=True, icon_name="mdi-image-multiple", min=3, max=9), 4),
-                _col(_select("animated_2_departure_type", "叠影的切换方式", [
-                    {"title": "旋转飞出", "value": "fly"},
-                    {"title": "旋转渐隐", "value": "fade"},
-                    {"title": "交叉渐变", "value": "crossfade"},
-                ], icon_name="mdi-transition"), 4),
-                _col(_select("animation_scroll", "九宫的滚动方向", [
-                    {"title": "向下", "value": "down"},
-                    {"title": "向上", "value": "up"},
-                    {"title": "交替（两边下，中间上）", "value": "alternate"},
-                    {"title": "交替（两边上，中间下）", "value": "alternate_reverse"},
-                ], icon_name="mdi-swap-vertical"), 4),
+                _col(_select("animation_resolution", "尺寸", [
+                    {"title": "480×270（推荐）", "value": "480x270"},
+                    {"title": "400×225", "value": "400x225"},
+                    {"title": "320×180（体积最小）", "value": "320x180"},
+                ], icon_name="mdi-aspect-ratio"), 4),
+                _col(_select("animation_reduce_colors", "颜色数量", [
+                    {"title": "256 色（画质最好）", "value": "off"},
+                    {"title": "192 色（推荐）", "value": "medium"},
+                    {"title": "96 色（体积最小）", "value": "strong"},
+                ], icon_name="mdi-palette-outline"), 4),
+                _col(_text("animation_image_count", "轮播图片数量", "3 到 12 张，默认 6。不少于这款风格一屏需要的数量",
+                           number=True, icon_name="mdi-image-multiple", min=3, max=12), 4),
+                _col(_text("animation_duration", "循环时长（秒）", "默认 12。图片多时可以加长，转场不会显得匆忙", number=True, icon_name="mdi-clock-outline", min=1, max=60), 6),
+                _col(_text("animation_fps", "帧率", "默认 15，GIF 不需要更高", number=True, icon_name="mdi-speedometer", min=1, max=30), 6),
             ),
         ),
     ]
@@ -921,10 +889,9 @@ def default_form_model() -> Dict[str, Any]:
         "cover_style": "static_1",
         "cover_style_base": "static_1",
         "cover_style_variant": "static",
-        "multi_1_blur": True,
-        "zh_font_preset": "pangmen",
-        "en_font_preset": "CaveatBrush",
-        "typography_v2": True,
+        "zh_font_preset": "auto",
+        "en_font_preset": "auto",
+        "covers_v3": True,
         "zh_font_custom": "",
         "en_font_custom": "",
         "zh_font_size": None,
@@ -937,18 +904,15 @@ def default_form_model() -> Dict[str, Any]:
         "blur_size": 50,
         "color_ratio": 0.8,
         "title_scale": 1.0,
-        "use_primary": False,
-        "resolution": "480p",
+        "use_primary": "auto",
+        "resolution": "720p",
         "bg_color_mode": "auto",
         "custom_bg_color": "",
-        "animation_duration": 8,
-        "animation_scroll": "alternate",
-        "animation_fps": 24,
-        "animation_format": "apng",
-        "animation_resolution": "320x180",
+        "animation_duration": 12,
+        "animation_fps": 15,
+        "animation_resolution": "480x270",
         "animation_reduce_colors": "medium",
-        "animated_2_image_count": 6,
-        "animated_2_departure_type": "fly",
+        "animation_image_count": 6,
         "clean_images": False,
         "clean_fonts": False,
         "save_recent_covers": True,
@@ -964,7 +928,7 @@ def build_form(ctx: Dict[str, Any]) -> List[dict]:
         ("style-tab", "风格", "mdi-palette-swatch-outline", _style_tab()),
         ("title-tab", "标题", "mdi-format-title", _title_tab(ctx)),
         ("more-tab", "字体排版", "mdi-format-font", _typography_tab(ctx)),
-        ("motion-tab", "动态图", "mdi-play-box-multiple-outline", _motion_tab()),
+        ("motion-tab", "GIF 动图", "mdi-play-box-multiple-outline", _motion_tab()),
         ("storage-tab", "目录与历史", "mdi-folder-outline", _storage_tab()),
     ]
     return [

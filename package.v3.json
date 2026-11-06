@@ -1,15 +1,16 @@
 {
     "MediaCoverGenerator": {
         "name": "Emby媒体库封面生成",
-        "description": "生成媒体库动态/静态封面，内置 8 款风格，支持 Emby/Jellyfin",
+        "description": "生成媒体库封面，8 款风格各有静态图和 GIF 动图，支持 Emby/Jellyfin",
         "labels": "Emby,动态封面,媒体库",
-        "version": "1.2.0",
+        "version": "1.3.0",
         "icon": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/emby.png",
         "author": "Kioo",
         "level": 1,
         "release": false,
         "system_version": ">=3.0.0",
         "history": {
+            "v1.3.0": "全部封面风格重做：切片、巨幕、镂字、展墙、瀑布、立柱、悬卡、霓虹，背景构图和文字排版成套设计；字体、字号、字距默认跟随风格，填写才覆盖；动图改为只输出 GIF，首帧就是完整封面，默认尺寸提高到 480×270；升级时旧的字号和字距设置会清空，自定义字体保留",
             "v1.2.0": "封面默认改用庞门正道粗书体配 Caveat Brush，字号加大并加入字距；所有风格的标题放不下时自动缩小；新增笔墨、墨韵、榜书预设",
             "v1.1.2": "支持电视直播：可以在媒体库列表里选择并生成封面（#7）；生成失败时，详情页直接显示原因",
             "v1.1.1": "字体排版页新增一键排版：现代、冲击、文艺、招牌、留白和经典六套预设，点一下即可填好字体、字号、间距和背景参数",

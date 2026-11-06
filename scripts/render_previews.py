@@ -1,14 +1,15 @@
 """
-重新生成风格预览图。新增或调整风格后运行：
+重新生成风格预览图。调整风格后运行：
 
     python scripts/render_previews.py
 
-需要 pillow 和 numpy。素材由程序绘制，不依赖任何受版权保护的海报。
-输出到 images/style_N.jpeg 与两个插件版本的 ui_previews.py（界面内嵌的小图）。
+需要 pillow 和 numpy，有 ffmpeg 时还会生成动图样张。素材由程序绘制，不依赖任何受版权保护的海报。
+输出到 images/style_N.jpeg、images/style_N.gif 与两个插件版本的 ui_previews.py（界面内嵌的小图）。
 """
 import base64
 import logging
 import math
+import shutil
 import sys
 import tempfile
 import types
@@ -20,11 +21,13 @@ from PIL import Image, ImageDraw, ImageFilter
 
 REPO = Path(__file__).resolve().parent.parent
 PLUGIN_DIRS = [REPO / "plugins.v3" / "mediacovergenerator", REPO / "plugins.v2" / "mediacovergenerator"]
-FONTS = (str(REPO / "fonts" / "pangmen.ttf"), str(REPO / "fonts" / "caveatbrush.ttf"))
 TITLE = ("电影", "MOVIE")
 FONT_FILES = {
-    "pangmen": "pangmen.ttf", "CaveatBrush": "caveatbrush.ttf",
-    "chaohei": "chaohei.ttf", "yasong": "yasong.ttf", "EmblemaOne": "EmblemaOne.woff2", "Melete": "Melete.otf",
+    "notoblack": "notoblack.otf", "notolight": "notolight.otf", "smiley": "smiley.ttf",
+    "pangmen": "pangmen.ttf", "chaohei": "chaohei.ttf", "yasong": "yasong.ttf",
+    "poppinsxb": "poppinsxb.ttf", "poppinssemi": "poppinssemi.ttf",
+    "kronaone": "kronaone.ttf", "michroma": "michroma.ttf",
+    "CaveatBrush": "caveatbrush.ttf", "EmblemaOne": "EmblemaOne.woff2", "Melete": "Melete.otf",
     "Phosphate": "phosphate.ttf", "JosefinSans": "josefinsans.woff2", "LilitaOne": "lilitaone.woff2",
 }
 
@@ -128,68 +131,58 @@ def decode(data):
     return Image.open(BytesIO(base64.b64decode(data))).convert("RGB")
 
 
-def render_all():
-    from app.plugins.mediacovergenerator.style import style_premium as premium
-    from app.plugins.mediacovergenerator.style.style_static_1 import create_style_static_1
-    from app.plugins.mediacovergenerator.style.style_static_2 import create_style_static_2
-    from app.plugins.mediacovergenerator.style.style_static_3 import create_style_static_3
-    from app.plugins.mediacovergenerator.style.style_static_4 import create_style_static_4
-    from app.plugins.mediacovergenerator.ui_presets import TYPOGRAPHY_PRESETS
-    from app.plugins.mediacovergenerator.utils.image_manager import ResolutionConfig
+def font_path(preset):
+    return str(REPO / "fonts" / FONT_FILES[preset])
 
-    resolution = ResolutionConfig("720p")
-    scale = resolution.height / 1080.0
-    common = {
-        "font_size": (290 * scale, 165 * scale),
-        "font_offset": (0, 44, 40, 0.20, 0.04),
-        "blur_size": 50,
-        "color_ratio": 0.8,
-        "resolution_config": resolution,
-        "bg_color_config": {"mode": "auto"},
-    }
+
+def style_fonts(spec):
+    return font_path(spec.main_font), font_path(spec.sub_font)
+
+
+def render_all():
+    from app.plugins.mediacovergenerator.style.catalog import STYLE_CATALOG, style_info
+    from app.plugins.mediacovergenerator.style.covers import create_cover
+    from app.plugins.mediacovergenerator.ui_presets import TYPOGRAPHY_PRESETS
+
+    size = (1280, 720)
+    has_ffmpeg = bool(shutil.which("ffmpeg"))
     with tempfile.TemporaryDirectory() as temp_dir:
         temp = Path(temp_dir)
-        poster_dir = temp / "posters"
-        poster_dir.mkdir()
+        posters, backdrops = temp / "posters", temp / "backdrops"
+        posters.mkdir()
+        backdrops.mkdir()
         for index in range(9):
-            draw_art(index + 3, (600, 900)).save(poster_dir / f"{index + 1}.jpg", quality=95)
-        backdrop = temp / "backdrop.jpg"
-        draw_art(9, (1600, 900)).save(backdrop, quality=95)
-        square = temp / "square.jpg"
-        draw_art(3, (1000, 1000)).save(square, quality=95)
+            draw_art(index + 3, (600, 900)).save(posters / f"{index + 1}.jpg", quality=95)
+            draw_art(index + 12, (1280, 720)).save(backdrops / f"{index + 1}.jpg", quality=95)
 
-        results = {
-            1: create_style_static_1(str(square), TITLE, FONTS, **common),
-            2: create_style_static_2(str(backdrop), TITLE, FONTS, **common),
-            3: create_style_static_3(poster_dir, TITLE, FONTS, is_blur=True, **common),
-            4: create_style_static_4(str(backdrop), TITLE, FONTS, **common),
-            5: premium.create_style_static_5(backdrop, TITLE, FONTS, **common),
-            6: premium.create_style_static_6(backdrop, TITLE, FONTS, **common),
-            7: premium.create_style_static_7(poster_dir, TITLE, FONTS, is_blur=True, **common),
-            8: premium.create_style_static_8(backdrop, TITLE, FONTS, **common),
-        }
-        # 字体排版预设统一用标题居中的氤氲风格展示，差异都来自字体和排版参数
+        results, animations = {}, {}
+        for info in STYLE_CATALOG:
+            source = posters if info.poster else backdrops
+            results[info.index] = create_cover(info.index, False, source, TITLE, style_fonts(info.type), info.type, size)
+            if has_ffmpeg:
+                animations[info.index] = create_cover(
+                    info.index, True, source, TITLE, style_fonts(info.type), info.type, (320, 180), image_count=6,
+                    animation_duration=8, animation_fps=10, animation_reduce_colors="strong",
+                )
+
+        # 字体预设统一用标题最大的立柱风格展示，差异都来自字体
+        showcase = style_info(6)
         typography = {}
         for preset in TYPOGRAPHY_PRESETS:
             values = preset["values"]
-            fonts = (str(REPO / "fonts" / FONT_FILES[values["zh_font_preset"]]),
-                     str(REPO / "fonts" / FONT_FILES[values["en_font_preset"]]))
-            typography[preset["key"]] = create_style_static_4(
-                str(backdrop), TITLE, fonts,
-                font_size=(values["zh_font_size"] * scale, values["en_font_size"] * scale),
-                font_offset=(values["zh_font_offset"], values["title_spacing"], values["en_line_spacing"],
-                             values["zh_letter_spacing"] / 100.0, values["en_letter_spacing"] / 100.0),
-                blur_size=values["blur_size"],
-                color_ratio=values["color_ratio"],
-                resolution_config=resolution,
-                bg_color_config={"mode": "auto"},
+            fonts = (
+                font_path(showcase.type.main_font if values["zh_font_preset"] == "auto" else values["zh_font_preset"]),
+                font_path(showcase.type.sub_font if values["en_font_preset"] == "auto" else values["en_font_preset"]),
             )
-    failed = [key for key, value in {**results, **typography}.items() if not value]
+            typography[preset["key"]] = create_cover(6, False, posters, TITLE, fonts, showcase.type, size)
+
+    failed = [key for key, value in {**results, **typography, **animations}.items() if not value]
     if failed:
         raise SystemExit(f"风格渲染失败: {failed}")
     return (
         {index: decode(data) for index, data in results.items()},
         {key: decode(data) for key, data in typography.items()},
+        {index: base64.b64decode(data) for index, data in animations.items()},
     )
 
 
@@ -199,7 +192,7 @@ def to_data_uri(image):
     return "data:image/webp;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
-def write_outputs(images, typography):
+def write_outputs(images, typography, animations):
     lines = ['"""风格预览小图，由 scripts/render_previews.py 生成，请勿手工修改。"""', "", "PREVIEWS = {"]
     for index, image in sorted(images.items()):
         image.resize((480, 270), Image.Resampling.LANCZOS).save(REPO / "images" / f"style_{index}.jpeg", quality=88)
@@ -211,7 +204,10 @@ def write_outputs(images, typography):
     text = "\n".join(lines)
     for plugin_dir in PLUGIN_DIRS:
         (plugin_dir / "ui_previews.py").write_text(text, encoding="utf-8", newline="\n")
-    print(f"预览图已更新，ui_previews.py 大小 {len(text) // 1024} KB")
+    for index, data in animations.items():
+        (REPO / "images" / f"style_{index}.gif").write_bytes(data)
+    print(f"预览图已更新，ui_previews.py 大小 {len(text) // 1024} KB，"
+          f"动图样张 {sum(len(data) for data in animations.values()) // 1024} KB")
 
 
 if __name__ == "__main__":

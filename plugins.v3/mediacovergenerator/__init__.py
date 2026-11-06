@@ -44,24 +44,9 @@ except ImportError:
     from app.utils.http import RequestUtils
     from app.utils.url import UrlUtils
 
-from app.plugins.mediacovergenerator.style.style_static_1 import create_style_static_1
-from app.plugins.mediacovergenerator.style.style_static_2 import create_style_static_2
-from app.plugins.mediacovergenerator.style.style_static_3  import create_style_static_3
-from app.plugins.mediacovergenerator.style.style_static_4 import create_style_static_4
-from app.plugins.mediacovergenerator.style.style_animated_1 import create_style_animated_1
-from app.plugins.mediacovergenerator.style.style_animated_2 import create_style_animated_2
-from app.plugins.mediacovergenerator.style.style_animated_3 import create_style_animated_3
-from app.plugins.mediacovergenerator.style.style_animated_4 import create_style_animated_4
-from app.plugins.mediacovergenerator.style.style_premium import (
-    create_style_static_5,
-    create_style_static_6,
-    create_style_static_7,
-    create_style_static_8,
-    create_style_animated_5,
-    create_style_animated_6,
-    create_style_animated_7,
-    create_style_animated_8,
-)
+from app.plugins.mediacovergenerator.style.catalog import TypeSpec, apply_overrides, style_info
+from app.plugins.mediacovergenerator.style.covers import create_cover
+from app.plugins.mediacovergenerator.style.typography import is_cjk_text
 from app.plugins.mediacovergenerator.ui import (
     STYLE_COUNT,
     PAGE_TABS,
@@ -74,34 +59,9 @@ from app.plugins.mediacovergenerator.utils.image_manager import ResolutionConfig
 from app.plugins.mediacovergenerator.utils.network_helper import NetworkHelper, validate_font_file
 from app.plugins.mediacovergenerator.utils.performance_helper import memory_efficient_operation
 
-# 单图风格：入参为一张图片的路径
-SINGLE_IMAGE_STYLES = {
-    "static_1": create_style_static_1,
-    "static_2": create_style_static_2,
-    "static_4": create_style_static_4,
-    "static_5": create_style_static_5,
-    "static_6": create_style_static_6,
-    "static_8": create_style_static_8,
-}
-# 多图静态风格：入参为素材目录
-MULTI_IMAGE_STYLES = {
-    "static_3": create_style_static_3,
-    "static_7": create_style_static_7,
-}
-# 动态风格：入参为素材目录
-ANIMATED_STYLES = {
-    "animated_1": create_style_animated_1,
-    "animated_2": create_style_animated_2,
-    "animated_3": create_style_animated_3,
-    "animated_4": create_style_animated_4,
-    "animated_5": create_style_animated_5,
-    "animated_6": create_style_animated_6,
-    "animated_7": create_style_animated_7,
-    "animated_8": create_style_animated_8,
-}
-# 这些风格固定需要 9 张素材，其余动态风格按「轮播图片数量」取图
-NINE_IMAGE_STYLES = {"static_3", "static_7", "animated_2", "animated_3", "animated_7"}
-ALL_STYLES = {*SINGLE_IMAGE_STYLES, *MULTI_IMAGE_STYLES, *ANIMATED_STYLES}
+STATIC_STYLES = {f"static_{index}" for index in range(1, STYLE_COUNT + 1)}
+ANIMATED_STYLES = {f"animated_{index}" for index in range(1, STYLE_COUNT + 1)}
+ALL_STYLES = STATIC_STYLES | ANIMATED_STYLES
 
 # 插件保存的封面文件名：时间戳[__媒体库名].扩展名（旧版本只有时间戳）
 COVER_NAME_PATTERN = re.compile(
@@ -110,16 +70,35 @@ COVER_NAME_PATTERN = re.compile(
 )
 LIVE_TV_TYPE = "livetv"
 NUMBERED_IMAGE_PATTERN = re.compile(r"^[1-9][0-9]*\.jpg$", re.IGNORECASE)
-DEFAULT_ZH_FONT = "pangmen"
-DEFAULT_EN_FONT = "CaveatBrush"
-DEFAULT_ZH_FONT_SIZE = 290
-DEFAULT_EN_FONT_SIZE = 165
-DEFAULT_TITLE_SPACING = 44
-# 字距是字号的百分比
-DEFAULT_ZH_LETTER_SPACING = 20
-DEFAULT_EN_LETTER_SPACING = 4
-# 新字体下载失败时退回这些字体，不让封面因为缺字体而生成失败
-FONT_FALLBACKS = {DEFAULT_ZH_FONT: "chaohei", DEFAULT_EN_FONT: "EmblemaOne"}
+# 字体选「跟随风格」时，字体、字号、字距都由风格决定
+AUTO_FONT = "auto"
+FONT_BASE_URL = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/"
+FONT_FILES = {
+    "notoblack": "notoblack.otf",
+    "notolight": "notolight.otf",
+    "smiley": "smiley.ttf",
+    "pangmen": "pangmen.ttf",
+    "chaohei": "chaohei.ttf",
+    "yasong": "yasong.ttf",
+    "poppinsxb": "poppinsxb.ttf",
+    "poppinssemi": "poppinssemi.ttf",
+    "kronaone": "kronaone.ttf",
+    "michroma": "michroma.ttf",
+    "CaveatBrush": "caveatbrush.ttf",
+    "EmblemaOne": "EmblemaOne.woff2",
+    "Melete": "Melete.otf",
+    "Phosphate": "phosphate.ttf",
+    "JosefinSans": "josefinsans.woff2",
+    "LilitaOne": "lilitaone.woff2",
+}
+# 字体下载失败时退回这些字体，不让封面因为缺字体而生成失败
+FONT_FALLBACKS = {
+    "notoblack": "chaohei", "notolight": "chaohei", "smiley": "chaohei", "pangmen": "chaohei",
+    "poppinsxb": "JosefinSans", "poppinssemi": "JosefinSans", "kronaone": "JosefinSans", "michroma": "JosefinSans",
+    "CaveatBrush": "JosefinSans",
+}
+ANIMATION_RESOLUTIONS = ("320x180", "400x225", "480x270")
+DEFAULT_ANIMATION_RESOLUTION = "480x270"
 HISTORY_PAGE_SIZE = 8
 LIBRARY_CACHE_SECONDS = 120
 THUMBNAIL_CACHE_SIZE = 256
@@ -129,12 +108,11 @@ class MediaCoverGenerator(_PluginBase):
     # 插件名称
     plugin_name = "Emby媒体库封面生成"
     # 插件描述
-    plugin_desc = "生成媒体库动态/静态封面，内置 8 款风格，支持 Emby/Jellyfin"
+    plugin_desc = "生成媒体库封面，8 款风格各有静态图和 GIF 动图，支持 Emby/Jellyfin"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/emby.png"
     # 插件版本
-    # 插件版本
-    plugin_version = "1.2.0"
+    plugin_version = "1.3.0"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -180,36 +158,31 @@ class MediaCoverGenerator(_PluginBase):
     _font_path = ''
     _covers_path = ''
     _tab = 'style-tab'
-    _multi_1_blur = True
     _zh_font_size = None
     _en_font_size = None
     _blur_size = 50
     _color_ratio = 0.8
-    _use_primary = False
+    _use_primary = "auto"
     _seen_keys = set()
     _zh_font_custom = ''
     _en_font_custom = ''
-    _zh_font_preset = DEFAULT_ZH_FONT
-    _en_font_preset = DEFAULT_EN_FONT
+    _zh_font_preset = AUTO_FONT
+    _en_font_preset = AUTO_FONT
     _zh_font_offset = ''
     _title_spacing = ''
     _en_line_spacing = ''
     _zh_letter_spacing = None
     _en_letter_spacing = None
-    _typography_v2 = False
     _title_scale = 1.0
-    _resolution = '480p'
+    _resolution = '720p'
     _custom_width = 1920
     _custom_height = 1080
     _resolution_config = None
-    _animation_duration = 8
-    _animation_scroll = 'alternate'
-    _animation_fps = 24
-    _animation_format = 'apng'
-    _animation_resolution = '320x180'
+    _animation_duration = 12
+    _animation_fps = 15
+    _animation_resolution = DEFAULT_ANIMATION_RESOLUTION
     _animation_reduce_colors = 'medium'
-    _animated_2_image_count = 6
-    _animated_2_departure_type = 'fly'
+    _animation_image_count = 6
     _style_naming_v2 = True
     _sanitize_log_cache = set()
     _clean_images = False
@@ -289,37 +262,29 @@ class MediaCoverGenerator(_PluginBase):
             self._cover_style_base = config.get("cover_style_base", default_base)
             self._cover_style_variant = config.get("cover_style_variant", default_variant)
             self._cover_style = self.__compose_cover_style(self._cover_style_base, self._cover_style_variant)
-            self._multi_1_blur = config.get("multi_1_blur", True)
-            self._zh_font_size = config.get("zh_font_size", DEFAULT_ZH_FONT_SIZE)
-            self._en_font_size = config.get("en_font_size", DEFAULT_EN_FONT_SIZE)
+            self._zh_font_size = config.get("zh_font_size")
+            self._en_font_size = config.get("en_font_size")
             self._blur_size = self.__to_number(config.get("blur_size"), 50, int)
             self._color_ratio = self.__to_number(config.get("color_ratio"), 0.8, float)
-            self._use_primary = config.get("use_primary")
+            self._use_primary = config.get("use_primary", "auto")
             self._zh_font_custom = config.get("zh_font_custom") or ""
             self._en_font_custom = config.get("en_font_custom") or ""
-            self._zh_font_preset = config.get("zh_font_preset", DEFAULT_ZH_FONT)
-            self._en_font_preset = config.get("en_font_preset", DEFAULT_EN_FONT)
+            self._zh_font_preset = config.get("zh_font_preset", AUTO_FONT)
+            self._en_font_preset = config.get("en_font_preset", AUTO_FONT)
             self._zh_font_offset = config.get("zh_font_offset")
             self._title_spacing = config.get("title_spacing")
             self._en_line_spacing = config.get("en_line_spacing")
             self._zh_letter_spacing = config.get("zh_letter_spacing")
             self._en_letter_spacing = config.get("en_letter_spacing")
-            self._typography_v2 = bool(config.get("typography_v2"))
             self._title_scale = self.__to_number(config.get("title_scale"), 1.0, float)
-            self._resolution = config.get("resolution", "480p")
+            self._resolution = config.get("resolution", "720p")
             self._custom_width = config.get("custom_width", 1920)
             self._custom_height = config.get("custom_height", 1080)
             self._animation_duration = self.__clamp_value(
-                self.__to_number(config.get("animation_duration"), 8, int), 1, 60, 8, "animation_duration", int)
-            self._animation_scroll = config.get("animation_scroll", "alternate")
+                self.__to_number(config.get("animation_duration"), 12, int), 1, 60, 12, "animation_duration", int)
             self._animation_fps = self.__clamp_value(
-                self.__to_number(config.get("animation_fps"), 24, int), 1, 60, 24, "animation_fps", int)
-            self._animation_format = config.get("animation_format", "apng")
-            if self._animation_format == "webp":
-                self._animation_format = "gif"
-            if self._animation_format not in ["apng", "gif"]:
-                self._animation_format = "apng"
-            self._animation_resolution = config.get("animation_resolution", "320x180")
+                self.__to_number(config.get("animation_fps"), 15, int), 1, 30, 15, "animation_fps", int)
+            self._animation_resolution = config.get("animation_resolution", DEFAULT_ANIMATION_RESOLUTION)
             animation_reduce_colors = config.get("animation_reduce_colors", "medium")
             if isinstance(animation_reduce_colors, bool):
                 self._animation_reduce_colors = "medium" if animation_reduce_colors else "off"
@@ -328,8 +293,7 @@ class MediaCoverGenerator(_PluginBase):
             else:
                 self._animation_reduce_colors = "medium"
 
-            self._animated_2_image_count = config.get("animated_2_image_count", 6)
-            self._animated_2_departure_type = config.get("animated_2_departure_type", "fly")
+            self._animation_image_count = config.get("animation_image_count", config.get("animated_2_image_count", 6))
             self._clean_images = config.get("clean_images", False)
             self._clean_fonts = config.get("clean_fonts", False)
             self._save_recent_covers = config.get("save_recent_covers", True)
@@ -361,31 +325,23 @@ class MediaCoverGenerator(_PluginBase):
             self._delay = 60
 
         if self._resolution not in ["1080p", "720p", "480p"]:
-            self._resolution = "480p"
-        self._animation_resolution = "320x180"
+            self._resolution = "720p"
+        if self._animation_resolution not in ANIMATION_RESOLUTIONS:
+            self._animation_resolution = DEFAULT_ANIMATION_RESOLUTION
 
-        self._animated_2_image_count = self.__clamp_value(
-            self._animated_2_image_count,
-            3,
-            9,
-            6,
-            "animated_2 image_count[init_plugin]",
-            int,
+        self._animation_image_count = self.__clamp_value(
+            self._animation_image_count, 3, 12, 6, "animation_image_count[init_plugin]", int,
         )
-        if self._animated_2_departure_type not in ["fly", "fade", "crossfade"]:
-            self._animated_2_departure_type = "fly"
-        if self._animation_scroll not in ["down", "up", "alternate", "alternate_reverse"]:
-            self._animation_scroll = "alternate"
         self._bg_color_mode = (config or {}).get("bg_color_mode", "auto")
         self._custom_bg_color = (config or {}).get("custom_bg_color", "")
 
-        # 旧版本提供过实际不存在的字体预设，这里回退到默认字体
+        # 旧版本提供过实际不存在的字体预设，这里回退到跟随风格
         valid_fonts = {spec["value"] for spec in self.__font_specs()}
         if self._zh_font_preset not in valid_fonts:
-            self._zh_font_preset = DEFAULT_ZH_FONT
+            self._zh_font_preset = AUTO_FONT
         if self._en_font_preset not in valid_fonts:
-            self._en_font_preset = DEFAULT_EN_FONT
-        typography_migrated = bool(config) and self.__migrate_typography()
+            self._en_font_preset = AUTO_FONT
+        typography_migrated = bool(config) and not config.get("covers_v3") and self.__migrate_redesign(config)
 
         self._title_config_error = ""
         if self._title_config:
@@ -396,7 +352,7 @@ class MediaCoverGenerator(_PluginBase):
             self._resolution_config = ResolutionConfig(self._resolution)
         except Exception as e:
             logger.warning(f"分辨率配置初始化失败，使用默认配置: {e}")
-            self._resolution_config = ResolutionConfig("480p")
+            self._resolution_config = ResolutionConfig("720p")
 
         if self._selected_servers:
             self._servers = self.mediaserver_helper.get_services(
@@ -468,19 +424,8 @@ class MediaCoverGenerator(_PluginBase):
 
         return parsed
 
-    def __get_animated_2_required_items(self) -> int:
-        self._animated_2_image_count = self.__clamp_value(
-            self._animated_2_image_count,
-            3,
-            9,
-            6,
-            "animated_2 image_count[runtime]",
-            int,
-        )
-        return int(self._animated_2_image_count)
-
     def __compose_cover_style(self, base_style: str, variant: str) -> str:
-        base = base_style if base_style in SINGLE_IMAGE_STYLES or base_style in MULTI_IMAGE_STYLES else "static_1"
+        base = base_style if base_style in STATIC_STYLES else "static_1"
         mode = variant if variant in ["static", "animated"] else "static"
         suffix = base.split("_")[-1]
         return base if mode == "static" else f"animated_{suffix}"
@@ -496,29 +441,32 @@ class MediaCoverGenerator(_PluginBase):
         """当前生成使用的风格。任务开始时固定下来，运行中切换风格不影响正在处理的媒体库。"""
         return self._run_style or self._cover_style
 
-    def __is_single_image_style(self) -> bool:
-        return self.__current_style() in SINGLE_IMAGE_STYLES
+    def __current_index(self) -> int:
+        try:
+            return max(1, min(STYLE_COUNT, int(self.__current_style().split("_")[-1])))
+        except (TypeError, ValueError):
+            return 1
 
     def __get_required_items(self) -> int:
-        style = self.__current_style()
-        if style in SINGLE_IMAGE_STYLES:
-            return 1
-        if style in ("static_3", "static_7", "animated_3", "animated_7"):
-            return 9
-        return self.__get_animated_2_required_items()
+        """静态封面用满一屏；动图还要加上轮播用的图，转场时才有新内容。"""
+        slots = style_info(self.__current_index()).slots
+        if self.__current_style() in ANIMATED_STYLES:
+            return max(slots, int(self._animation_image_count))
+        return slots
+
+    def __prefer_primary(self) -> bool:
+        """优先下载海报还是背景图。默认跟随风格：竖向构图用海报，满幅构图用背景图。"""
+        if self._use_primary in (None, "", "auto"):
+            return style_info(self.__current_index()).poster
+        return bool(self._use_primary)
 
     def __update_config(self):
         """
         更新配置
         """
         self._cover_style = self.__compose_cover_style(self._cover_style_base, self._cover_style_variant)
-        self._animated_2_image_count = self.__clamp_value(
-            self._animated_2_image_count,
-            3,
-            9,
-            6,
-            "animated_2 image_count[save]",
-            int,
+        self._animation_image_count = self.__clamp_value(
+            self._animation_image_count, 3, 12, 6, "animation_image_count[save]", int,
         )
         self.update_config({
             "enabled": self._enabled,
@@ -541,7 +489,6 @@ class MediaCoverGenerator(_PluginBase):
             "cover_style": self._cover_style,
             "cover_style_base": self._cover_style_base,
             "cover_style_variant": self._cover_style_variant,
-            "multi_1_blur": self._multi_1_blur,
             "zh_font_size": self._zh_font_size,
             "en_font_size": self._en_font_size,
             "blur_size": self._blur_size,
@@ -556,17 +503,14 @@ class MediaCoverGenerator(_PluginBase):
             "en_line_spacing": self._en_line_spacing,
             "zh_letter_spacing": self._zh_letter_spacing,
             "en_letter_spacing": self._en_letter_spacing,
-            "typography_v2": self._typography_v2,
+            "covers_v3": True,
             "title_scale": self._title_scale,
             "resolution": self._resolution,
             "animation_duration": self._animation_duration,
-            "animation_scroll": self._animation_scroll,
             "animation_fps": self._animation_fps,
-            "animation_format": self._animation_format,
             "animation_resolution": self._animation_resolution,
             "animation_reduce_colors": self._animation_reduce_colors,
-            "animated_2_image_count": self._animated_2_image_count,
-            "animated_2_departure_type": self._animated_2_departure_type,
+            "animation_image_count": self._animation_image_count,
             "bg_color_mode": self._bg_color_mode,
             "custom_bg_color": self._custom_bg_color,
             "clean_images": self._clean_images,
@@ -626,9 +570,17 @@ class MediaCoverGenerator(_PluginBase):
     @staticmethod
     def __font_specs() -> List[Dict[str, Any]]:
         return [
+            {"title": "跟随风格", "value": AUTO_FONT, "cjk": True, "aliases": []},
+            {"title": "思源黑体 Black", "value": "notoblack", "cjk": True, "aliases": ["notoblack"]},
+            {"title": "思源黑体 Light", "value": "notolight", "cjk": True, "aliases": ["notolight"]},
+            {"title": "得意黑", "value": "smiley", "cjk": True, "aliases": ["smiley", "得意黑"]},
             {"title": "庞门正道粗书体", "value": "pangmen", "cjk": True, "aliases": ["pangmen", "庞门正道粗书体"]},
             {"title": "潮黑", "value": "chaohei", "cjk": True, "aliases": ["chaohei", "wendao", "潮黑", "chao_hei"]},
             {"title": "粗雅宋", "value": "yasong", "cjk": True, "aliases": ["yasong", "粗雅宋", "multi_1_zh", "ya_song"]},
+            {"title": "Poppins ExtraBold", "value": "poppinsxb", "cjk": False, "aliases": ["poppinsxb"]},
+            {"title": "Poppins SemiBold", "value": "poppinssemi", "cjk": False, "aliases": ["poppinssemi"]},
+            {"title": "Krona One", "value": "kronaone", "cjk": False, "aliases": ["kronaone", "krona_one"]},
+            {"title": "Michroma", "value": "michroma", "cjk": False, "aliases": ["michroma"]},
             {"title": "CaveatBrush", "value": "CaveatBrush", "cjk": False, "aliases": ["caveatbrush", "caveat_brush"]},
             {"title": "EmblemaOne", "value": "EmblemaOne", "cjk": False, "aliases": ["emblemaone", "emblema_one"]},
             {"title": "Melete", "value": "Melete", "cjk": False, "aliases": ["melete", "multi_1_en"]},
@@ -637,43 +589,28 @@ class MediaCoverGenerator(_PluginBase):
             {"title": "LilitaOne", "value": "LilitaOne", "cjk": False, "aliases": ["lilitaone", "lilita_one"]},
         ]
 
-    def __migrate_typography(self) -> bool:
+    def __migrate_redesign(self, config: dict) -> bool:
         """
-        1.2.0 换了默认字体和字号。一直用旧默认值的配置跟随新默认；
-        改过字体或字号的配置把留空的参数固定为旧默认值，封面不会因为升级而变样。
-        返回配置是否有变化。
+        1.3.0 重做了全部风格，每款风格都有自己的字体和字号。旧的字号、字距是给旧构图调的，升级时清空，
+        跟随新风格；用户自己提供的字体链接或路径保留。动图的旧默认值也换成适合 GIF 的新默认值。
         """
-        if self._typography_v2:
-            return False
-        self._typography_v2 = True
-
-        def unset_or(value, old):
-            return value in (None, "") or self.__to_number(value, old, float) == old
-
-        unchanged = (
-            self._zh_font_preset == "chaohei" and self._en_font_preset == "EmblemaOne"
-            and not self._zh_font_custom and not self._en_font_custom
-            and unset_or(self._zh_font_size, 170) and unset_or(self._en_font_size, 75)
-            and unset_or(self._title_spacing, 40) and unset_or(self._en_line_spacing, 40)
-        )
-        if unchanged:
-            self._zh_font_preset = DEFAULT_ZH_FONT
-            self._en_font_preset = DEFAULT_EN_FONT
-            self._zh_font_size = self._en_font_size = None
-            self._title_spacing = self._en_line_spacing = None
-            logger.info("封面字体已切换为新的默认搭配：庞门正道粗书体 + CaveatBrush")
-            return True
-
-        if self._zh_font_size in (None, ""):
-            self._zh_font_size = 170
-        if self._en_font_size in (None, ""):
-            self._en_font_size = 75
-        if self._title_spacing in (None, ""):
-            self._title_spacing = 40
-        if self._zh_letter_spacing in (None, ""):
-            self._zh_letter_spacing = 0
-        if self._en_letter_spacing in (None, ""):
-            self._en_letter_spacing = 8
+        self._zh_font_preset = AUTO_FONT
+        self._en_font_preset = AUTO_FONT
+        self._zh_font_size = self._en_font_size = None
+        self._zh_font_offset = self._title_spacing = self._en_line_spacing = None
+        self._zh_letter_spacing = self._en_letter_spacing = None
+        self._title_scale = 1.0
+        self._blur_size = 50
+        self._color_ratio = 0.8
+        if not self._use_primary:
+            self._use_primary = "auto"
+        if self._resolution == "480p":
+            self._resolution = "720p"
+            self._resolution_config = None
+        if int(self._animation_duration) == 8 and int(self._animation_fps) == 24:
+            self._animation_duration = 12
+            self._animation_fps = 15
+        logger.info("封面风格已全部更新，字体排版改为跟随风格，可以在设置的「字体排版」页调整")
         return True
 
     def __get_font_presets(self) -> Tuple[List[Dict[str, str]], List[Dict[str, str]], Dict[str, Optional[str]], Dict[str, Optional[str]]]:
@@ -683,6 +620,8 @@ class MediaCoverGenerator(_PluginBase):
         for spec in self.__font_specs():
             suffix = "" if spec["cjk"] else "（仅英文）"
             items.append({"title": f"{spec['title']}{suffix}", "value": spec["value"]})
+            if spec["value"] == AUTO_FONT:
+                continue
             aliases = [*spec["aliases"], spec["value"].lower(), spec["title"].lower()]
             paths[spec["value"]] = self.__find_font_file(aliases, exts)
         return items, list(items), paths, dict(paths)
@@ -1123,18 +1062,22 @@ class MediaCoverGenerator(_PluginBase):
             "note": self._title_config_error,
         })
         _, _, zh_paths, en_paths = self.__get_font_presets()
-        zh_ready = self._zh_font_custom or zh_paths.get(self._zh_font_preset)
-        en_ready = self._en_font_custom or en_paths.get(self._en_font_preset)
+        spec = style_info(self.__current_index()).type
+        main_choice = self._zh_font_custom or self._zh_font_preset
+        sub_choice = self._en_font_custom or self._en_font_preset
+        zh_ready = self._zh_font_custom or zh_paths.get(spec.main_font if main_choice == AUTO_FONT else main_choice)
+        en_ready = self._en_font_custom or en_paths.get(spec.sub_font if sub_choice == AUTO_FONT else sub_choice)
         checks.append({
             "ok": True,
             "title": "字体已就绪" if zh_ready and en_ready else "字体将在首次生成时下载",
-            "note": f"主标题 {self._zh_font_custom or self._zh_font_preset}，副标题 {self._en_font_custom or self._en_font_preset}",
+            "note": f"主标题 {'跟随风格' if main_choice == AUTO_FONT else main_choice}，"
+                    f"副标题 {'跟随风格' if sub_choice == AUTO_FONT else sub_choice}",
         })
         has_ffmpeg = bool(shutil.which("ffmpeg"))
         checks.append({
             "ok": has_ffmpeg,
             "title": "ffmpeg 可用" if has_ffmpeg else "未找到 ffmpeg",
-            "note": "" if has_ffmpeg else "动态风格需要 ffmpeg，静态风格不受影响",
+            "note": "" if has_ffmpeg else "动图需要 ffmpeg，静态封面不受影响",
         })
         return checks
 
@@ -1747,12 +1690,8 @@ class MediaCoverGenerator(_PluginBase):
         custom_images = self.__check_custom_image(library_name)
         if custom_images:
             logger.info(f"媒体库 {service.name}：{library_name} 从自定义路径获取封面")
-            if self.__is_single_image_style():
-                image_path = random.choice(custom_images)
-            else:
-                self.__stage_custom_images(library_name, custom_images)
-                image_path = None
-            image_data = self.__generate_image_from_path(service.name, library_name, title, image_path, config_bg_color)
+            self.__stage_custom_images(library_name, custom_images)
+            image_data = self.__generate_cover(service.name, library_name, title, config_bg_color)
         else:
             image_data = self.__generate_from_server(service, library, title)
 
@@ -1815,27 +1754,54 @@ class MediaCoverGenerator(_PluginBase):
             logger.debug(f"检查字体字符集失败 {font_path}: {error}")
             return True
 
-    def __resolve_title_fonts(self, title) -> Tuple[str, str]:
-        """标题含中文而所选字体不支持时，换成能显示的字体，避免出现方框。"""
-        zh_font, en_font = str(self._zh_font_path), str(self._en_font_path)
+    def __title_fonts(self, title, spec: TypeSpec) -> Optional[Tuple[str, str]]:
+        """
+        确定这个标题实际使用的字体。没有指定字体时按风格的设计取用，只下载这个标题用得到的字体。
+        所选字体缺字时换成能显示的字体，避免出现方框。
+        """
         main_text, sub_text = title
-        # 粗书体的英文字形很细，纯英文的主标题用副标题字体更好看
-        if (self._zh_font_preset == DEFAULT_ZH_FONT and not self._zh_font_custom
-                and str(main_text or "").strip()
-                and not any(ord(char) >= 0x2E80 for char in str(main_text))):
-            zh_font = en_font
-        if not self.__font_supports_text(zh_font, main_text):
-            logger.warning(f"主标题字体不支持「{main_text}」，已改用副标题字体")
-            if self.__font_supports_text(en_font, main_text):
-                zh_font = en_font
-        if not self.__font_supports_text(en_font, sub_text):
-            if self.__font_supports_text(zh_font, sub_text):
-                logger.info(f"副标题字体不支持「{sub_text}」，已改用主标题字体")
-                en_font = zh_font
-        return zh_font, en_font
+        own_main = bool(self._zh_font_custom) or self._zh_font_preset != AUTO_FONT
+        own_sub = bool(self._en_font_custom) or self._en_font_preset != AUTO_FONT
+
+        def preset_font(preset):
+            path = self.__resolve_font("字体", preset, "", "style")
+            return str(path) if path else None
+
+        sub_font = (str(self._en_font_path) if self._en_font_path else None) if own_sub else preset_font(spec.sub_font)
+        if own_main:
+            main_font = str(self._zh_font_path) if self._zh_font_path else None
+            # 粗书体的英文字形很细，纯英文的主标题用副标题字体更好看
+            if (self._zh_font_preset == "pangmen" and not self._zh_font_custom and sub_font
+                    and str(main_text or "").strip() and not is_cjk_text(main_text)):
+                main_font = sub_font
+        else:
+            main_font = preset_font(spec.main_font if is_cjk_text(main_text) else spec.main_font_latin)
+        if not main_font or not sub_font:
+            return None
+
+        if not self.__font_supports_text(main_font, main_text):
+            logger.warning(f"主标题字体不支持「{main_text}」，已改用其他字体")
+            main_font = next((font for font in (sub_font, preset_font(spec.main_font))
+                              if font and self.__font_supports_text(font, main_text)), main_font)
+        if not self.__font_supports_text(sub_font, sub_text):
+            logger.info(f"副标题字体不支持「{sub_text}」，已改用其他字体")
+            sub_font = next((font for font in (main_font, preset_font(spec.main_font))
+                             if font and self.__font_supports_text(font, sub_text)), sub_font)
+        return main_font, sub_font
+
+    @staticmethod
+    def __optional_number(value) -> Optional[float]:
+        """设置项留空时返回 None，表示跟随风格。0 是合法取值。"""
+        if value is None or value == "":
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            logger.warning(f"配置值非法 ({value})，已改为跟随风格")
+            return None
 
     @memory_efficient_operation
-    def __generate_image_from_path(self, server, library_name, title, image_path=None, config_bg_color=None):
+    def __generate_cover(self, server, library_name, title, config_bg_color=None):
         logger.info(f"媒体库 {server}：{library_name} 正在生成封面图 ...")
 
         # 执行健康检查
@@ -1844,92 +1810,58 @@ class MediaCoverGenerator(_PluginBase):
             return False
 
         style = self.__current_style()
-        is_animated = style in ANIMATED_STYLES
-        base_zh_font_size = self.__to_number(self._zh_font_size, DEFAULT_ZH_FONT_SIZE, float) or DEFAULT_ZH_FONT_SIZE
-        base_en_font_size = self.__to_number(self._en_font_size, DEFAULT_EN_FONT_SIZE, float) or DEFAULT_EN_FONT_SIZE
-        title_scale = self.__to_number(self._title_scale, 1.0, float)
-        if title_scale <= 0:
-            title_scale = 1.0
-        if is_animated:
-            # 动态风格按自身画布换算，这里传 1080p 基准值
-            zh_font_size = base_zh_font_size * title_scale
-            en_font_size = base_en_font_size * title_scale
-        else:
-            zh_font_size = self._resolution_config.get_font_size(base_zh_font_size) * title_scale
-            en_font_size = self._resolution_config.get_font_size(base_en_font_size) * title_scale
+        animated = style in ANIMATED_STYLES
+        index = self.__current_index()
+        info = style_info(index)
 
-        # 0 是合法取值，只有未填写时才使用默认值
-        blur_size = 50 if self._blur_size is None else self._blur_size
-        color_ratio = 0.8 if self._color_ratio is None else self._color_ratio
-
-        # 检查字体路径是否有效
-        if not self._zh_font_path or not self._en_font_path:
+        fonts = self.__title_fonts(title, info.type)
+        if not fonts:
+            self._failure_reason = "字体下载失败，请检查网络或在设置里指定字体"
             logger.error("字体路径未设置或无效，无法生成封面")
             return False
 
-        # 验证字体文件是否存在
-        if not validate_font_file(Path(self._zh_font_path)):
-            logger.error(f"主标题字体文件无效: {self._zh_font_path}")
-            return False
-
-        if not validate_font_file(Path(self._en_font_path)):
-            logger.error(f"副标题字体文件无效: {self._en_font_path}")
-            return False
-
-        font_path = self.__resolve_title_fonts(title)
-        font_size = (float(zh_font_size), float(en_font_size))
-
-        zh_font_offset = self.__to_number(self._zh_font_offset, 0.0, float)
-        title_spacing = self.__to_number(self._title_spacing, DEFAULT_TITLE_SPACING, float) * title_scale
-        en_line_spacing = self.__to_number(self._en_line_spacing, 40.0, float) * title_scale
-        zh_letter_spacing = max(0.0, self.__to_number(self._zh_letter_spacing, DEFAULT_ZH_LETTER_SPACING, float))
-        en_letter_spacing = max(0.0, self.__to_number(self._en_letter_spacing, DEFAULT_EN_LETTER_SPACING, float))
-        font_offset = (zh_font_offset, title_spacing, en_line_spacing,
-                       zh_letter_spacing / 100.0, en_letter_spacing / 100.0)
-
-        logger.info(f"当前分辨率配置: {self._resolution_config}")
-
-        common = {
-            "font_size": font_size,
-            "font_offset": font_offset,
-            "blur_size": blur_size,
-            "color_ratio": color_ratio,
-            "resolution_config": self._resolution_config,
-            "bg_color_config": {
-                'mode': self._bg_color_mode,
-                'custom_color': self._custom_bg_color,
-                'config_color': config_bg_color,
-            },
-        }
-
-        if style in SINGLE_IMAGE_STYLES:
-            return SINGLE_IMAGE_STYLES[style](image_path, title, font_path, **common)
+        letter_percent = lambda value: None if value is None else value / 100.0  # noqa: E731
+        spec = apply_overrides(
+            info.type,
+            main_size=self.__optional_number(self._zh_font_size),
+            sub_size=self.__optional_number(self._en_font_size),
+            scale=self.__to_number(self._title_scale, 1.0, float),
+            offset_y=self.__optional_number(self._zh_font_offset),
+            spacing=self.__optional_number(self._title_spacing),
+            sub_line_gap=self.__optional_number(self._en_line_spacing),
+            main_tracking=letter_percent(self.__optional_number(self._zh_letter_spacing)),
+            sub_tracking=letter_percent(self.__optional_number(self._en_letter_spacing)),
+        )
 
         library_dir = self.__library_work_dir(library_name)
-        required = 9 if style in NINE_IMAGE_STYLES else self.__get_animated_2_required_items()
+        required = self.__get_required_items()
         if not self.prepare_library_images(library_dir, required_items=required):
             logger.warning(f"素材目录准备失败 {library_dir}")
+            self._failure_reason = self._failure_reason or "没有可用的素材图片"
             return False
 
-        common["is_blur"] = self._multi_1_blur
-        if style in MULTI_IMAGE_STYLES:
-            return MULTI_IMAGE_STYLES[style](library_dir, title, font_path, **common)
+        if animated:
+            width, height = (int(value) for value in self._animation_resolution.split("x"))
+        else:
+            width, height = int(self._resolution_config.width), int(self._resolution_config.height)
+        logger.info(f"当前风格 {info.name}，画布 {width}x{height}")
 
-        common.update(
+        return create_cover(
+            index, animated, library_dir, title, fonts, spec, (width, height),
+            image_count=required,
+            # 0 是合法取值，只有未填写时才使用默认值
+            blur_size=50 if self._blur_size is None else self._blur_size,
+            color_ratio=0.8 if self._color_ratio is None else self._color_ratio,
+            bg_color_config={
+                "mode": self._bg_color_mode,
+                "custom_color": self._custom_bg_color,
+                "config_color": config_bg_color,
+            },
             animation_duration=self._animation_duration,
             animation_fps=self._animation_fps,
-            animation_format=self._animation_format,
-            animation_resolution='320x180',
             animation_reduce_colors=self._animation_reduce_colors,
             stop_event=self._event,
         )
-        if style == "animated_3":
-            common["animation_scroll"] = self._animation_scroll
-        else:
-            common["image_count"] = required if style == "animated_7" else self.__get_animated_2_required_items()
-        if style == "animated_1":
-            common["departure_type"] = self._animated_2_departure_type
-        return ANIMATED_STYLES[style](library_dir, title, font_path, **common)
 
     def __generate_from_server(self, service, library, title):
 
@@ -1959,20 +1891,8 @@ class MediaCoverGenerator(_PluginBase):
         elif library_type == "music":
             include_types = 'MusicAlbum,Audio'
         else:
-            # 基础类型映射
-            if self.__is_single_image_style():
-                include_types = {
-                    "PremiereDate": "Movie,Series",
-                    "DateCreated": "Movie,Episode",
-                    "Random": "Movie,Series"
-                }.get(self._sort_by, "Movie,Series")
-            else:
-                # 对于多图样式，如果按最新入库排序（DateCreated），也要包含 Episode 以展示剧集的最新动态
-                if self._sort_by == "DateCreated":
-                    include_types = "Movie,Episode"
-                else:
-                    # 其他排序方式默认使用 Series 获取海报
-                    include_types = "Movie,Series"
+            # 按最新入库排序时也要包含 Episode，展示剧集的最新动态；其他排序取 Series 的海报
+            include_types = "Movie,Episode" if self._sort_by == "DateCreated" else "Movie,Series"
             logger.debug(f"媒体库筛选类型: {include_types}, 排序方式: {self._sort_by}")
         self._seen_keys = set()
         for attempt in range(max_attempts):
@@ -2000,10 +1920,7 @@ class MediaCoverGenerator(_PluginBase):
         # 使用获取到的有效项目更新封面
         if len(items) > 0:
             logger.info(f"媒体库 {service.name}：{library['Name']} 找到 {len(items)} 个有效项目")
-            if self.__is_single_image_style():
-                return self.__update_single_image(service, library, title, items[0])
-            else:
-                return self.__update_grid_image(service, library, title, items[:required_items])
+            return self.__update_grid_image(service, library, title, items[:required_items])
         else:
             self._failure_reason = "媒体库里没有可用的图片"
             logger.warning(f"媒体库 {service.name}：{library['Name']} 无法找到有效的图片项目 (筛选类型: {include_types})")
@@ -2036,8 +1953,6 @@ class MediaCoverGenerator(_PluginBase):
             self._failure_reason = "没有找到节目或频道图片，可以使用自定义图片目录"
             logger.warning(f"媒体库 {service.name}：{library['Name']} {self._failure_reason}")
             return False
-        if self.__is_single_image_style():
-            return self.__update_single_image(service, library, title, valid_items[0])
         return self.__update_grid_image(service, library, title, valid_items[:required_items])
 
     def __handle_boxset_library(self, service, library, title):
@@ -2079,10 +1994,7 @@ class MediaCoverGenerator(_PluginBase):
 
         # 使用获取到的有效项目更新封面
         if len(valid_items) > 0:
-            if self.__is_single_image_style():
-                return self.__update_single_image(service, library, title, valid_items[0])
-            else:
-                return self.__update_grid_image(service, library, title, valid_items[:required_items])
+            return self.__update_grid_image(service, library, title, valid_items[:required_items])
         else:
             logger.warning(f"媒体库 {service.name}：{library['Name']} 无法找到有效的图片项目")
             return False
@@ -2128,10 +2040,7 @@ class MediaCoverGenerator(_PluginBase):
 
         # 使用获取到的有效项目更新封面
         if len(valid_items) > 0:
-            if self.__is_single_image_style():
-                return self.__update_single_image(service, library, title, valid_items[0])
-            else:
-                return self.__update_grid_image(service, library, title, valid_items[:required_items])
+            return self.__update_grid_image(service, library, title, valid_items[:required_items])
         else:
             logger.warning(f"无法为播放列表 {service.name}：{library['Name']} 找到有效的图片项目")
             return False
@@ -2238,41 +2147,8 @@ class MediaCoverGenerator(_PluginBase):
 
 
 
-    def __update_single_image(self, service, library, title, item):
-        """更新单图封面"""
-        logger.info(f"媒体库 {service.name}：{library['Name']} 从媒体项获取图片")
-        updated_item_id = ''
-        image_url = self.__get_image_url(item)
-        if not image_url:
-            return False
-
-        image_path = self.__download_image(service, image_url, library['Name'], count=1)
-        if not image_path:
-            return False
-        updated_item_id = self.__get_item_id(item)
-        # 从配置获取背景颜色
-        title_result = self.__get_title_from_config(library['Name'])
-        config_bg_color = title_result[2] if len(title_result) == 3 else None
-        image_data = self.__generate_image_from_path(service.name, library['Name'], title, image_path, config_bg_color)
-
-        if not image_data:
-            return False
-        if service.type == 'emby':
-            library_id = library.get("Id")
-        else:
-            library_id = library.get("ItemId")
-        # 更新id
-        if updated_item_id:
-            self.update_cover_history(
-                server=service.name,
-                library_id=library_id,
-                item_id=updated_item_id
-            )
-
-        return image_data
-
     def __update_grid_image(self, service, library, title, items):
-        """更新九宫格封面"""
+        """下载素材并生成封面"""
         logger.info(f"媒体库 {service.name}：{library['Name']} 从媒体项获取图片")
 
         image_paths = []
@@ -2295,11 +2171,10 @@ class MediaCoverGenerator(_PluginBase):
         if len(image_paths) < 1:
             return False
 
-        # 生成九宫格图片
-        # 从配置获取背景颜色
+        # 从配置获取点缀色
         title_result = self.__get_title_from_config(library['Name'])
         config_bg_color = title_result[2] if len(title_result) == 3 else None
-        image_data = self.__generate_image_from_path(service.name, library['Name'], title, None, config_bg_color)
+        image_data = self.__generate_cover(service.name, library['Name'], title, config_bg_color)
         if not image_data:
             return False
         if service.type == 'emby':
@@ -2495,9 +2370,9 @@ class MediaCoverGenerator(_PluginBase):
                 own_backdrop,
             ]
         elif item_type == "Episode":
-            preferred = [series_primary, parent_backdrop] if self._use_primary else [parent_backdrop, series_primary]
+            preferred = [series_primary, parent_backdrop] if self.__prefer_primary() else [parent_backdrop, series_primary]
             order = [*preferred, own_primary, own_backdrop]
-        elif self._use_primary:
+        elif self.__prefer_primary():
             order = [own_primary, parent_backdrop, own_backdrop]
         else:
             order = [parent_backdrop, own_backdrop, own_primary]
@@ -2841,173 +2716,80 @@ class MediaCoverGenerator(_PluginBase):
         logger.info(f"信息: {library_dir} 已成功补充所有缺失的图片，现在包含完整的 1-{required_items}.jpg")
         return True
 
+    @staticmethod
+    def __detect_font_source(value: str) -> Optional[str]:
+        value = (value or "").strip()
+        if not value:
+            return None
+        if re.match(r'^https?://[^\s]+$', value, re.IGNORECASE):
+            return 'url'
+        if os.path.isabs(value) or value.startswith(('.', '~', '/')) or re.search(r'[\\/]', value):
+            return 'path'
+        return None
+
     def __get_fonts(self):
-        def detect_string_type(s: str):
-            if not s:
-                return None
-            s = s.strip()
+        """提前准备用户指定的字体。跟随风格的字体在生成时按标题内容取用，用不到的不会下载。"""
+        Path(self._font_path).mkdir(parents=True, exist_ok=True)
+        self._zh_font_path = self._en_font_path = ""
+        if self._zh_font_custom or self._zh_font_preset != AUTO_FONT:
+            self._zh_font_path = self.__resolve_font("主标题", self._zh_font_preset, self._zh_font_custom, "zh") or ""
+        if self._en_font_custom or self._en_font_preset != AUTO_FONT:
+            self._en_font_path = self.__resolve_font("副标题", self._en_font_preset, self._en_font_custom, "en") or ""
 
-            # 判断是否是 HTTP(S) 链接
-            if re.match(r'^https?://[^\s]+$', s, re.IGNORECASE):
-                return 'url'
+    def __resolve_font(self, lang: str, preset: str, custom: str, slot: str) -> Optional[Path]:
+        """取得一个字体文件：优先本地，其次下载，下载失败时退回备用字体。"""
+        font_dir = Path(self._font_path)
+        font_dir.mkdir(parents=True, exist_ok=True)
+        source = self.__detect_font_source(custom)
+        if source == 'path':
+            local = Path(custom.strip())
+            if validate_font_file(local):
+                logger.debug(f"{lang}字体: 使用本地指定路径 {local}")
+                return local
+            logger.warning(f"{lang}字体: 本地指定路径 {local} 无效或文件不存在")
 
-            # 判断是否像路径（包含 / 或 \，或以 ~、.、/ 开头）
-            if os.path.isabs(s) or s.startswith(('.', '~', '/')) or re.search(r'[\\/]', s):
-                return 'path'
-
+        if source == 'url':
+            url = custom.strip()
+            base_name = f"{slot}_custom"
+        elif preset in FONT_FILES:
+            url = FONT_BASE_URL + FONT_FILES[preset]
+            base_name = preset
+            _, _, paths, _ = self.__get_font_presets()
+            local = paths.get(preset)
+            if local and validate_font_file(Path(local)):
+                logger.debug(f"{lang}字体: 使用已有字体 {local}")
+                return Path(local)
+        else:
             return None
 
-        font_dir_path = self._font_path
-        Path(font_dir_path).mkdir(parents=True, exist_ok=True)
+        target = font_dir / f"{base_name}{self.get_file_extension_from_url(url, fallback_ext='.ttf')}"
+        hash_file = font_dir / f"{base_name}_url.hash"
+        url_hash = hashlib.md5(url.encode()).hexdigest()
+        try:
+            changed = not hash_file.exists() or hash_file.read_text() != url_hash
+        except Exception as error:
+            logger.warning(f"读取哈希文件失败 {hash_file}: {error}。将重新下载。")
+            changed = True
+        is_valid = validate_font_file(target)
+        if not changed and is_valid:
+            return target
 
-        _, _, zh_preset_paths, en_preset_paths = self.__get_font_presets()
+        logger.info(f"{lang}字体需要下载: {url}")
+        if self.download_font_safely_with_timeout(url, target):
+            try:
+                hash_file.write_text(url_hash)
+            except Exception as error:
+                logger.error(f"写入哈希文件失败 {hash_file}: {error}")
+            return target
 
-        if not self._zh_font_preset:
-            self._zh_font_preset = DEFAULT_ZH_FONT
-
-        default_font_url = {
-            "pangmen": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/pangmen.ttf",
-            "CaveatBrush": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/caveatbrush.ttf",
-            "chaohei": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/chaohei.ttf",
-            "yasong": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/yasong.ttf",
-            "EmblemaOne": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/EmblemaOne.woff2",
-            "Melete": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/Melete.otf",
-            "Phosphate": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/phosphate.ttf",
-            "JosefinSans": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/josefinsans.woff2",
-            "LilitaOne": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/lilitaone.woff2",
-        }
-        default_zh_url = default_font_url.get(self._zh_font_preset, default_font_url[DEFAULT_ZH_FONT])
-
-        if not self._en_font_preset:
-            self._en_font_preset = DEFAULT_EN_FONT
-
-        default_en_url = default_font_url.get(self._en_font_preset, default_font_url[DEFAULT_EN_FONT])
-
-        log_prefix = "默认"
-        zh_custom_type = detect_string_type(self._zh_font_custom)
-        en_custom_type = detect_string_type(self._en_font_custom)
-        current_zh_font_url = self._zh_font_custom if zh_custom_type == 'url' else default_zh_url
-        current_en_font_url = self._en_font_custom if en_custom_type == 'url' else default_en_url
-        zh_local_path_config = self._zh_font_custom if zh_custom_type == 'path' else zh_preset_paths.get(self._zh_font_preset)
-        en_local_path_config = self._en_font_custom if en_custom_type == 'path' else en_preset_paths.get(self._en_font_preset)
-
-        downloaded_zh_font_base = f"{self._zh_font_preset}_custom" if zh_custom_type == 'url' else self._zh_font_preset
-        downloaded_en_font_base = f"{self._en_font_preset}_custom" if en_custom_type == 'url' else self._en_font_preset
-        hash_zh_file_name = f"{downloaded_zh_font_base}_url.hash"
-        hash_en_file_name = f"{downloaded_en_font_base}_url.hash"
-        final_zh_font_path_attr = "_zh_font_path"
-        final_en_font_path_attr = "_en_font_path"
-
-        logger.info(f"当前主标题字体URL: {current_zh_font_url} (本地路径: {zh_local_path_config})")
-
-        active_fonts_to_process = [
-            {
-                "lang": "主标题",
-                "url": current_zh_font_url,
-                "local_path_config": zh_local_path_config,
-                "download_base_name": downloaded_zh_font_base,
-                "hash_file_name": hash_zh_file_name,
-                "final_attr_name": final_zh_font_path_attr,
-                "fallback_ext": ".ttf",
-                "preset_path": zh_preset_paths.get(self._zh_font_preset),
-                "fallback_preset": None if zh_custom_type else FONT_FALLBACKS.get(self._zh_font_preset),
-            },
-            {
-                "lang": "副标题",
-                "url": current_en_font_url,
-                "local_path_config": en_local_path_config,
-                "download_base_name": downloaded_en_font_base,
-                "hash_file_name": hash_en_file_name,
-                "final_attr_name": final_en_font_path_attr,
-                "fallback_ext": ".ttf",
-                "preset_path": en_preset_paths.get(self._en_font_preset),
-                "fallback_preset": None if en_custom_type else FONT_FALLBACKS.get(self._en_font_preset),
-            }
-        ]
-
-
-        for font_info in active_fonts_to_process:
-            lang = font_info["lang"]
-            url = font_info["url"]
-            local_path_cfg = font_info["local_path_config"]
-            download_base = font_info["download_base_name"]
-            hash_filename = font_info["hash_file_name"]
-            final_attr = font_info["final_attr_name"]
-            fallback_ext = font_info["fallback_ext"]
-
-
-            extension = self.get_file_extension_from_url(url, fallback_ext=fallback_ext)
-            downloaded_font_file_path = Path(font_dir_path) / f"{download_base}{extension}"
-            hash_file_path = Path(font_dir_path) / hash_filename
-
-            current_font_path = None
-            using_local_font = False
-            if local_path_cfg:
-                local_font_p = Path(local_path_cfg)
-                if validate_font_file(local_font_p):
-                    logger.info(f"{lang}字体: 使用本地指定路径 {local_font_p}")
-                    current_font_path = local_font_p
-                    using_local_font = True
-                else:
-                    logger.warning(f"{log_prefix}{lang}字体: 本地指定路径 {local_font_p} 无效或文件不存在。")
-
-            if not using_local_font:
-                url_hash = hashlib.md5(url.encode()).hexdigest()
-                url_has_changed = True
-                if hash_file_path.exists():
-                    try:
-                        if hash_file_path.read_text() == url_hash:
-                            url_has_changed = False
-                    except Exception as e:
-                        logger.warning(f"读取哈希文件失败 {hash_file_path}: {e}。将重新下载。")
-
-                font_file_is_valid = validate_font_file(downloaded_font_file_path)
-
-                if url_has_changed or not font_file_is_valid:
-                    if url_has_changed:
-                        logger.info(f"{log_prefix}{lang}字体URL已更改或首次下载。")
-                    if not font_file_is_valid and downloaded_font_file_path.exists():
-                         logger.info(f"{log_prefix}{lang}字体文件 {downloaded_font_file_path} 无效或损坏，将重新下载。")
-                    elif not downloaded_font_file_path.exists():
-                         logger.info(f"{log_prefix}{lang}字体文件 {downloaded_font_file_path} 不存在，将下载。")
-
-                    # 使用安全的字体下载方法
-                    if self.download_font_safely_with_timeout(url, downloaded_font_file_path):
-                        try:
-                            hash_file_path.write_text(url_hash)
-                        except Exception as e:
-                            logger.error(f"写入哈希文件失败 {hash_file_path}: {e}")
-                        current_font_path = downloaded_font_file_path
-                    else:
-                        logger.critical(f"无法获取必要的{log_prefix}{lang}支持字体: {url}")
-                        if font_file_is_valid :
-                             logger.warning(f"下载失败，但找到一个已存在的（可能旧版本）有效字体文件 {downloaded_font_file_path}，将尝试使用。")
-                             current_font_path = downloaded_font_file_path
-                        elif font_info.get("preset_path") and validate_font_file(Path(font_info["preset_path"])):
-                             logger.warning(f"下载失败，改用本地预设字体 {font_info['preset_path']}")
-                             current_font_path = Path(font_info["preset_path"])
-                        else:
-                             current_font_path = None
-                else:
-                    logger.info(f"{log_prefix}{lang}字体: 使用已下载/缓存的有效字体 {downloaded_font_file_path}")
-                    current_font_path = downloaded_font_file_path
-
-            if not current_font_path and font_info.get("fallback_preset"):
-                current_font_path = self.__fallback_font(font_info["fallback_preset"], default_font_url[font_info["fallback_preset"]])
-
-            # 安全设置字体路径
-            if current_font_path and current_font_path.exists():
-                setattr(self, final_attr, current_font_path)
-                status_log = '(本地路径)' if using_local_font else '(已下载/缓存)'
-                logger.info(f"{log_prefix}{lang}字体最终路径: {getattr(self,final_attr)} {status_log}")
-            else:
-                # 字体获取失败，设置为None并记录错误
-                setattr(self, final_attr, None)
-                logger.error(f"{log_prefix}{lang}字体获取失败，这可能导致封面生成失败")
-
-        # 检查是否所有必要的字体都已获取
-        if not self._zh_font_path or not self._en_font_path:
-            logger.critical("关键字体文件缺失，插件可能无法正常工作。请检查网络连接或手动下载字体文件。")
+        logger.critical(f"无法获取{lang}字体: {url}")
+        if is_valid:
+            logger.warning(f"下载失败，继续使用已有的字体文件 {target}")
+            return target
+        fallback = FONT_FALLBACKS.get(preset) if source != 'url' else None
+        if fallback:
+            return self.__fallback_font(fallback, FONT_BASE_URL + FONT_FILES[fallback])
+        return None
 
     def __fallback_font(self, preset: str, url: str) -> Optional[Path]:
         """默认字体下载失败时改用备用字体，优先用本地已有的文件。"""
@@ -3067,21 +2849,6 @@ class MediaCoverGenerator(_PluginBase):
                     self._resolution_config = ResolutionConfig((self._custom_width, self._custom_height))
                 else:
                     self._resolution_config = ResolutionConfig(self._resolution)
-
-            # 检查字体文件
-            if not self._zh_font_path or not self._en_font_path:
-                logger.warning("字体文件缺失，尝试重新获取")
-                self.__get_fonts()
-
-
-            # 验证字体文件有效性
-            if self._zh_font_path and not validate_font_file(Path(self._zh_font_path)):
-                logger.warning("主标题字体文件无效，尝试重新下载")
-                return False
-
-            if self._en_font_path and not validate_font_file(Path(self._en_font_path)):
-                logger.warning("副标题字体文件无效，尝试重新下载")
-                return False
 
             logger.info("插件健康检查通过")
             return True
