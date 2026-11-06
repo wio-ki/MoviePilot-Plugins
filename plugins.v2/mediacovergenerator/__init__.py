@@ -74,12 +74,19 @@ NUMBERED_IMAGE_PATTERN = re.compile(r"^[1-9][0-9]*\.jpg$", re.IGNORECASE)
 AUTO_FONT = "auto"
 FONT_BASE_URL = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/"
 FONT_FILES = {
+    "glowbold": "glowbold.otf",
+    "glowheavy": "glowheavy.otf",
+    "glowcond": "glowcond.otf",
+    "serifblack": "serifblack.otf",
     "notoblack": "notoblack.otf",
     "notolight": "notolight.otf",
     "smiley": "smiley.ttf",
     "pangmen": "pangmen.ttf",
-    "chaohei": "chaohei.ttf",
-    "yasong": "yasong.ttf",
+    "interbold": "interbold.ttf",
+    "interblack": "interblack.ttf",
+    "intersemi": "intersemi.ttf",
+    "anton": "anton.ttf",
+    "dmserif": "dmserif.ttf",
     "poppinsxb": "poppinsxb.ttf",
     "poppinssemi": "poppinssemi.ttf",
     "kronaone": "kronaone.ttf",
@@ -87,15 +94,16 @@ FONT_FILES = {
     "CaveatBrush": "caveatbrush.ttf",
     "EmblemaOne": "EmblemaOne.woff2",
     "Melete": "Melete.otf",
-    "Phosphate": "phosphate.ttf",
     "JosefinSans": "josefinsans.woff2",
     "LilitaOne": "lilitaone.woff2",
 }
-# 字体下载失败时退回这些字体，不让封面因为缺字体而生成失败
+# 字体下载失败时退回这些体积较小的字体，不让封面因为缺字体而生成失败
 FONT_FALLBACKS = {
-    "notoblack": "chaohei", "notolight": "chaohei", "smiley": "chaohei", "pangmen": "chaohei",
-    "poppinsxb": "JosefinSans", "poppinssemi": "JosefinSans", "kronaone": "JosefinSans", "michroma": "JosefinSans",
-    "CaveatBrush": "JosefinSans",
+    "glowbold": "smiley", "glowheavy": "smiley", "glowcond": "smiley", "serifblack": "smiley",
+    "notoblack": "smiley", "notolight": "smiley", "pangmen": "smiley", "smiley": "notoblack",
+    "interbold": "JosefinSans", "interblack": "JosefinSans", "intersemi": "JosefinSans",
+    "anton": "JosefinSans", "dmserif": "JosefinSans", "poppinsxb": "JosefinSans", "poppinssemi": "JosefinSans",
+    "kronaone": "JosefinSans", "michroma": "JosefinSans", "CaveatBrush": "JosefinSans",
 }
 ANIMATION_RESOLUTIONS = ("320x180", "400x225", "480x270")
 DEFAULT_ANIMATION_RESOLUTION = "400x225"
@@ -112,7 +120,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标（前端按地址缓存图标，换图时要换文件名）
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/animated-cover.png"
     # 插件版本
-    plugin_version = "0.14.0"
+    plugin_version = "0.15.0"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -345,6 +353,10 @@ class MediaCoverGenerator(_PluginBase):
         if self._en_font_preset not in valid_fonts:
             self._en_font_preset = AUTO_FONT
         typography_migrated = bool(config) and not config.get("covers_v3") and self.__migrate_redesign(config)
+        if config and not config.get("covers_v5"):
+            # 1.5.0 再次重做了全部风格和字体
+            typography_migrated = self.__reset_typography()
+            logger.info("封面风格和字体已全部更新，字体排版改为跟随风格，可以在设置的「字体排版」页调整")
 
         self._title_config_error = ""
         if self._title_config:
@@ -527,6 +539,7 @@ class MediaCoverGenerator(_PluginBase):
             "zh_letter_spacing": self._zh_letter_spacing,
             "en_letter_spacing": self._en_letter_spacing,
             "covers_v3": True,
+            "covers_v5": True,
             "title_scale": self._title_scale,
             "resolution": self._resolution,
             "animation_duration": self._animation_duration,
@@ -594,12 +607,19 @@ class MediaCoverGenerator(_PluginBase):
     def __font_specs() -> List[Dict[str, Any]]:
         return [
             {"title": "跟随风格", "value": AUTO_FONT, "cjk": True, "aliases": []},
+            {"title": "未来荧黑 Bold", "value": "glowbold", "cjk": True, "aliases": ["glowbold"]},
+            {"title": "未来荧黑 Heavy", "value": "glowheavy", "cjk": True, "aliases": ["glowheavy"]},
+            {"title": "未来荧黑长体 Heavy", "value": "glowcond", "cjk": True, "aliases": ["glowcond"]},
+            {"title": "思源宋体 Black", "value": "serifblack", "cjk": True, "aliases": ["serifblack"]},
             {"title": "思源黑体 Black", "value": "notoblack", "cjk": True, "aliases": ["notoblack"]},
             {"title": "思源黑体 Light", "value": "notolight", "cjk": True, "aliases": ["notolight"]},
             {"title": "得意黑", "value": "smiley", "cjk": True, "aliases": ["smiley", "得意黑"]},
             {"title": "庞门正道粗书体", "value": "pangmen", "cjk": True, "aliases": ["pangmen", "庞门正道粗书体"]},
-            {"title": "潮黑", "value": "chaohei", "cjk": True, "aliases": ["chaohei", "wendao", "潮黑", "chao_hei"]},
-            {"title": "粗雅宋", "value": "yasong", "cjk": True, "aliases": ["yasong", "粗雅宋", "multi_1_zh", "ya_song"]},
+            {"title": "Inter Bold", "value": "interbold", "cjk": False, "aliases": ["interbold"]},
+            {"title": "Inter Black", "value": "interblack", "cjk": False, "aliases": ["interblack"]},
+            {"title": "Inter SemiBold", "value": "intersemi", "cjk": False, "aliases": ["intersemi"]},
+            {"title": "Anton", "value": "anton", "cjk": False, "aliases": ["anton"]},
+            {"title": "DM Serif Display", "value": "dmserif", "cjk": False, "aliases": ["dmserif"]},
             {"title": "Poppins ExtraBold", "value": "poppinsxb", "cjk": False, "aliases": ["poppinsxb"]},
             {"title": "Poppins SemiBold", "value": "poppinssemi", "cjk": False, "aliases": ["poppinssemi"]},
             {"title": "Krona One", "value": "kronaone", "cjk": False, "aliases": ["kronaone", "krona_one"]},
@@ -607,15 +627,14 @@ class MediaCoverGenerator(_PluginBase):
             {"title": "CaveatBrush", "value": "CaveatBrush", "cjk": False, "aliases": ["caveatbrush", "caveat_brush"]},
             {"title": "EmblemaOne", "value": "EmblemaOne", "cjk": False, "aliases": ["emblemaone", "emblema_one"]},
             {"title": "Melete", "value": "Melete", "cjk": False, "aliases": ["melete", "multi_1_en"]},
-            {"title": "Phosphate", "value": "Phosphate", "cjk": False, "aliases": ["phosphate", "phosphat"]},
             {"title": "JosefinSans", "value": "JosefinSans", "cjk": False, "aliases": ["josefinsans", "josefin_sans"]},
             {"title": "LilitaOne", "value": "LilitaOne", "cjk": False, "aliases": ["lilitaone", "lilita_one"]},
         ]
 
-    def __migrate_redesign(self, config: dict) -> bool:
+    def __reset_typography(self) -> bool:
         """
-        1.3.0 重做了全部风格，每款风格都有自己的字体和字号。旧的字号、字距是给旧构图调的，升级时清空，
-        跟随新风格；用户自己提供的字体链接或路径保留。动图的旧默认值也换成适合 GIF 的新默认值。
+        风格重做后，旧的字体选择、字号和字距是给旧构图调的，升级时清空，跟随新风格。
+        用户自己提供的字体链接或路径保留。
         """
         self._zh_font_preset = AUTO_FONT
         self._en_font_preset = AUTO_FONT
@@ -623,6 +642,13 @@ class MediaCoverGenerator(_PluginBase):
         self._zh_font_offset = self._title_spacing = self._en_line_spacing = None
         self._zh_letter_spacing = self._en_letter_spacing = None
         self._title_scale = 1.0
+        return True
+
+    def __migrate_redesign(self, config: dict) -> bool:
+        """
+        从 1.3.0 之前升级：字体排版清空，动图的旧默认值换成适合 GIF 的新默认值。
+        """
+        self.__reset_typography()
         self._blur_size = 50
         self._color_ratio = 0.8
         if not self._use_primary:

@@ -13,6 +13,7 @@ SUPERSAMPLE = 2
 MAIN_MIN_SCALE = 0.56
 # 主标题字数越少，字距越开：两个字的标题撑得起更宽的字距
 WIDE_TRACKING_BY_LENGTH = {1: 0.0, 2: 1.5, 3: 1.15}
+_GLYPH_SPANS = {}
 
 
 def load_font(path, size):
@@ -179,11 +180,23 @@ class TitleLayout:
         return box[1], box[3]
 
     @staticmethod
-    def _bearings(font, line):
+    def _glyph_span(font, char):
+        """单字笔画的左右范围。getbbox 的横向范围是步进宽度，不含字侧留白，只有画出来才量得准。"""
+        key = (font.path, font.size, char)
+        if key not in _GLYPH_SPANS:
+            size = int(font.size)
+            canvas = Image.new("L", (size * 3, size * 3), 0)
+            ImageDraw.Draw(canvas).text((size, size * 2), char, font=font, fill=255, anchor="ls")
+            box = canvas.getbbox()
+            _GLYPH_SPANS[key] = (box[0] - size, box[2] - size) if box else (0, font.getlength(char))
+        return _GLYPH_SPANS[key]
+
+    @classmethod
+    def _bearings(cls, font, line):
         """首字左侧和末字右侧的空白，用于按笔画对齐。"""
-        left = font.getbbox(line[0], anchor="ls")[0]
+        left = cls._glyph_span(font, line[0])[0]
         last = line[-1]
-        right = font.getlength(last) - font.getbbox(last, anchor="ls")[2]
+        right = font.getlength(last) - cls._glyph_span(font, last)[1]
         return left, right
 
     def _line_width(self, font, line, tracking):
