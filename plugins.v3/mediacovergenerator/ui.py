@@ -824,15 +824,15 @@ def _motion_tab() -> List[dict]:
     return [
         div(
             "mcg-notice", icon("mdi-information-outline"),
-            div(None, text="动图输出 GIF，Hills、小幻影视、yamby 等客户端都按图片处理。首帧就是完整封面，只显示静态图的客户端也能看到成品。需要容器内有 ffmpeg。"),
+            div(None, text="动图输出 GIF。客户端请求的宽度小于动图宽度时，Emby 会把它压成静态图，所以尺寸越小越容易动起来。首帧就是完整封面，只显示静态图的客户端也能看到成品。需要容器内有 ffmpeg。"),
         ),
         _section(
             "mdi-play-box-multiple-outline", "GIF 动图", "只有输出类型选择「GIF 动图」时才生效。画面大部分时间静止、只在转场时运动，一张通常 1 到 4 MB",
             _row(
                 _col(_select("animation_resolution", "尺寸", [
-                    {"title": "480×270（推荐）", "value": "480x270"},
-                    {"title": "400×225", "value": "400x225"},
-                    {"title": "320×180（体积最小）", "value": "320x180"},
+                    {"title": "480×270（最清晰，部分客户端会变静态）", "value": "480x270"},
+                    {"title": "400×225（推荐）", "value": "400x225"},
+                    {"title": "320×180（体积最小，兼容最好）", "value": "320x180"},
                 ], icon_name="mdi-aspect-ratio"), 4),
                 _col(_select("animation_reduce_colors", "颜色数量", [
                     {"title": "256 色（画质最好）", "value": "off"},
@@ -910,7 +910,7 @@ def default_form_model() -> Dict[str, Any]:
         "custom_bg_color": "",
         "animation_duration": 12,
         "animation_fps": 15,
-        "animation_resolution": "480x270",
+        "animation_resolution": "400x225",
         "animation_reduce_colors": "medium",
         "animation_image_count": 6,
         "clean_images": False,

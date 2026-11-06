@@ -98,7 +98,7 @@ FONT_FALLBACKS = {
     "CaveatBrush": "JosefinSans",
 }
 ANIMATION_RESOLUTIONS = ("320x180", "400x225", "480x270")
-DEFAULT_ANIMATION_RESOLUTION = "480x270"
+DEFAULT_ANIMATION_RESOLUTION = "400x225"
 HISTORY_PAGE_SIZE = 8
 LIBRARY_CACHE_SECONDS = 120
 THUMBNAIL_CACHE_SIZE = 256
@@ -112,7 +112,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/emby.png"
     # 插件版本
-    plugin_version = "1.3.0"
+    plugin_version = "1.3.1"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -2502,7 +2502,9 @@ class MediaCoverGenerator(_PluginBase):
             content_type = "image/png"
             extension = "png"
             if image_base64.startswith("R0lG"):
-                content_type = "image/gif"
+                # Emby 只把存储的 GIF 发给 Accept 明确接受 GIF 的请求，其余都压成单帧 PNG。
+                # 标成 PNG 后存为 poster.png，无需缩小时 Emby 原样返回这份 GIF 数据
+                content_type = "image/png" if service.type == "emby" else "image/gif"
                 extension = "gif"
             elif image_base64.startswith("UklG"):
                 content_type = "image/webp"
