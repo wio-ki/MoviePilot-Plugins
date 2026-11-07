@@ -69,9 +69,10 @@ STYLE_CATALOG = [
         display="interblack",
     ),
     StyleInfo(
-        4, "预告", "右侧平行四边形的大图，左下角一条同样斜度的粗进度条", "斜切成条错开滑入，进度条走一格", 4, False, MINT,
+        4, "预告", "右侧平行四边形的大图，左下角的大号编号透出同一张图", "斜切成条错开滑入，编号跟着换", 4, False, MINT,
         TypeSpec("glowbold", "interbold", "intersemi", 250, 60,
                  main_tracking=0.01, main_tracking_latin=-0.02, spacing=38),
+        display="interblack",
     ),
     StyleInfo(
         5, "环幕", "站在弧形巨幕中间，两侧画面朝你包过来，标题居中", "整圈弧幕平稳转动", 6, False, MINT,

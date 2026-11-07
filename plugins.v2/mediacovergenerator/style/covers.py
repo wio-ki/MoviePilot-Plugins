@@ -715,6 +715,8 @@ class Trailer(Cover):
     BANDS = 5
     # 播放键放在大图的角上；留空就不放
     BADGE = True
+    # 左下角编号的字高占画面高度的比例，比标题略小，不抢标题
+    NUMERAL_HEIGHT = 0.165
 
     def prepare(self):
         W, H, s = self.W, self.H, self.s
@@ -752,9 +754,9 @@ class Trailer(Cover):
         ribbon_bottom = int(H * 0.085)
         if self.has_sub():
             ribbon_bottom = self._ribbon(margin_x, int(H * 0.085))
-        self._progress(margin_x, bottom, skew / float(bottom - top))
+        self._numeral(margin_x, bottom)
         # 标题放在飘带和编号中间
-        center = (ribbon_bottom + self.counter_top) / 2.0 + self.spec.offset_y * s
+        center = (ribbon_bottom + self.numeral_top) / 2.0 + self.spec.offset_y * s
         composite_at(self.overlay, block, margin_x - margin, center - ink_h / 2.0 - margin)
         if self.BADGE:
             # 播放键压在大图右下角，不挡人物，也不和标题抢位置
@@ -762,70 +764,55 @@ class Trailer(Cover):
             inset = H * 0.035
             composite_at(self.overlay, badge, right - skew - badge.width - inset, bottom - badge.height - inset)
 
-    def _progress(self, left, bottom, slant_ratio):
+    def _numeral(self, left, bottom):
         """
-        左下角的粗进度条：斜度和大图一致的几格，底边和大图对齐，把左栏撑满。
-        上面一行编号，告诉你这是第几段预告。
+        左下角的大号编号，第几段预告就是几，数字里透出这一段的画面；旁边小字是总数。
+        底边和大图对齐，把左栏撑住。做法来自 Visual 模板的 Trending 区块。
         """
         W, H, s = self.W, self.H, self.s
-        height = int(H * 0.085)
-        top = bottom - height
-        slant = height * slant_ratio
-        gap = W * 0.0075
-        # 右端要和大图的左下角留出距离
-        total = W * 0.3
-        cell_w = (total - slant - gap * (self.count - 1)) / float(self.count)
-        self.cells = []
+        path = self.display_font or self.fonts[0]
+        ss = 3
+        height = H * self.NUMERAL_HEIGHT
+        probe = ImageFont.truetype(str(path), 1000)
+        ink = probe.getbbox("0", anchor="ls")
+        font = ImageFont.truetype(str(path), max(1, int(round(height * ss / max(1, ink[3] - ink[1]) * 1000))))
+        small = load_font(self.fonts[1], self.spec.sub_size * s * ss)
+        self.numerals = []
+        top = bottom - int(round(height))
+        self.numeral_top = top
         for index in range(self.count):
-            x0 = left + index * (cell_w + gap)
-            x1 = x0 + cell_w
-            points = [(x0 + slant, top), (x1 + slant, top), (x1, bottom), (x0, bottom)]
-            self.cells.append(polygon_mask(self.size, points))
-        # 编号：当前段亮，总数暗
-        sub_gap = 30 * s
-        self.counters = []
-        number_font = load_font(self.fonts[1], self.spec.sub_size * s * 1.2)
-        small_font = load_font(self.fonts[1], self.spec.sub_size * s)
-        ink = number_font.getbbox("0", anchor="ls")
-        baseline = top - sub_gap
-        self.counter_top = baseline + ink[1]
-        scale = 3
-        for index in range(self.count):
-            layer = Image.new("RGBA", (int(total) * scale, int(H * 0.16) * scale), (0, 0, 0, 0))
-            draw = ImageDraw.Draw(layer)
-            base_y = int(H * 0.12) * scale
-            large = load_font(self.fonts[1], number_font.size * scale)
-            small = load_font(self.fonts[1], small_font.size * scale)
             text = f"{index + 1:02d}"
-            draw.text((0, base_y), text, font=large, fill=GHOST_WHITE + (255,), anchor="ls")
-            draw.text((large.getlength(text) + 16 * s * scale, base_y), f"/ {self.count:02d}", font=small,
-                      fill=SILVER + (190,), anchor="ls")
-            final = layer.resize((int(total), int(H * 0.16)), Image.Resampling.LANCZOS)
-            self.counters.append((final, (int(left), int(baseline - H * 0.12))))
+            size = (int(W * 0.34) * ss, int(height * 1.25) * ss)
+            mask = Image.new("L", size, 0)
+            draw = ImageDraw.Draw(mask)
+            base_y = int(height * ss)
+            pen = -font.getbbox(text[0], anchor="ls")[0]
+            for char in text:
+                draw.text((pen, base_y), char, font=font, fill=255, anchor="ls")
+                pen += font.getlength(char) + 0.015 * font.size
+            box = mask.getbbox() or (0, 0, 1, 1)
+            mask = mask.resize((size[0] // ss, size[1] // ss), Image.Resampling.LANCZOS)
+            art_w, art_h = max(1, box[2] // ss + 1), max(1, box[3] // ss + 1)
+            visible = np.asarray(mask.crop((0, 0, art_w, art_h)), dtype=np.float32) / 255.0
+            art = luminous(self.picture(index).placed((art_w, art_h), visible, clean=True), target=165.0)
+            layer = Image.new("RGBA", mask.size, (0, 0, 0, 0))
+            layer.paste(art, (0, 0))
+            layer.putalpha(mask)
+            # 总数放在编号右边，和数字底边对齐
+            suffix = Image.new("RGBA", size, (0, 0, 0, 0))
+            ImageDraw.Draw(suffix).text((box[2] + 22 * s * ss, base_y), f"/ {self.count:02d}", font=small,
+                                        fill=SILVER + (205,), anchor="ls")
+            layer.alpha_composite(suffix.resize(layer.size, Image.Resampling.LANCZOS))
+            self.numerals.append((layer, (int(left), top)))
 
-    def _progress_frame(self, canvas, current, following, progress):
-        """放过的格子是白色，正在放的是薄荷绿，没放到的是暗的。转场时颜色跟着走，编号叠化。"""
-        passed = GHOST_WHITE + (120,)
-        waiting = (255, 255, 255, 34)
-        active = self.accent + (255,)
-        restart = following == 0
-
-        def color_at(index, beat):
-            return active if index == beat else (passed if index < beat else waiting)
-
-        for index, mask in enumerate(self.cells):
-            before = color_at(index, current)
-            after = color_at(index, 0 if restart else following)
-            color = tuple(int(round(a + (b - a) * progress)) for a, b in zip(before, after))
-            layer = Image.new("RGBA", self.size, color[:3] + (0,))
-            layer.putalpha(mask.point(lambda value, alpha=color[3]: int(value * alpha / 255.0)))
-            canvas.alpha_composite(layer)
-        layer, at = self.counters[current]
+    def _numeral_frame(self, canvas, current, following, progress):
+        """换段时编号叠化。"""
+        layer, at = self.numerals[current]
         if progress <= 0:
             canvas.alpha_composite(layer, at)
         else:
             canvas.alpha_composite(with_alpha(layer, 1.0 - progress), at)
-            canvas.alpha_composite(with_alpha(self.counters[following][0], progress), at)
+            canvas.alpha_composite(with_alpha(self.numerals[following][0], progress), at)
 
     def _ribbon(self, text_x, y_pos):
         """贴着左边缘的薄荷绿飘带，右端是斜角。"""
@@ -876,7 +863,7 @@ class Trailer(Cover):
         bar_layer.paste(bar, self.bar_at)
         canvas.paste(bar_layer, (0, 0), self.bar_mask)
         canvas.alpha_composite(self.overlay)
-        self._progress_frame(canvas, current, following, progress)
+        self._numeral_frame(canvas, current, following, progress)
         return canvas
 
 
