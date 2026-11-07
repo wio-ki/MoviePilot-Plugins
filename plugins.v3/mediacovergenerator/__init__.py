@@ -136,7 +136,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标（前端按地址缓存图标，换图时要换文件名）
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/animated-cover.png"
     # 插件版本
-    plugin_version = "1.8.0"
+    plugin_version = "1.8.1"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -3208,12 +3208,12 @@ class MediaCoverGenerator(_PluginBase):
             logger.error(f"健康检查失败: {e}")
             return False
 
-    def download_font_safely_with_timeout(self, font_url: str, font_path: Path, timeout: int = 180) -> bool:
+    def download_font_safely_with_timeout(self, font_url: str, font_path: Path, timeout: int = 60) -> bool:
         """
         带超时的安全字体下载方法，避免首次下载时阻塞过久
         """
         try:
-            logger.info(f"开始下载字体（超时限制: {timeout}秒）: {font_url}")
+            logger.info(f"开始下载字体（{timeout} 秒收不到数据算超时）: {font_url}")
             return self.download_font_safely(font_url, font_path, retries=1, timeout=timeout)
 
         except Exception as e:
@@ -3226,7 +3226,7 @@ class MediaCoverGenerator(_PluginBase):
         :param font_url: 字体文件URL
         :param font_path: 保存路径
         :param retries: 每种策略的最大重试次数（减少重试次数）
-        :param timeout: 下载超时时间
+        :param timeout: 读取超时（两次收到数据之间最多等多久）
         :return: 是否下载成功
         """
         logger.info(f"准备下载字体: {font_url} -> {font_path}")
@@ -3234,22 +3234,27 @@ class MediaCoverGenerator(_PluginBase):
         # 使用优化的网络助手进行下载
         network_helper = NetworkHelper(timeout=timeout, max_retries=retries)
 
-        # 准备下载策略
+        # 准备下载策略：GitHub 镜像 → MoviePilot 的系统代理（PROXY_HOST）→ 直连，逐个尝试
         strategies = []
 
         # 判断是否为GitHub链接
         is_github_url = bool(re.search(r"(^|\.)github\.com$|(^|\.)raw\.githubusercontent\.com$", urlparse(font_url).hostname or ""))
 
         # 对于GitHub链接，优先使用GitHub镜像站
-        if is_github_url and settings.GITHUB_PROXY:
+        if is_github_url and getattr(settings, "GITHUB_PROXY", None):
             github_proxy_url = f"{UrlUtils.standardize_base_url(settings.GITHUB_PROXY)}{font_url}"
-            strategies.append(("GitHub镜像站", github_proxy_url))
+            strategies.append(("GitHub镜像站", github_proxy_url, None))
+
+        # 和 MoviePilot 访问外网一样走系统代理
+        proxies = getattr(settings, "PROXY", None)
+        if proxies:
+            strategies.append(("系统代理", font_url, proxies))
 
         # 直接使用原始URL
-        strategies.append(("直连", font_url))
+        strategies.append(("直连", font_url, None))
 
         # 遍历所有策略
-        for strategy_name, target_url in strategies:
+        for strategy_name, target_url, strategy_proxies in strategies:
             logger.info(f"尝试使用策略：{strategy_name} 下载字体: {target_url}")
 
             # 创建临时文件路径
@@ -3257,7 +3262,7 @@ class MediaCoverGenerator(_PluginBase):
 
             try:
                 # 使用网络助手下载
-                if network_helper.download_file_sync(target_url, temp_path):
+                if network_helper.download_file_sync(target_url, temp_path, proxies=strategy_proxies):
                     # 验证下载的字体文件
                     if validate_font_file(temp_path):
                         # 验证通过后，将临时文件移动到正确位置
