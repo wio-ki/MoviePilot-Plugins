@@ -154,17 +154,20 @@ def _detect_one(cascade, source, scale_step, min_face, max_face):
     return [(*box, count) for box, count in _group(boxes)]
 
 
-def detect_faces(image, key=None):
+def detect_faces(image, key=None, strong_only=False):
     """
     返回画面里的脸：[(x0, y0, x1, y1, kind)]，坐标是 0~1 的比例。kind 为 anime、frontal 或 profile。
     模型文件不存在时返回空列表，调用方退回按内容取景。key 标识图片内容，相同的 key 不重复检测。
+    strong_only 为真时不接受命中少的结果，也不找侧脸：取景时宁可有个线索，评判一张图时误检会冤枉好图，
+    而且要评判的候选多，得快。
     """
     if key is not None:
+        key = (key, strong_only)
         with _cache_lock:
             if key in _results:
                 _results.move_to_end(key)
                 return _results[key]
-    result = _detect(image)
+    result = _detect(image, strong_only)
     if key is not None:
         with _cache_lock:
             _results[key] = result
@@ -173,7 +176,7 @@ def detect_faces(image, key=None):
     return result
 
 
-def _detect(image):
+def _detect(image, strong_only=False):
     width, height = image.size
     ratio = min(1.0, DETECT_SIZE / float(max(width, height)))
     gray = image.convert("L").resize((max(1, int(width * ratio)), max(1, int(height * ratio))), Image.Resampling.BILINEAR)
@@ -184,8 +187,8 @@ def _detect(image):
     weak = []
     for name, (_file, mirror, neighbors, step) in CASCADES.items():
         cascade = _load(name)
-        # 侧脸模型要左右各跑一遍，已经找到脸时不值得再花这个时间
-        if cascade is None or (mirror and found):
+        # 侧脸模型要左右各跑一遍，已经找到脸时不值得再花这个时间；只评判图片时用不到侧脸
+        if cascade is None or (mirror and (found or strong_only)):
             continue
         for flipped in (False, True) if mirror else (False,):
             source = gray.transpose(Image.Transpose.FLIP_LEFT_RIGHT) if flipped else gray
@@ -199,7 +202,7 @@ def _detect(image):
                     weak.append(entry)
     # 一张脸都没找到时才接受命中少的结果：误检最多让取景偏一点，总比完全没有线索好。
     # 动画脸模型在纹理上容易误报，不放宽
-    found = found or weak
+    found = found or ([] if strong_only else weak)
     # 不同模型找到同一张脸时，留命中更多的那个
     found.sort(key=lambda item: -item[1])
     result = []

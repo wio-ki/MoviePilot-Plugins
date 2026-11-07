@@ -51,6 +51,7 @@ from app.plugins.mediacovergenerator.style.catalog import STYLE_CATALOG, TypeSpe
 from app.plugins.mediacovergenerator.style.covers import create_cover
 from app.plugins.mediacovergenerator.style.framing import ALT_SUFFIX, IMAGE_EXTENSIONS
 from app.plugins.mediacovergenerator.style.typography import is_cjk_text
+from app.plugins.mediacovergenerator.style.quality import ACCEPT_SCORE, assess, rank
 from app.plugins.mediacovergenerator.ui import (
     STYLE_COUNT,
     PAGE_TABS,
@@ -112,9 +113,15 @@ FONT_FALLBACKS = {
     "anton": "JosefinSans", "dmserif": "JosefinSans", "poppinsxb": "JosefinSans", "poppinssemi": "JosefinSans",
     "kronaone": "JosefinSans", "michroma": "JosefinSans", "CaveatBrush": "JosefinSans",
 }
+# 字库最全的字体：风格字体缺字时（比如繁体、日文片名）换成它，不出现方框
+WIDEST_FONT = "glowbold"
 ANIMATION_RESOLUTIONS = ("320x180", "400x225", "480x270")
 DEFAULT_ANIMATION_RESOLUTION = "400x225"
 HISTORY_PAGE_SIZE = 8
+# 选图：候选是需要数量的几倍，最多多少个，评分用的小图尺寸
+SELECTION_POOL_FACTOR = 3
+SELECTION_POOL_MAX = 36
+SELECTION_PREVIEW_SIZE = 480
 # 本地预览的动图尺寸，和图库卡片差不多大
 PREVIEW_SIZE = (320, 180)
 LIBRARY_CACHE_SECONDS = 120
@@ -129,7 +136,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标（前端按地址缓存图标，换图时要换文件名）
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/animated-cover.png"
     # 插件版本
-    plugin_version = "1.7.1"
+    plugin_version = "1.8.0"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -2088,7 +2095,8 @@ class MediaCoverGenerator(_PluginBase):
             font = ImageFont.truetype(str(font_path), 48)
             missing = font.getmask("\U0010FFFF")
             missing_key = (missing.size, bytes(missing))
-            return not all((font.getmask(char).size, bytes(font.getmask(char))) == missing_key
+            # 缺一个字也算不支持，否则「電影」这样只缺一半的标题会画出方框
+            return not any((font.getmask(char).size, bytes(font.getmask(char))) == missing_key
                            for char in characters)
         except Exception as error:
             logger.debug(f"检查字体字符集失败 {font_path}: {error}")
@@ -2121,11 +2129,11 @@ class MediaCoverGenerator(_PluginBase):
 
         if not self.__font_supports_text(main_font, main_text):
             logger.warning(f"主标题字体不支持「{main_text}」，已改用其他字体")
-            main_font = next((font for font in (sub_font, preset_font(spec.main_font))
+            main_font = next((font for font in (sub_font, preset_font(spec.main_font), preset_font(WIDEST_FONT))
                               if font and self.__font_supports_text(font, main_text)), main_font)
         if not self.__font_supports_text(sub_font, sub_text):
             logger.info(f"副标题字体不支持「{sub_text}」，已改用其他字体")
-            sub_font = next((font for font in (main_font, preset_font(spec.main_font))
+            sub_font = next((font for font in (main_font, preset_font(spec.main_font), preset_font(WIDEST_FONT))
                              if font and self.__font_supports_text(font, sub_text)), sub_font)
         return main_font, sub_font
 
@@ -2247,6 +2255,9 @@ class MediaCoverGenerator(_PluginBase):
             include_types = "Movie,Episode" if self._sort_by == "DateCreated" else "Movie,Series"
             logger.debug(f"媒体库筛选类型: {include_types}, 排序方式: {self._sort_by}")
         self._seen_keys = set()
+        # 多拉一些候选，打分后挑最适合做封面的；按入库时间排序时只往后多看一点，保持「最新」的意思
+        keep_order = self._sort_by == "DateCreated" or bool(self._monitor_sort)
+        pool_size = min(SELECTION_POOL_MAX, required_items * (2 if keep_order else SELECTION_POOL_FACTOR))
         for attempt in range(max_attempts):
             if self._event.is_set():
                 logger.info("检测到停止信号，中断媒体项获取 ...")
@@ -2263,8 +2274,8 @@ class MediaCoverGenerator(_PluginBase):
             valid_items = self.__filter_valid_items(batch_items)
             items.extend(valid_items)
 
-            # 如果已经有足够的有效项目，则停止获取
-            if len(items) >= required_items:
+            # 候选够多就停止获取
+            if len(items) >= pool_size:
                 break
 
             offset += batch_size
@@ -2275,11 +2286,49 @@ class MediaCoverGenerator(_PluginBase):
             if self._sort_by == "Random" and not self._monitor_sort:
                 # 顺序本来就是随机的，优先用海报和背景图都有的条目，取景的余地更大
                 items.sort(key=lambda item: 0 if all(self.__image_sets(item)) else 1)
-            return self.__update_grid_image(service, library, title, items[:required_items])
+            chosen = self.__choose_items(service, library, items[:pool_size], required_items, keep_order)
+            return self.__update_grid_image(service, library, title, chosen)
         else:
             self._failure_reason = "媒体库里没有可用的图片"
             logger.warning(f"媒体库 {service.name}：{library['Name']} 无法找到有效的图片项目 (筛选类型: {include_types})")
             return False
+
+    def __choose_items(self, service, library, items, required, keep_order):
+        """
+        给每个候选下载一张小图打分，挑出适合做封面的：太暗、发糊的截图、脸部特写过近的往后放。
+        第一张是静态封面和动图的第一帧，放分数最高的。评分失败的条目按合格处理，不会因此少图。
+        """
+        # 风格一屏要摆的图不能少，多出来的轮换图宁可少几张；预览的 8 款共用一批，按最多的那款算
+        minimum = (max(entry.slots for entry in STYLE_CATALOG) if self._preview_mode
+                   else style_info(self.__current_index()).slots)
+        # 条目不多、没得挑时也要打分：至少把最好的那张放在第一帧
+        if len(items) <= 1:
+            return items
+        assessed = []
+        for item in items:
+            if self._event.is_set():
+                break
+            result = None
+            urls = self.__material_urls(item)
+            if urls:
+                url = urls[0].replace(f"maxWidth={MATERIAL_MAX_SIZE}&maxHeight={MATERIAL_MAX_SIZE}",
+                                      f"maxWidth={SELECTION_PREVIEW_SIZE}&maxHeight={SELECTION_PREVIEW_SIZE}")
+                try:
+                    response = service.instance.get_data(url=url)
+                    if response is not None and response.status_code == 200 and response.content:
+                        with Image.open(BytesIO(response.content)) as opened:
+                            result = assess(opened.convert("RGB"), key=url)
+                except Exception as error:
+                    logger.debug(f"选图评分失败，按合格处理：{error}")
+            assessed.append((item, result))
+        chosen, skipped = rank(assessed, required, keep_order=keep_order, minimum=minimum)
+        dropped = [(item, result) for item, result in skipped if result is not None and result.score < ACCEPT_SCORE]
+        if dropped:
+            details = "；".join(f"{item.get('Name') or item.get('Id')}（{result.describe()}）" for item, result in dropped[:8])
+            logger.info(f"媒体库 {library['Name']}：从 {len(assessed)} 个候选里选了 {len(chosen)} 个，没用的：{details}")
+        else:
+            logger.info(f"媒体库 {library['Name']}：从 {len(assessed)} 个候选里选了 {len(chosen)} 个")
+        return [item for item, _result in chosen]
 
     def __handle_live_tv_library(self, service, library, title):
         """电视直播优先用正在播出节目的海报，没有时用频道图片（通常是台标）。"""
@@ -2322,6 +2371,8 @@ class MediaCoverGenerator(_PluginBase):
                                       include_types=include_types)
 
         required_items = self.__get_required_items()
+        # 和普通媒体库一样多拉候选，打分后再选
+        pool_size = min(SELECTION_POOL_MAX, required_items * SELECTION_POOL_FACTOR)
         valid_items = []
 
         # 首先检查BoxSet本身是否有合适的图片
@@ -2331,9 +2382,9 @@ class MediaCoverGenerator(_PluginBase):
         valid_items.extend(valid_boxsets)
 
         # 如果BoxSet本身没有足够的图片，则获取其中的电影
-        if len(valid_items) < required_items:
+        if len(valid_items) < pool_size:
             for boxset in boxsets:
-                if len(valid_items) >= required_items:
+                if len(valid_items) >= pool_size:
                     break
 
                 # 获取此BoxSet中的电影
@@ -2344,12 +2395,13 @@ class MediaCoverGenerator(_PluginBase):
                 valid_movies = self.__filter_valid_items(movies)
                 valid_items.extend(valid_movies)
 
-                if len(valid_items) >= required_items:
+                if len(valid_items) >= pool_size:
                     break
 
         # 使用获取到的有效项目更新封面
         if len(valid_items) > 0:
-            return self.__update_grid_image(service, library, title, valid_items[:required_items])
+            chosen = self.__choose_items(service, library, valid_items[:pool_size], required_items, False)
+            return self.__update_grid_image(service, library, title, chosen)
         else:
             logger.warning(f"媒体库 {service.name}：{library['Name']} 无法找到有效的图片项目")
             return False
@@ -2368,6 +2420,8 @@ class MediaCoverGenerator(_PluginBase):
                                       include_types=include_types)
 
         required_items = self.__get_required_items()
+        # 和普通媒体库一样多拉候选，打分后再选
+        pool_size = min(SELECTION_POOL_MAX, required_items * SELECTION_POOL_FACTOR)
         valid_items = []
 
         # 首先检查 playlist 本身是否有合适的图片
@@ -2377,9 +2431,9 @@ class MediaCoverGenerator(_PluginBase):
         valid_items.extend(valid_playlists)
 
         # 如果 playlist 本身没有足够的图片，则获取其中的电影
-        if len(valid_items) < required_items:
+        if len(valid_items) < pool_size:
             for playlist in playlists:
-                if len(valid_items) >= required_items:
+                if len(valid_items) >= pool_size:
                     break
 
                 # 获取此 playlist 中的电影
@@ -2390,12 +2444,13 @@ class MediaCoverGenerator(_PluginBase):
                 valid_movies = self.__filter_valid_items(movies)
                 valid_items.extend(valid_movies)
 
-                if len(valid_items) >= required_items:
+                if len(valid_items) >= pool_size:
                     break
 
         # 使用获取到的有效项目更新封面
         if len(valid_items) > 0:
-            return self.__update_grid_image(service, library, title, valid_items[:required_items])
+            chosen = self.__choose_items(service, library, valid_items[:pool_size], required_items, False)
+            return self.__update_grid_image(service, library, title, chosen)
         else:
             logger.warning(f"无法为播放列表 {service.name}：{library['Name']} 找到有效的图片项目")
             return False

@@ -715,8 +715,11 @@ class Trailer(Cover):
     BANDS = 5
     # 播放键放在大图的角上；留空就不放
     BADGE = True
-    # 左下角编号的字高占画面高度的比例，比标题略小，不抢标题
-    NUMERAL_HEIGHT = 0.165
+    # 左下角刻度的高度占画面高度的比例，以及实际显示很小时不能再低的像素数
+    TICK_HEIGHT = 0.085
+    TICK_MIN_HEIGHT = 15.0
+    # 没点亮的刻度的不透明度
+    TICK_IDLE_ALPHA = 190
 
     def prepare(self):
         W, H, s = self.W, self.H, self.s
@@ -754,9 +757,9 @@ class Trailer(Cover):
         ribbon_bottom = int(H * 0.085)
         if self.has_sub():
             ribbon_bottom = self._ribbon(margin_x, int(H * 0.085))
-        self._numeral(margin_x, bottom)
-        # 标题放在飘带和编号中间
-        center = (ribbon_bottom + self.numeral_top) / 2.0 + self.spec.offset_y * s
+        self._ticks(margin_x, bottom, W * 0.16)
+        # 标题放在飘带和刻度中间
+        center = (ribbon_bottom + self.ticks_top) / 2.0 + self.spec.offset_y * s
         composite_at(self.overlay, block, margin_x - margin, center - ink_h / 2.0 - margin)
         if self.BADGE:
             # 播放键压在大图右下角，不挡人物，也不和标题抢位置
@@ -764,55 +767,81 @@ class Trailer(Cover):
             inset = H * 0.035
             composite_at(self.overlay, badge, right - skew - badge.width - inset, bottom - badge.height - inset)
 
-    def _numeral(self, left, bottom):
+    def _ticks(self, left, bottom, width):
         """
-        左下角的大号编号，第几段预告就是几，数字里透出这一段的画面；旁边小字是总数。
-        底边和大图对齐，把左栏撑住。做法来自 Visual 模板的 Trending 区块。
+        左下角一排细斜刻度，斜度和大图一致，第几段预告就点亮第几根；旁边是编号。
+        封面常常只显示 320×180，所以线宽和高度都按像素保底，细到糊掉就等于没有。
         """
-        W, H, s = self.W, self.H, self.s
-        path = self.display_font or self.fonts[0]
-        ss = 3
-        height = H * self.NUMERAL_HEIGHT
-        probe = ImageFont.truetype(str(path), 1000)
-        ink = probe.getbbox("0", anchor="ls")
-        font = ImageFont.truetype(str(path), max(1, int(round(height * ss / max(1, ink[3] - ink[1]) * 1000))))
-        small = load_font(self.fonts[1], self.spec.sub_size * s * ss)
-        self.numerals = []
-        top = bottom - int(round(height))
-        self.numeral_top = top
-        for index in range(self.count):
-            text = f"{index + 1:02d}"
-            size = (int(W * 0.34) * ss, int(height * 1.25) * ss)
-            mask = Image.new("L", size, 0)
-            draw = ImageDraw.Draw(mask)
-            base_y = int(height * ss)
-            pen = -font.getbbox(text[0], anchor="ls")[0]
-            for char in text:
-                draw.text((pen, base_y), char, font=font, fill=255, anchor="ls")
-                pen += font.getlength(char) + 0.015 * font.size
-            box = mask.getbbox() or (0, 0, 1, 1)
-            mask = mask.resize((size[0] // ss, size[1] // ss), Image.Resampling.LANCZOS)
-            art_w, art_h = max(1, box[2] // ss + 1), max(1, box[3] // ss + 1)
-            visible = np.asarray(mask.crop((0, 0, art_w, art_h)), dtype=np.float32) / 255.0
-            art = luminous(self.picture(index).placed((art_w, art_h), visible, clean=True), target=165.0)
-            layer = Image.new("RGBA", mask.size, (0, 0, 0, 0))
-            layer.paste(art, (0, 0))
-            layer.putalpha(mask)
-            # 总数放在编号右边，和数字底边对齐
-            suffix = Image.new("RGBA", size, (0, 0, 0, 0))
-            ImageDraw.Draw(suffix).text((box[2] + 22 * s * ss, base_y), f"/ {self.count:02d}", font=small,
-                                        fill=SILVER + (205,), anchor="ls")
-            layer.alpha_composite(suffix.resize(layer.size, Image.Resampling.LANCZOS))
-            self.numerals.append((layer, (int(left), top)))
+        W, H = self.W, self.H
+        height = max(self.TICK_MIN_HEIGHT, H * self.TICK_HEIGHT)
+        self.tick_height = height
+        self.tick_idle_height = height * 0.68
+        self.tick_idle = max(2.4, W * 0.0034)
+        self.tick_active = max(4.6, W * 0.0085)
+        # 图片多的时候收紧间距，但两根之间至少留出一根的宽度
+        span = max(1, self.count - 1)
+        self.tick_step = max(self.tick_idle * 2, min(W * 0.032, width / span))
+        # 点亮的那根向两边长粗，左边留出余量，让第一根也对齐左边距
+        self.tick_pad = (self.tick_active - self.tick_idle) / 2.0
+        ticks_width = self.tick_step * span + self.tick_active + height * self.skew_ratio
+        strip_size = (int(ticks_width + 3), int(height + 2))
+        self.tick_size = strip_size
+        self.tick_at = (int(left - self.tick_pad), int(bottom - strip_size[1]))
+        self.tick_baseline = strip_size[1] - 1.0
+        self.tick_cache = {}
+        self.ticks_top = bottom - height
+        self._counters(left + ticks_width + W * 0.016, bottom, max(9.5, H * 0.05))
 
-    def _numeral_frame(self, canvas, current, following, progress):
-        """换段时编号叠化。"""
-        layer, at = self.numerals[current]
-        if progress <= 0:
-            canvas.alpha_composite(layer, at)
-        else:
-            canvas.alpha_composite(with_alpha(layer, 1.0 - progress), at)
-            canvas.alpha_composite(with_alpha(self.numerals[following][0], progress), at)
+    def _counters(self, left, bottom, height):
+        """编号比刻度矮，让刻度当主角；总数再小一号。底边都和大图对齐。"""
+        ss = 3
+        probe = load_font(self.fonts[1], 1000)
+        ink = probe.getbbox("0", anchor="ls")
+        large = load_font(self.fonts[1], height * ss / max(1, ink[3] - ink[1]) * 1000)
+        small = load_font(self.fonts[1], height * ss / max(1, ink[3] - ink[1]) * 1000 * 0.7)
+        base = large.getbbox("0", anchor="ls")[3]
+        size = (int(self.W * 0.2), int(height * 1.4))
+        at = (int(left), int(bottom - height * 1.2))
+        base_y = int(height * 1.2 * ss) - base
+        self.counters = []
+        for index in range(self.count):
+            layer = Image.new("RGBA", (size[0] * ss, size[1] * ss), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(layer)
+            text = f"{index + 1:02d}"
+            draw.text((0, base_y), text, font=large, fill=GHOST_WHITE + (255,), anchor="ls")
+            draw.text((large.getlength(text) + height * ss * 0.32, base_y), f"/ {self.count:02d}", font=small,
+                      fill=SILVER + (215,), anchor="ls")
+            self.counters.append(layer.resize(size, Image.Resampling.LANCZOS))
+        self.counter_at = at
+
+    def _tick_strip(self, current, following, progress):
+        """画这一帧的刻度。停留时内容不变，GIF 才能把相同的帧合并。"""
+        key = (current, following, round(progress, 3))
+        strip = self.tick_cache.get(key)
+        if strip is not None:
+            return strip
+        strip = Image.new("RGBA", self.tick_size, (0, 0, 0, 0))
+        for index in range(self.count):
+            amount = (1.0 - progress if index == current else 0.0) + (progress if index == following else 0.0)
+            stroke = self.tick_idle + (self.tick_active - self.tick_idle) * amount
+            height = self.tick_idle_height + (self.tick_height - self.tick_idle_height) * amount
+            slant = height * self.skew_ratio
+            x_pos = self.tick_pad + index * self.tick_step + (self.tick_idle - stroke) / 2.0
+            bottom, top = self.tick_baseline, self.tick_baseline - height
+            mask = polygon_mask(self.tick_size, [(x_pos + slant, top), (x_pos + slant + stroke, top),
+                                                 (x_pos + stroke, bottom), (x_pos, bottom)], supersample=4)
+            color = mix((255, 255, 255), self.accent, amount)
+            alpha = self.TICK_IDLE_ALPHA + (255 - self.TICK_IDLE_ALPHA) * amount
+            tick = Image.new("RGBA", self.tick_size, color + (0,))
+            tick.putalpha(mask.point(lambda value, level=alpha: int(value * level / 255.0)))
+            strip.alpha_composite(tick)
+        self.tick_cache[key] = strip
+        return strip
+
+    def _ticks_frame(self, canvas, current, following, progress):
+        """换段时点亮的刻度移到下一根。编号走到一半直接换，这么小的字叠化只会糊成一团。"""
+        canvas.alpha_composite(self._tick_strip(current, following, progress), self.tick_at)
+        canvas.alpha_composite(self.counters[following if progress >= 0.5 else current], self.counter_at)
 
     def _ribbon(self, text_x, y_pos):
         """贴着左边缘的薄荷绿飘带，右端是斜角。"""
@@ -863,7 +892,7 @@ class Trailer(Cover):
         bar_layer.paste(bar, self.bar_at)
         canvas.paste(bar_layer, (0, 0), self.bar_mask)
         canvas.alpha_composite(self.overlay)
-        self._numeral_frame(canvas, current, following, progress)
+        self._ticks_frame(canvas, current, following, progress)
         return canvas
 
 
