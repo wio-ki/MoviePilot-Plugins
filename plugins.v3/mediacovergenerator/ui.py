@@ -101,6 +101,10 @@ CSS = """
 }
 .mcg-tab:hover { color: var(--mcg-ink); }
 .mcg-panel, .mcg-when { display: none; }
+/* 弹窗默认垂直居中，页签内容一变高，页签栏就会上下跳。改成贴着顶部，切换时位置不动 */
+.v-dialog > .v-overlay__content:has(.mcg) { align-self: flex-start; margin-top: 24px; }
+/* 右下角的设置齿轮浮在内容上，底部留出位置，不挡最后一行的按钮 */
+.mcg:not(.mcg-form) { padding-bottom: 64px; }
 #mcg-tab-style:checked ~ .mcg-tabs label[for="mcg-tab-style"],
 #mcg-tab-libraries:checked ~ .mcg-tabs label[for="mcg-tab-libraries"],
 #mcg-tab-history:checked ~ .mcg-tabs label[for="mcg-tab-history"],
@@ -208,6 +212,7 @@ CSS = """
 .mcg-box { padding: 16px; border-radius: 14px; background: var(--mcg-raise); border: 1px solid var(--mcg-line); }
 .mcg-box-title { font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .mcg-box-note { font-size: 12.5px; color: var(--mcg-muted); margin: 6px 0 12px; line-height: 1.6; }
+.mcg-confirm { display: flex; flex-wrap: wrap; gap: 8px; }
 .mcg-check { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; padding: 8px 0; border-top: 1px solid var(--mcg-line); }
 .mcg-check:first-of-type { border-top: 0; }
 .mcg-check-ok .v-icon { color: var(--mcg-ok); }
@@ -274,10 +279,7 @@ def button(label: str, kind: str, api_prefix: str, path: str, prepend: Optional[
 
 
 def style_label(index: int, variant: str) -> str:
-    entry = style_info(index)
-    if variant == "animated":
-        return f"{entry.name} · {entry.motion}"
-    return f"{entry.name} · 静态"
+    return f"{style_info(index).name} · {'动态' if variant == 'animated' else '静态'}"
 
 
 def recommend_badge() -> Dict[str, Any]:
@@ -375,10 +377,6 @@ def _hero(ctx: Dict[str, Any]) -> Dict[str, Any]:
     return div("mcg-hero", *children)
 
 
-def _source_label(entry) -> str:
-    return "海报" if entry.poster else "背景图"
-
-
 def _style_targets(ctx: Dict[str, Any], target: Optional[Dict[str, Any]]) -> List[dict]:
     """选择风格应用到哪里：所有媒体库（默认风格），或者某一个媒体库。"""
     libraries = ctx["libraries"]
@@ -419,10 +417,11 @@ def _local_preview_bar(ctx: Dict[str, Any], target: Optional[Dict[str, Any]]) ->
     """用媒体库的真实图片生成预览。默认用当前选中的媒体库，否则用第一个参与更新的媒体库。"""
     libraries = ctx["libraries"]
     source = target or next((item for item in libraries if item.get("active")), None)
-    if not source:
+    local = ctx.get("local_preview")
+    # 生成中不能操作。没有预览时这一条只剩一句话，不如不显示
+    if not source or (ctx["task"].get("running") and not local):
         return []
     prefix = ctx["api_prefix"]
-    local = ctx.get("local_preview")
     path = f"generate_preview?library={source['encoded_key']}&tab=style"
     if local:
         note = f"下面是你的媒体库「{local['library']}」的真实效果（{local['time']} 生成）。"
@@ -474,7 +473,6 @@ def _style_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
     cards = []
     for entry in STYLE_CATALOG:
         selected = entry.index == style_index
-        chips = [node("span", cls="mcg-chip", text=_source_label(entry))]
         motion_note = f"动态：{entry.motion}" if variant == "animated" else entry.desc
         cards.append(
             div(
@@ -483,8 +481,7 @@ def _style_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
                 div("mcg-style-tick", icon("mdi-check", 16)),
                 div(
                     "mcg-style-meta",
-                    div("mcg-style-name", node("span", text=entry.name),
-                        node("span", content=chips, style="display:inline-flex;gap:4px;")),
+                    div("mcg-style-name", node("span", text=entry.name)),
                     div("mcg-style-desc", text=motion_note),
                 ),
                 events=post(prefix, f"select_style?index={entry.index}&tab=style{target_query}"),
@@ -606,6 +603,18 @@ def _history_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
     return div("mcg-panel mcg-panel-history", *children)
 
 
+def _clean_actions(ctx: Dict[str, Any], what: str, path: str, prepend: str) -> List[dict]:
+    """清理按钮。删除不能撤销，第一次点只是询问。"""
+    prefix = ctx["api_prefix"]
+    if ctx.get("clean_armed") != what:
+        return [button("清理", "danger", prefix, path, prepend, "small")]
+    return [div(
+        "mcg-confirm",
+        button("确认清理，不能恢复", "danger", prefix, path, prepend, "small"),
+        button("取消", "quiet", prefix, "refresh?tab=maintain", size="small"),
+    )]
+
+
 def _maintain_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
     prefix = ctx["api_prefix"]
     checks = []
@@ -629,14 +638,14 @@ def _maintain_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
                         node("span", cls="mcg-chip", text=ctx["cache_images"])),
                     div("mcg-box-note", text="删除下载的素材和历史封面。媒体库里已经生效的封面不受影响；"
                                              "自定义保存目录中只会删除插件生成的文件。"),
-                    button("清理", "danger", prefix, "clean_images?tab=maintain", "mdi-image-remove-outline", "small"),
+                    *_clean_actions(ctx, "images", "clean_images?tab=maintain", "mdi-image-remove-outline"),
                 ),
                 div(
                     "mcg-box",
                     div("mcg-box-title", node("span", text="字体缓存"),
                         node("span", cls="mcg-chip", text=ctx["cache_fonts"])),
                     div("mcg-box-note", text="字体损坏或想重新下载时使用，下次生成时自动重新获取。"),
-                    button("清理", "danger", prefix, "clean_fonts?tab=maintain", "mdi-format-font", "small"),
+                    *_clean_actions(ctx, "fonts", "clean_fonts?tab=maintain", "mdi-format-font"),
                     style="margin-top:14px;",
                 ),
             ),
@@ -757,7 +766,6 @@ def _style_picker() -> Dict[str, Any]:
     cards = []
     for entry in STYLE_CATALOG:
         value = f"static_{entry.index}"
-        chips = [node("span", cls="mcg-chip", text=_source_label(entry))]
         cards.append(
             node(
                 "div",
@@ -766,8 +774,7 @@ def _style_picker() -> Dict[str, Any]:
                     div("mcg-style-tick", icon("mdi-check", 16)),
                     div(
                         "mcg-style-meta",
-                        div("mcg-style-name", node("span", text=entry.name),
-                            node("span", content=chips, style="display:inline-flex;gap:4px;")),
+                        div("mcg-style-name", node("span", text=entry.name)),
                         div("mcg-style-desc", text=f"动态：{entry.motion}",
                             show="{{ cover_style_variant === 'animated' }}"),
                         div("mcg-style-desc", text=entry.desc, show="{{ cover_style_variant !== 'animated' }}"),
@@ -795,6 +802,8 @@ def _basic_tab(ctx: Dict[str, Any]) -> List[dict]:
                            icon_name="mdi-timer-sand", min=0), 4),
                 _col(node("VCronField", model="cron", label="定时更新", placeholder="5 位 cron 表达式，留空不启用",
                           density="comfortable", variant="outlined", color=ACCENT), 4),
+                _col(_switch("rotate_style", "定时轮换风格",
+                             "每次定时更新换下一款风格，所有媒体库保持统一；单独设置过风格的媒体库不变"), 12),
             ),
         ),
         _section(
@@ -826,9 +835,10 @@ def _style_tab() -> List[dict]:
             _style_picker(),
         ),
         _section(
-            "mdi-image-outline", "选图与输出", "这些选项对所有风格生效",
+            "mdi-image-outline", "选图与输出", "自动匹配：每个画框选比例合适的图，围绕人物取景。只有海报时完整显示海报，不把人物切开",
             _row(
-                _col(_toggle("use_primary", "素材图片", [("auto", "跟随风格"), (True, "海报"), (False, "背景图")]), 6),
+                _col(_toggle("use_primary", "素材图片", [("auto", "自动匹配"), (True, "只用海报"), (False, "只用背景图")],
+                             recommended="auto"), 6),
                 _col(_select("resolution", "静态图分辨率", [
                     {"title": "1080p（1920×1080）", "value": "1080p"},
                     {"title": "720p（1280×720）", "value": "720p"},
@@ -949,7 +959,7 @@ def _typography_tab(ctx: Dict[str, Any]) -> List[dict]:
                            min=0), 4),
                 _col(_text("zh_font_offset", "标题上下偏移", "上移填负值，默认 0", number=True,
                            icon_name="mdi-arrow-up-down"), 4),
-                _col(_text("blur_size", "背景虚化强度", "流光、预告、景深、详情、扇面的虚化背景使用，默认 50", number=True, icon_name="mdi-blur",
+                _col(_text("blur_size", "背景虚化强度", "预告、景深、详情、扇面的虚化背景使用，默认 50", number=True, icon_name="mdi-blur",
                            min=0), 4),
             ),
         ),
@@ -963,7 +973,7 @@ def _motion_tab() -> List[dict]:
             div(None, text="Hills、yamby、小幻影视都能播放。客户端请求的宽度小于动图宽度时，Emby 会把它压成静态图，所以尺寸越小越容易动起来。首帧就是完整封面，只显示静态图的客户端也能看到成品。需要容器内有 ffmpeg，没有时自动生成静态封面。"),
         ),
         _section(
-            "mdi-play-box-multiple-outline", "GIF 动图", "只有使用动态封面时才生效。画面大部分时间静止、只在转场时运动，一张通常 1 到 4 MB",
+            "mdi-play-box-multiple-outline", "GIF 动图", "只有使用动态封面时才生效。画面大部分时间静止、只在转场时运动，320×180 一张通常 1.5 到 3 MB",
             _row(
                 _col(_select("animation_resolution", "尺寸", [
                     {"title": "480×270（最清晰，部分客户端会变静态）", "value": "480x270"},
@@ -1016,6 +1026,7 @@ def default_form_model() -> Dict[str, Any]:
         "transfer_monitor": True,
         "notify": False,
         "cron": "",
+        "rotate_style": False,
         "delay": 60,
         "selected_servers": [],
         "include_libraries": [],
@@ -1029,6 +1040,7 @@ def default_form_model() -> Dict[str, Any]:
         "en_font_preset": "auto",
         "covers_v3": True,
         "covers_v5": True,
+        "covers_v6": True,
         "zh_font_custom": "",
         "en_font_custom": "",
         "zh_font_size": None,

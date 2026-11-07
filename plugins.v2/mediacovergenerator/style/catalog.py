@@ -43,15 +43,17 @@ class StyleInfo:
     motion: str
     # 一屏同时展示的图片数量，也是静态封面需要的素材数
     slots: int
-    # 这款构图更适合竖版海报（否则优先横版背景图）
+    # 这款构图完整展示竖版海报（否则优先横版背景图，避免切开海报上的片名）
     poster: bool
     accent: Tuple[int, int, int]
     type: TypeSpec
+    # 这款风格自带的展示字体，和标题字体无关
+    display: Optional[str] = None
 
 
 STYLE_CATALOG = [
     StyleInfo(
-        1, "序幕", "满屏竖幅画廊，一幅展开，标题和标签落在展开的画面里", "画幅舒展换位，标题淡出再升起", 6, True, MINT,
+        1, "序幕", "满屏竖幅画廊，一幅展开，标题和标签落在展开的画面里", "画幅舒展换位，标题淡出再升起", 6, False, MINT,
         TypeSpec("glowbold", "interbold", "intersemi", 192, 60,
                  main_tracking=0.01, main_tracking_latin=-0.02, spacing=34),
     ),
@@ -61,17 +63,18 @@ STYLE_CATALOG = [
                  main_tracking=0.03, main_tracking_latin=-0.005, spacing=40),
     ),
     StyleInfo(
-        3, "流光", "压暗的画面上，巨大的标题像窗口一样透出明亮的原图", "流光扫过文字，镜头穿过笔画冲进下一张", 4, False, MINT,
-        TypeSpec("glowheavy", "interblack", "intersemi", 560, 60,
-                 main_tracking=0.0, main_tracking_latin=-0.03, spacing=40),
+        3, "404", "黑底上巨大的 404 透出一整幅图，主副标题清楚地写在下面", "一阵信号不良的闪烁后变成完整大图，再闪回下一张的 404", 4, False, MINT,
+        TypeSpec("glowbold", "interbold", "intersemi", 150, 58,
+                 main_tracking=0.02, main_tracking_latin=-0.02, sub_tracking=0.04, spacing=22),
+        display="interblack",
     ),
     StyleInfo(
-        4, "预告", "薄荷绿斜角飘带领起标题，右侧是平行四边形的大图", "斜切成条，错开滑入", 4, False, MINT,
-        TypeSpec("glowbold", "interbold", "intersemi", 214, 60,
+        4, "预告", "右侧平行四边形的大图，左下角一条同样斜度的粗进度条", "斜切成条错开滑入，进度条走一格", 4, False, MINT,
+        TypeSpec("glowbold", "interbold", "intersemi", 250, 60,
                  main_tracking=0.01, main_tracking_latin=-0.02, spacing=38),
     ),
     StyleInfo(
-        5, "环幕", "站在弧形巨幕中间，两侧画面朝你包过来，标题居中", "整圈弧幕平稳转动", 6, True, MINT,
+        5, "环幕", "站在弧形巨幕中间，两侧画面朝你包过来，标题居中", "整圈弧幕平稳转动", 6, False, MINT,
         TypeSpec("glowheavy", "interblack", "intersemi", 214, 60,
                  main_tracking=0.02, main_tracking_latin=-0.025, spacing=30),
     ),

@@ -7,7 +7,7 @@
 动图的几条约定：
 - 输出 GIF，这是各家 Emby 客户端都能显示的格式
 - phase=0 就是完整封面，只显示首帧的客户端看到的也是成品
-- 大部分时间画面静止、只在转场时运动。GIF 按帧差压缩，这样体积最小，文字也不会闪
+- 大部分时间画面静止、只在转场时运动。静止的帧合并成一帧，体积才小，文字也不会闪
 """
 import base64
 import math
@@ -18,14 +18,15 @@ from io import BytesIO
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageOps
+from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
 
 from app.log import logger
 from app.plugins.mediacovergenerator.style.catalog import style_info
-from app.plugins.mediacovergenerator.style.typography import TitleLayout, outline_from_mask
+from app.plugins.mediacovergenerator.style.faces import DETECT_SIZE
+from app.plugins.mediacovergenerator.style.framing import load_pictures
+from app.plugins.mediacovergenerator.style.typography import TitleLayout, load_font
 from app.plugins.mediacovergenerator.utils.color_helper import ColorHelper
 
-IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".bmp")
 GHOST_WHITE = (248, 248, 255)
 SILVER = (198, 203, 210)
 INK = (15, 15, 17)
@@ -68,61 +69,6 @@ def beats(phase, count, hold=0.72, curve=ease):
 
 
 # ---------------------------------------------------------------- 图像工具
-
-
-def load_images(library_dir, count):
-    """按文件名序号读取素材，保证多次生成的顺序稳定。"""
-    folder = Path(library_dir)
-    files = [path for path in folder.iterdir() if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS]
-
-    def order(path):
-        return (0, int(path.stem)) if path.stem.isdigit() else (1, path.name)
-
-    images = []
-    for path in sorted(files, key=order):
-        if len(images) >= count:
-            break
-        try:
-            with Image.open(path) as source:
-                images.append(ImageOps.exif_transpose(source).convert("RGB"))
-        except Exception as error:
-            logger.warning(f"跳过无法读取的素材 {path}: {error}")
-    return images
-
-
-def _focus(energy, window):
-    """在一维显著度上找窗口中心最有内容的位置，返回 0~1 的取景位置。"""
-    length = len(energy)
-    span = max(1, int(round(window * length)))
-    if span >= length:
-        return 0.5
-    totals = np.convolve(energy, np.ones(span), mode="valid")
-    # 略偏向中间，避免被画面边缘的高频纹理带偏
-    middle = (len(totals) - 1) / 2.0
-    weights = 1.0 - 0.35 * np.abs(np.arange(len(totals)) - middle) / max(1.0, middle)
-    return float(np.argmax(totals * weights)) / max(1, len(totals) - 1)
-
-
-def smart_fit(image, size):
-    """裁切到目标比例，取景位置落在画面内容最丰富的地方。"""
-    width, height = size
-    src_w, src_h = image.size
-    target = width / float(height)
-    source = src_w / float(src_h)
-    thumb = image.convert("HSV").resize((64, 64), Image.Resampling.BILINEAR)
-    data = np.asarray(thumb, dtype=np.float32)
-    value, saturation = data[..., 2], data[..., 1]
-    grad_x = np.abs(np.diff(value, axis=1, prepend=value[:, :1]))
-    grad_y = np.abs(np.diff(value, axis=0, prepend=value[:1, :]))
-    energy = grad_x + grad_y + saturation * 0.12
-    centering = [0.5, 0.5]
-    if source > target:
-        centering[0] = _focus(energy.sum(axis=0), target / source)
-    elif source < target:
-        # 人脸通常在画面上半部分，竖向取景偏上
-        rows = energy.sum(axis=1) * np.linspace(1.25, 0.75, energy.shape[0])
-        centering[1] = _focus(rows, source / target)
-    return ImageOps.fit(image, size, method=Image.Resampling.LANCZOS, centering=tuple(centering))
 
 
 def rgba_from_alpha(color, alpha):
@@ -181,12 +127,17 @@ def border_layer(size, radius, color, width=1):
     return result
 
 
-def lift(image, floor=78, saturation=1.35):
-    """提亮暗部、增加饱和度，用在镂空文字里，保证和深色底有足够反差。"""
-    image = ImageEnhance.Color(image).enhance(saturation)
-    data = np.asarray(image, dtype=np.float32)
-    data = floor + data * (1.0 - floor / 255.0)
-    return Image.fromarray(np.clip(data, 0, 255).astype(np.uint8))
+def luminous(image, target=150.0, floor=46.0, saturation=1.3):
+    """
+    让暗图也足够亮：拉满对比后用伽马把平均亮度提到 target，再抬高暗部。
+    只透出笔画时，图的暗部会和黑底融在一起，字形就散了。
+    """
+    data = np.asarray(ImageOps.autocontrast(ImageEnhance.Color(image).enhance(saturation), cutoff=1), dtype=np.float32) / 255.0
+    mean = float(data.mean())
+    if 0.01 < mean < target / 255.0:
+        data = data ** (math.log(target / 255.0) / math.log(mean))
+    data = floor / 255.0 + data * (1.0 - floor / 255.0)
+    return Image.fromarray(np.clip(data * 255.0, 0, 255).astype(np.uint8))
 
 
 def play_triangle(draw, center, radius, fill):
@@ -288,7 +239,8 @@ def play_chip(height, width=None, fill=GHOST_WHITE, icon=CARD):
 class Cover:
     """一款风格。子类实现 prepare 和 frame。"""
 
-    def __init__(self, size, images, title, fonts, spec, accent, tint, blur_size, color_ratio, animated):
+    def __init__(self, size, images, title, fonts, spec, accent, tint, blur_size, color_ratio, animated, display_font=None):
+        self.display_font = display_font
         self.size = size
         self.W, self.H = size
         self.s = self.H / 1080.0
@@ -311,16 +263,19 @@ class Cover:
     def frame(self, phase):
         raise NotImplementedError
 
-    def image(self, index):
+    def picture(self, index):
         return self.images[index % self.count]
 
-    def fit(self, index, size):
-        """裁好的素材，同一尺寸只算一次。"""
+    def framed(self, index, size, anchor=0.5, clean=False):
+        """取好景的素材和焦点 (图, 焦点 x, 焦点 y)，同一尺寸只算一次。参数见 Picture.framed。"""
         size = (max(1, int(size[0])), max(1, int(size[1])))
-        key = (index % self.count, size)
+        key = (index % self.count, size, anchor, clean)
         if key not in self._fits:
-            self._fits[key] = smart_fit(self.image(index), size)
+            self._fits[key] = self.picture(index).framed(size, anchor, clean=clean)
         return self._fits[key]
+
+    def fit(self, index, size, anchor=0.5, clean=False):
+        return self.framed(index, size, anchor, clean)[0]
 
     def layout(self, max_width, part="both", size_factor=1.0):
         return TitleLayout(self.title, self.fonts, self.spec, self.s, max_width, part=part, size_factor=size_factor)
@@ -345,7 +300,7 @@ class Cover:
     def backdrop(self, index, brightness):
         """虚化压暗的背景图。「玻璃模糊强度」控制虚化的程度。"""
         radius = max(2.0, self.blur_size * 0.9 * self.s)
-        blurred = self.fit(index, self.size).filter(ImageFilter.GaussianBlur(radius))
+        blurred = self.picture(index).cover(self.size).filter(ImageFilter.GaussianBlur(radius))
         return ImageEnhance.Brightness(blurred).enhance(brightness)
 
     def label(self, style="outline", max_width=None, fill=None, ink=None):
@@ -429,8 +384,11 @@ class Gallery(Cover):
         s = self.s
         self.active_w = int(self.W * 0.34)
         self.rest_w = (self.W - self.active_w) / float(self.STRIPS - 1)
-        self.bright = [ImageEnhance.Contrast(self.fit(index, (self.active_w, self.H))).enhance(1.04)
-                       for index in range(self.STRIPS)]
+        # 窄条一定会切开海报上的片名，所以优先用没有片名的背景图，围绕人物取景
+        panels = [self.framed(index, (self.active_w, self.H), clean=True) for index in range(self.STRIPS)]
+        self.bright = [ImageEnhance.Contrast(panel[0]).enhance(1.04) for panel in panels]
+        # 收窄时露出的那一条对准人物，不是固定取中间
+        self.focus = [panel[1] * self.active_w for panel in panels]
         self.dim = [ImageEnhance.Brightness(panel).enhance(0.84) for panel in self.bright]
 
         _x_axis, y_axis = axes(self.size)
@@ -464,7 +422,7 @@ class Gallery(Cover):
             x0, x1 = int(round(cursor)), int(round(cursor + width))
             cursor += width
             shown = max(1, x1 - x0)
-            left = (self.active_w - shown) // 2
+            left = int(round(max(0.0, min(self.active_w - shown, self.focus[index] - shown / 2.0))))
             box = (left, 0, left + shown, self.H)
             if amount <= 0.0:
                 strip = self.dim[index].crop(box)
@@ -495,7 +453,8 @@ class Titan(Cover):
 
     def prepare(self):
         W, H, s = self.W, self.H, self.s
-        self.frames = [ImageEnhance.Contrast(self.fit(index, self.size)).enhance(1.05) for index in range(self.count)]
+        # 只有海报时，完整的海报摆在标题和小窗之间
+        self.frames = [ImageEnhance.Contrast(self.fit(index, self.size, anchor=0.57)).enhance(1.05) for index in range(self.count)]
         x_axis, y_axis = axes(self.size)
         strength = self.scrim_strength()
         side = smooth((0.62 - x_axis) / 0.62) * 0.72
@@ -508,11 +467,13 @@ class Titan(Cover):
         radius = int(32 * s)
         self.card_size = (card_w, card_h)
         self.card_mask = rounded_mask(self.card_size, radius)
-        badge = play_badge(card_h * 0.4)
+        # 播放键放在角上，不挡小窗里的人物
+        badge = play_badge(card_h * 0.3)
+        inset = int(card_h * 0.07)
         self.cards = []
         for index in range(self.count):
-            card = ImageEnhance.Brightness(self.fit(index, self.card_size)).enhance(0.74).convert("RGBA")
-            card.alpha_composite(badge, ((card_w - badge.width) // 2, (card_h - badge.height) // 2))
+            card = ImageEnhance.Brightness(self.fit(index, self.card_size)).enhance(0.86).convert("RGBA")
+            card.alpha_composite(badge, (card_w - badge.width - inset, card_h - badge.height - inset))
             card.alpha_composite(border_layer(self.card_size, radius, (255, 255, 255, 80), 2 * s))
             self.cards.append(card.convert("RGB"))
         box = (*self.card_box, self.card_box[0] + card_w, self.card_box[1] + card_h)
@@ -544,177 +505,205 @@ class Titan(Cover):
         return canvas
 
 
-# ---------------------------------------------------------------- 风格 3：流光
+# ---------------------------------------------------------------- 风格 3：404
 
 
-class Glint(Cover):
+class NotFound(Cover):
     """
-    整幅画面压暗虚化，巨大的标题像窗口一样透出明亮清晰的同一张图，字和背景严丝合缝。
-    停留时一道流光扫过文字；转场时字里先换成下一张，镜头穿过笔画冲进画面，全屏亮相后再退回来。
+    黑底上巨大的 404，一整幅图藏在三个数字后面，人物落在笔画上，外侧的 4 渐渐融回白色。主副标题不镂空。
+    一阵信号不良的闪烁之后，整个画面变成这张完整的大图，没有 404，也没有文字；再闪烁一次，回到下一张图的 404。
+    第一帧是 404 加主副标题，只显示首帧的客户端和静态封面也能一眼认出是哪个媒体库。
     """
 
+    TEXT = "404"
     BEATS = 4
-    HOLD = 0.5
-    SWEEP_WIDTH = 0.11
+    # 一拍里的时间分配：404 停留、闪烁变成大图、大图停留，其余是闪烁回到 404
+    HOLD = 0.38
+    OUT = 0.2
+    FULL = 0.3
+    # 数字的字高占画面高度的比例
+    DIGIT_HEIGHT = 0.5
+    # 透图的范围，是以 0 为中心的椭圆。soft 是融回白色，arc 是清晰的曲线，full 是全部透图
+    WASH = "soft"
+    WASH_X = 0.92
+    WASH_Y = 1.5
 
     def prepare(self):
         W, H, s = self.W, self.H, self.s
         self.beat_count = max(1, min(self.BEATS, self.count))
-        blur = ImageFilter.GaussianBlur(max(1.0, self.blur_size * 0.16 * s))
-        x_axis, y_axis = axes(self.size)
-        vignette = np.sqrt(((x_axis - 0.5) / 0.72) ** 2 + ((y_axis - 0.5) / 0.72) ** 2)
-        shade = rgba_from_alpha((3, 3, 6), np.clip(0.22 + vignette * 0.44, 0, 1) * self.scrim_strength())
+        block, margin, ink_h = self.title_block(W * 0.84, sub_style="text", align="center")
+        digits = self._render_digits()
+        box = digits.getbbox() or (0, 0, 1, 1)
+        digit_h = box[3] - box[1]
+        gap = H * 0.05
+        top = (H - digit_h - gap - ink_h) / 2.0 + self.spec.offset_y * s
 
-        main = self.layout(W * 0.88, part="main")
-        tag = self.label(fill=GHOST_WHITE)
-        gap = self.spec.spacing * s if tag is not None else 0.0
-        total = main.main_height + (gap + tag.height if tag is not None else 0.0)
-        top = (H - total) / 2.0 + self.spec.offset_y * s
-        # 文字蒙版画大一倍，推近时边缘才不糊
-        self.mask_scale = 2
-        large = (W * self.mask_scale, H * self.mask_scale)
-        big = TitleLayout(self.title, self.fonts, self.spec, self.s * self.mask_scale, W * 0.88 * self.mask_scale, part="main")
-        self.mask_large = big.render(large, W * 0.06 * self.mask_scale, (top - main.offset_y) * self.mask_scale, align="center").getchannel("A")
-        self.mask = self.mask_large.resize(self.size, Image.Resampling.LANCZOS)
-        self.box = self.mask.getbbox() or (int(W * 0.2), int(H * 0.3), int(W * 0.8), int(H * 0.7))
+        # 底图：底色加上主副标题，转场时完全不动
+        base = Image.new("RGBA", self.size, self.base_color() + (255,))
+        composite_at(base, block, W * 0.08 - margin, top + digit_h + gap - margin)
+        self.base = np.asarray(base.convert("RGB"), dtype=np.float32)
 
-        # 字外缘的亮边和字后的暗影，让字从画面里浮出来
-        self.edge = Image.new("RGBA", self.size, GHOST_WHITE + (0,))
-        self.edge.putalpha(outline_from_mask(self.mask, max(1, round(2.2 * s)), 0.82))
-        glow = self.mask.filter(ImageFilter.GaussianBlur(max(2.0, 44 * s))).point(lambda value: int(min(255, value * 1.2)))
-        soften = ImageFilter.GaussianBlur(max(0.5, 1.6 * s))
+        # 数字放到画布上的最终位置
+        self.box = (int(round((W - (box[2] - box[0])) / 2.0)), int(round(top)))
+        self.box = (*self.box, self.box[0] + box[2] - box[0], self.box[1] + digit_h)
+        placed = Image.new("L", self.size, 0)
+        placed.paste(digits.crop(box), self.box[:2])
+        self.alpha = np.asarray(placed, dtype=np.float32) / 255.0
 
-        self.full, self.bright, self.dim, self.plain = [], [], [], []
+        x0, y0, x1, y1 = self.box
+        wash = self._wash(x1 - x0, y1 - y0)
+        visible = self.alpha[y0:y1, x0:x1] * wash
+        # 取景只需要一张小图判断笔画在哪
+        step = max(1, (x1 - x0) // 96)
+        white = np.array(GHOST_WHITE, dtype=np.float32)
+        self.white = np.empty((H, W, 3), dtype=np.float32)
+        self.white[...] = white
+        self.fills, self.full = [], []
         for index in range(self.beat_count):
-            picture = ImageEnhance.Contrast(self.fit(index, self.size)).enhance(1.06)
-            self.full.append(picture)
-            # 字里的画面提亮、提纯并去掉碎细节，字形始终清楚
-            stretched = ImageOps.autocontrast(picture.filter(soften), cutoff=2)
-            self.bright.append(ImageEnhance.Brightness(lift(stretched, floor=74, saturation=1.55)).enhance(1.12))
-            dark = ImageEnhance.Brightness(ImageEnhance.Color(picture.filter(blur)).enhance(0.8)).enhance(0.36).convert("RGBA")
-            dark.alpha_composite(shade)
-            dark = dark.convert("RGB")
-            self.plain.append(dark)
-            # 字后面透出一层取自这张图色调的背光
-            lit = dark.copy()
-            lit.paste(self._glow_color(picture), (0, 0), glow.point(lambda value: int(value * 0.62)))
-            self.dim.append(lit)
+            art = luminous(self.picture(index).placed((x1 - x0, y1 - y0), visible[::step, ::step]))
+            fill = self.white.copy()
+            fill[y0:y1, x0:x1] = white + (np.asarray(art, dtype=np.float32) - white) * wash[..., None]
+            self.fills.append(fill)
+            picture = ImageEnhance.Contrast(self.fit(index, self.size, clean=True)).enhance(1.05)
+            self.full.append(np.asarray(picture, dtype=np.float32))
+        self._still = {}
 
-        self.tag = tag
-        self.tag_at = None
-        if tag is not None:
-            self.tag_at = (int((W - tag.width) / 2.0), int(top + main.main_height + gap))
-        self.focus = self._thickest_point()
+    def _render_digits(self):
+        """把 404 画成字高固定的蒙版，字距略收，三个数字才是一个整体。"""
+        W, H = self.W, self.H
+        path = self.display_font or self.fonts[0]
+        ss = 3
+        target = H * self.DIGIT_HEIGHT * ss
+        probe = ImageFont.truetype(str(path), 1000)
+        ink = probe.getbbox(self.TEXT, anchor="ls")
+        size = target / max(1.0, ink[3] - ink[1]) * 1000.0
+        tracking = -0.025
+        width = (probe.getlength(self.TEXT) + tracking * 1000.0 * (len(self.TEXT) - 1)) * size / 1000.0
+        # 太宽时整体收小，留出左右边距
+        size *= min(1.0, W * 0.86 * ss / max(1.0, width))
+        font = ImageFont.truetype(str(path), max(1, int(round(size))))
+        canvas = Image.new("L", (W * ss, H * 2 * ss), 0)
+        draw = ImageDraw.Draw(canvas)
+        pen = 0.0
+        baseline = H * 1.5 * ss
+        for char in self.TEXT:
+            draw.text((pen, baseline), char, font=font, fill=255, anchor="ls")
+            pen += font.getlength(char) + tracking * font.size
+        return canvas.resize((W, H * 2), Image.Resampling.LANCZOS)
 
-        columns, rows = np.meshgrid(np.arange(W, dtype=np.float32), np.arange(H, dtype=np.float32))
-        self.columns, self.rows = columns, rows
+    def _wash(self, width, height):
+        """透图的范围：1 是图，0 是白。"""
+        columns, rows = np.meshgrid(np.linspace(-1.0, 1.0, width, dtype=np.float32),
+                                    np.linspace(-1.0, 1.0, height, dtype=np.float32))
+        distance = np.sqrt((columns / self.WASH_X) ** 2 + (rows / self.WASH_Y) ** 2)
+        if self.WASH == "full":
+            return np.ones_like(distance)
+        if self.WASH == "arc":
+            edge = max(0.004, 1.5 / width)
+            return np.clip((1.0 - distance) / edge + 0.5, 0.0, 1.0)
+        return 1.0 - smooth((distance - 0.56) / 0.44)
 
-    @staticmethod
-    def _glow_color(picture):
-        """这张图最鲜艳的颜色，提亮后做背光。"""
-        small = picture.convert("HSV").resize((32, 18), Image.Resampling.BILINEAR)
-        data = np.asarray(small, dtype=np.float32).reshape(-1, 3)
-        weights = (data[:, 1] / 255.0) * (data[:, 2] / 255.0) + 0.01
-        hue_x = np.sum(np.cos(data[:, 0] / 255.0 * math.tau) * weights)
-        hue_y = np.sum(np.sin(data[:, 0] / 255.0 * math.tau) * weights)
-        hue = (math.atan2(hue_y, hue_x) / math.tau) % 1.0
-        swatch = Image.new("HSV", (1, 1), (int(hue * 255), 190, 215)).convert("RGB")
-        return swatch.getpixel((0, 0))
+    def _paint(self, fill, alpha=None):
+        alpha = self.alpha if alpha is None else alpha
+        return self.base + (fill - self.base) * alpha[..., None]
 
-    def _thickest_point(self):
-        """找到笔画最粗的地方，镜头从这里穿过去。同时算出穿透需要的放大倍数。"""
-        probe = self.mask.point(lambda value: 255 if value > 127 else 0)
-        radius = 0
-        current = probe
-        while radius < 200:
-            shrunk = current.filter(ImageFilter.MinFilter(3))
-            if not shrunk.getbbox():
-                break
-            current = shrunk
-            radius += 1
-        rows, columns = np.nonzero(np.asarray(current))
-        if len(rows):
-            pick = len(rows) // 2
-            center = (float(columns[pick]), float(rows[pick]))
-        else:
-            center = ((self.box[0] + self.box[2]) / 2.0, (self.box[1] + self.box[3]) / 2.0)
-        diagonal = math.hypot(self.W, self.H)
-        self.zoom_peak = min(90.0, diagonal / max(1.0, radius + 1.0))
-        return center
+    def _hold(self, key, fill):
+        if key not in self._still:
+            self._still[key] = Image.fromarray(np.clip(self._paint(fill), 0, 255).astype(np.uint8))
+        return self._still[key]
 
-    def _zoomed_mask(self, zoom, shift):
-        """把文字蒙版以 focus 为中心放大，并让 focus 向画面中心移动 shift（0~1）。"""
-        focus_x, focus_y = self.focus
-        target_x = focus_x + (self.W / 2.0 - focus_x) * shift
-        target_y = focus_y + (self.H / 2.0 - focus_y) * shift
-        unit = self.mask_scale / zoom
-        coefficients = (unit, 0, (focus_x - target_x / zoom) * self.mask_scale, 0, unit, (focus_y - target_y / zoom) * self.mask_scale)
-        layer = self.mask_large.transform(self.size, Image.Transform.AFFINE, coefficients, Image.Resampling.BICUBIC)
-        # 放大后边缘会变软，收紧一下
-        gain = min(6.0, 1.0 + zoom * 0.25)
-        return layer.point(lambda value: int(max(0, min(255, (value - 128) * gain + 128))))
+    def _snow(self, rng):
+        """没有信号时的雪花，颗粒按画面大小缩放。"""
+        grain = max(2, self.H // 90)
+        rows, columns = self.H // grain + 1, self.W // grain + 1
+        field = rng.random((rows, columns), dtype=np.float32) * 255.0
+        field = np.repeat(np.repeat(field, grain, axis=0), grain, axis=1)[:self.H, :self.W]
+        return np.repeat(field[..., None], 3, axis=2)
 
-    def _sweep(self, canvas, position):
-        """沿斜线扫过文字的一道高光，只落在字上。"""
-        left, top, right, bottom = self.box
-        width = right - left
-        center = left + (position * 1.5 - 0.25) * width
-        slanted = self.columns[top:bottom, left:right] + (self.rows[top:bottom, left:right] - top) * 0.32
-        band = np.exp(-(((slanted - center) / max(1.0, width * self.SWEEP_WIDTH)) ** 2))
-        strength = np.asarray(self.mask.crop(self.box), dtype=np.float32) * band * 0.62
-        canvas.paste(GHOST_WHITE, (left, top), Image.fromarray(strength.astype(np.uint8)))
+    def _bands(self, arrays, top, bottom, strength, rng):
+        """水平错位的条带：几个数组一起错开同样的距离。"""
+        H, W = self.H, self.W
+        for _ in range(int(2 + 5 * strength)):
+            start = int(rng.integers(top, max(top + 1, bottom)))
+            height = int(rng.integers(max(1, H // 90), max(2, H // 11)))
+            shift = int(rng.integers(-1000, 1001) / 1000.0 * W * 0.07 * strength)
+            end = min(H, start + height)
+            for array in arrays:
+                array[start:end] = np.roll(array[start:end], shift, axis=1)
+
+    def _glitch(self, fill, strength, rng, dim=1.0):
+        """信号不良的 404：数字错位成几条，轻微跳动，色边分离，偶尔扫描线。主副标题不动。"""
+        H, W = self.H, self.W
+        alpha = self.alpha
+        layer = fill
+        # 整体跳动
+        jump = int(round(rng.integers(-1, 2) * H * 0.012 * strength))
+        if jump:
+            alpha = np.roll(alpha, jump, axis=0)
+            layer = np.roll(layer, jump, axis=0)
+        alpha = alpha.copy()
+        layer = layer.copy()
+        self._bands((alpha, layer), self.box[1], self.box[3], strength, rng)
+        # 扫描线
+        if rng.random() < 0.5 * strength:
+            alpha[::max(2, H // 60)] *= 0.35
+        alpha = alpha * dim
+        # 色边：红蓝通道错开
+        split = int(round(W * 0.011 * strength))
+        output = np.empty_like(self.base)
+        for channel, offset in ((0, split), (1, 0), (2, -split)):
+            shifted = np.roll(alpha, offset, axis=1) if offset else alpha
+            output[..., channel] = self.base[..., channel] + (layer[..., channel] - self.base[..., channel]) * shifted
+        return Image.fromarray(np.clip(output, 0, 255).astype(np.uint8))
+
+    def _glitch_screen(self, picture, strength, rng):
+        """信号不良的大图：整屏错位、跳动、色边分离，偶尔扫描线。"""
+        H, W = self.H, self.W
+        jump = int(round(rng.integers(-1, 2) * H * 0.02 * strength))
+        layer = np.roll(picture, jump, axis=0) if jump else picture.copy()
+        self._bands((layer,), 0, H, strength, rng)
+        split = int(round(W * 0.012 * strength))
+        output = np.empty_like(layer)
+        for channel, offset in ((0, split), (1, 0), (2, -split)):
+            output[..., channel] = np.roll(layer[..., channel], offset, axis=1) if offset else layer[..., channel]
+        if rng.random() < 0.6 * strength:
+            output[::max(2, H // 60)] *= 0.45
+        return Image.fromarray(np.clip(output, 0, 255).astype(np.uint8))
 
     def frame(self, phase):
         position = (phase % 1.0) * self.beat_count
         current = int(position) % self.beat_count
         following = (current + 1) % self.beat_count
         local = position - int(position)
+        if local < self.HOLD:
+            return self._hold(("digits", current), self.fills[current])
 
-        if local <= self.HOLD:
-            canvas = self.dim[current].copy()
-            canvas.paste(self.bright[current], (0, 0), self.mask)
-            if 0.08 < local / self.HOLD < 0.82:
-                self._sweep(canvas, (local / self.HOLD - 0.08) / 0.74)
-            canvas = canvas.convert("RGBA")
-            canvas.alpha_composite(self.edge)
-            if self.tag is not None:
-                canvas.alpha_composite(self.tag, self.tag_at)
-            return canvas
+        rng = np.random.default_rng(current * 100000 + int(local * 90000))
+        roll = rng.random()
+        if local < self.HOLD + self.OUT:
+            # 404 开始闪烁，雪花和白字夹杂着大图，越来越稳，最后定在大图上
+            amount = (local - self.HOLD) / self.OUT
+            if amount < 0.35:
+                fill = self.fills[current] if roll < 0.45 else (self.white if roll < 0.7 else self._snow(rng))
+                return self._glitch(fill, 0.55 + amount, rng, dim=0.4 if roll > 0.9 else 1.0)
+            if amount < 0.7:
+                if roll < 0.55:
+                    return self._glitch_screen(self.full[current], 0.9, rng)
+                return self._glitch(self._snow(rng) if roll < 0.8 else self.white, 0.9, rng)
+            return self._glitch_screen(self.full[current], 0.05 + (1.0 - amount) / 0.3 * 0.65, rng)
+        if local < self.HOLD + self.OUT + self.FULL:
+            # 完整的大图，没有 404，也没有主副标题
+            if ("full", current) not in self._still:
+                self._still[("full", current)] = Image.fromarray(self.full[current].astype(np.uint8))
+            return self._still[("full", current)]
 
-        raw = (local - self.HOLD) / (1.0 - self.HOLD)
-        peak = math.log(max(1.01, self.zoom_peak))
-        tag_alpha = 0.0
-        if raw < 0.16:
-            # 第一段：字里换成下一张，字不动
-            mix_amount = ease(raw / 0.16)
-            ground, inside = self.dim[current], Image.blend(self.bright[current], self.bright[following], mix_amount)
-            zoom, shift, reveal, tag_alpha = 1.0, 0.0, 0.0, 1.0
-        elif raw < 0.46:
-            # 第二段：镜头穿过笔画，冲进下一张
-            move = ease_in_out((raw - 0.16) / 0.3)
-            ground, inside = Image.blend(self.dim[current], self.plain[current], min(1.0, move * 4.0)), self.bright[following]
-            zoom, shift, reveal = math.exp(peak * move), ease(move * 1.3), move
-            tag_alpha = max(0.0, 1.0 - move * 5.0)
-        elif raw < 0.7:
-            # 第三段：全屏亮相
-            return self.full[following].copy()
-        else:
-            # 第四段：退回来，背景也换成下一张
-            move = ease_out((raw - 0.7) / 0.3)
-            ground, inside = Image.blend(self.plain[following], self.dim[following], max(0.0, move * 2.0 - 1.0)), self.bright[following]
-            zoom, shift, reveal = math.exp(peak * (1.0 - move)), ease((1.0 - move) * 1.3), 1.0 - move
-            tag_alpha = max(0.0, move * 3.0 - 2.0)
-
-        picture = Image.blend(inside, self.full[following], reveal) if reveal > 0 else inside
-        layer = self.mask if zoom <= 1.0 else self._zoomed_mask(zoom, shift)
-        canvas = ground.copy()
-        canvas.paste(picture, (0, 0), layer)
-        canvas = canvas.convert("RGBA")
-        if zoom <= 1.02:
-            canvas.alpha_composite(self.edge)
-        if self.tag is not None and tag_alpha > 0:
-            canvas.alpha_composite(with_alpha(self.tag, tag_alpha), self.tag_at)
-        return canvas
+        # 再闪烁一次，回到下一张图的 404
+        amount = (local - self.HOLD - self.OUT - self.FULL) / (1.0 - self.HOLD - self.OUT - self.FULL)
+        if amount < 0.4:
+            return self._glitch_screen(self.full[current], 0.5 + amount, rng)
+        if amount < 0.7:
+            return self._glitch(self.fills[following] if roll < 0.7 else self._snow(rng), 0.8, rng)
+        return self._glitch(self.fills[following], (1.0 - amount) / 0.3 * 0.45 + 0.02, rng)
 
 
 # ---------------------------------------------------------------- 风格 4：预告
@@ -724,6 +713,8 @@ class Trailer(Cover):
     """虚化背景上的预告横幅：左上角斜角飘带，右边平行四边形的大图和一条细斜栏。换图时斜切成几条错开滑入。"""
 
     BANDS = 5
+    # 播放键放在大图的角上；留空就不放
+    BADGE = True
 
     def prepare(self):
         W, H, s = self.W, self.H, self.s
@@ -746,8 +737,9 @@ class Trailer(Cover):
         window_size = (int(right - left + skew) + 1, bottom - top)
         self.bar_at = (int(bar_left - skew), top)
         bar_size = (int(bar_right - bar_left + skew) + 1, bottom - top)
-        self.windows = [ImageEnhance.Contrast(self.fit(index, window_size)).enhance(1.05) for index in range(self.count)]
-        self.bars = [self.fit(index, bar_size) for index in range(self.count)]
+        # 斜框和细条都会切开海报上的片名，优先用背景图
+        self.windows = [ImageEnhance.Contrast(self.fit(index, window_size, clean=True)).enhance(1.05) for index in range(self.count)]
+        self.bars = [self.fit(index, bar_size, clean=True) for index in range(self.count)]
         self.grounds = [self.backdrop(index, 0.36) for index in range(self.count)]
 
         x_axis, _y_axis = axes(self.size)
@@ -756,11 +748,84 @@ class Trailer(Cover):
         self.shade = rgba_from_alpha(self.base_color(), np.clip(shade, 0, 1))
 
         margin_x = W * 0.05
-        block, margin, ink_h = self.title_block(W * 0.345, sub_style=None, button=True)
+        block, margin, ink_h = self.title_block(W * 0.345, sub_style=None)
+        ribbon_bottom = int(H * 0.085)
         if self.has_sub():
-            self._ribbon(margin_x, int(H * 0.085))
-        center = H * 0.54 + self.spec.offset_y * s
+            ribbon_bottom = self._ribbon(margin_x, int(H * 0.085))
+        self._progress(margin_x, bottom, skew / float(bottom - top))
+        # 标题放在飘带和编号中间
+        center = (ribbon_bottom + self.counter_top) / 2.0 + self.spec.offset_y * s
         composite_at(self.overlay, block, margin_x - margin, center - ink_h / 2.0 - margin)
+        if self.BADGE:
+            # 播放键压在大图右下角，不挡人物，也不和标题抢位置
+            badge = play_badge(H * 0.135, glass=(0, 0, 0, 96))
+            inset = H * 0.035
+            composite_at(self.overlay, badge, right - skew - badge.width - inset, bottom - badge.height - inset)
+
+    def _progress(self, left, bottom, slant_ratio):
+        """
+        左下角的粗进度条：斜度和大图一致的几格，底边和大图对齐，把左栏撑满。
+        上面一行编号，告诉你这是第几段预告。
+        """
+        W, H, s = self.W, self.H, self.s
+        height = int(H * 0.085)
+        top = bottom - height
+        slant = height * slant_ratio
+        gap = W * 0.0075
+        # 右端要和大图的左下角留出距离
+        total = W * 0.3
+        cell_w = (total - slant - gap * (self.count - 1)) / float(self.count)
+        self.cells = []
+        for index in range(self.count):
+            x0 = left + index * (cell_w + gap)
+            x1 = x0 + cell_w
+            points = [(x0 + slant, top), (x1 + slant, top), (x1, bottom), (x0, bottom)]
+            self.cells.append(polygon_mask(self.size, points))
+        # 编号：当前段亮，总数暗
+        sub_gap = 30 * s
+        self.counters = []
+        number_font = load_font(self.fonts[1], self.spec.sub_size * s * 1.2)
+        small_font = load_font(self.fonts[1], self.spec.sub_size * s)
+        ink = number_font.getbbox("0", anchor="ls")
+        baseline = top - sub_gap
+        self.counter_top = baseline + ink[1]
+        scale = 3
+        for index in range(self.count):
+            layer = Image.new("RGBA", (int(total) * scale, int(H * 0.16) * scale), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(layer)
+            base_y = int(H * 0.12) * scale
+            large = load_font(self.fonts[1], number_font.size * scale)
+            small = load_font(self.fonts[1], small_font.size * scale)
+            text = f"{index + 1:02d}"
+            draw.text((0, base_y), text, font=large, fill=GHOST_WHITE + (255,), anchor="ls")
+            draw.text((large.getlength(text) + 16 * s * scale, base_y), f"/ {self.count:02d}", font=small,
+                      fill=SILVER + (190,), anchor="ls")
+            final = layer.resize((int(total), int(H * 0.16)), Image.Resampling.LANCZOS)
+            self.counters.append((final, (int(left), int(baseline - H * 0.12))))
+
+    def _progress_frame(self, canvas, current, following, progress):
+        """放过的格子是白色，正在放的是薄荷绿，没放到的是暗的。转场时颜色跟着走，编号叠化。"""
+        passed = GHOST_WHITE + (120,)
+        waiting = (255, 255, 255, 34)
+        active = self.accent + (255,)
+        restart = following == 0
+
+        def color_at(index, beat):
+            return active if index == beat else (passed if index < beat else waiting)
+
+        for index, mask in enumerate(self.cells):
+            before = color_at(index, current)
+            after = color_at(index, 0 if restart else following)
+            color = tuple(int(round(a + (b - a) * progress)) for a, b in zip(before, after))
+            layer = Image.new("RGBA", self.size, color[:3] + (0,))
+            layer.putalpha(mask.point(lambda value, alpha=color[3]: int(value * alpha / 255.0)))
+            canvas.alpha_composite(layer)
+        layer, at = self.counters[current]
+        if progress <= 0:
+            canvas.alpha_composite(layer, at)
+        else:
+            canvas.alpha_composite(with_alpha(layer, 1.0 - progress), at)
+            canvas.alpha_composite(with_alpha(self.counters[following][0], progress), at)
 
     def _ribbon(self, text_x, y_pos):
         """贴着左边缘的薄荷绿飘带，右端是斜角。"""
@@ -776,6 +841,7 @@ class Trailer(Cover):
         self.overlay.alpha_composite(ribbon)
         self.overlay.alpha_composite(sub.render(self.size, text_x, y_pos + pad_y - sub.offset_y,
                                                 sub_fill=CARD + (255,)))
+        return y_pos + height
 
     def frame(self, phase):
         position = (phase % 1.0) * self.count
@@ -810,6 +876,7 @@ class Trailer(Cover):
         bar_layer.paste(bar, self.bar_at)
         canvas.paste(bar_layer, (0, 0), self.bar_mask)
         canvas.alpha_composite(self.overlay)
+        self._progress_frame(canvas, current, following, progress)
         return canvas
 
 
@@ -827,7 +894,8 @@ class Surround(Cover):
         mask = rounded_mask(self.card_size, radius)
         self.cards = []
         for index in range(self.count):
-            card = ImageEnhance.Contrast(self.fit(index, self.card_size)).enhance(1.05).convert("RGBA")
+            # 片名会和底部的大标题撞在一起，优先用背景图
+            card = ImageEnhance.Contrast(self.fit(index, self.card_size, clean=True)).enhance(1.05).convert("RGBA")
             card.putalpha(mask)
             self.cards.append(card)
         self.radius = W * 0.62
@@ -898,8 +966,9 @@ class Depth(Cover):
             self.cards.append(card)
 
         # 文字和压暗固定在最前面那张的位置上，每张卡上前时都正好接住
-        left = int(self.center[0] - self.front_size[0] / 2.0)
-        top = int(self.center[1] - self.front_size[1] / 2.0)
+        # 取整方式要和 composite_at 一致，错开一像素时亮图的底边会露出一条白线
+        left = int(round(self.center[0] - self.front_size[0] / 2.0))
+        top = int(round(self.center[1] - self.front_size[1] / 2.0))
         self.overlay = Image.new("RGBA", self.size, (0, 0, 0, 0))
         _x_axis, y_axis = axes(self.front_size)
         scrim = rgba_from_alpha((4, 4, 6), np.clip(smooth((y_axis - 0.3) / 0.7) * 0.94 * self.scrim_strength(), 0, 1))
@@ -970,10 +1039,12 @@ class Detail(Cover):
         hero_full = (*self.hero_box, self.hero_box[0] + self.hero_size[0], self.hero_box[1] + self.hero_size[1])
 
         self.overlay = shadow_layer(self.size, hero_full, radius, 30 * s, 0.55, 12 * s)
-        badge = play_badge(self.hero_size[1] * 0.24, glass=(0, 0, 0, 90))
+        # 播放键放在主卡右下角，不挡人物
+        badge = play_badge(self.hero_size[1] * 0.17, glass=(0, 0, 0, 90))
+        inset = int(self.hero_size[1] * 0.05)
         self.badge = badge
-        self.badge_at = (self.hero_box[0] + (self.hero_size[0] - badge.width) // 2,
-                         self.hero_box[1] + (self.hero_size[1] - badge.height) // 2)
+        self.badge_at = (self.hero_box[0] + self.hero_size[0] - badge.width - inset,
+                         self.hero_box[1] + self.hero_size[1] - badge.height - inset)
 
         text_x = W * 0.588
         block, margin, ink_h = self.title_block(W * 0.37, sub_style="text", shadow=self.text_shadow(120))
@@ -983,17 +1054,13 @@ class Detail(Cover):
         composite_at(self.overlay, block, text_x - margin, top - margin)
         composite_at(self.overlay, chip, text_x, top + ink_h + 44 * s)
 
-        self.thumb_size = (int(W * 0.232), int(H * 0.36))
+        # 底排四张完整地摆在画面里，左右和主卡对齐，不被画面边缘切掉
         self.thumb_gap = int(W * 0.0125)
-        self.thumb_y = int(H * 0.73)
+        self.thumb_size = (int((W - self.hero_box[0] * 2 - self.thumb_gap * 3) / 4.0), int(H * 0.235))
+        self.thumb_y = int(H * 0.715)
         self.thumb_x = self.hero_box[0]
-        self.thumb_mask = rounded_mask(self.thumb_size, int(30 * s))
-        fade = rgba_from_alpha(self.base_color(), smooth(axes(self.thumb_size)[1] / 0.75) * 0.72)
-        self.thumbs = []
-        for index in range(self.count):
-            thumb = self.fit(index, self.thumb_size).convert("RGBA")
-            thumb.alpha_composite(fade)
-            self.thumbs.append(thumb.convert("RGB"))
+        self.thumb_mask = rounded_mask(self.thumb_size, int(26 * s))
+        self.thumbs = [ImageEnhance.Brightness(self.fit(index, self.thumb_size)).enhance(0.86) for index in range(self.count)]
 
     def frame(self, phase):
         current, following, progress = beats(phase, self.count, hold=0.6, curve=ease_in_out)
@@ -1010,10 +1077,9 @@ class Detail(Cover):
 
         # 底排整体左移一格；第一张缩略图不动，它要放大成新的主卡
         step = self.thumb_size[0] + self.thumb_gap
-        for slot in range(1 if progress > 0 else 0, 7):
+        # 静止时只有四张；转场时第五张从右边进来
+        for slot in range(1, 5) if progress > 0 else range(0, 4):
             x_pos = int(round(self.thumb_x + (slot - progress) * step))
-            if x_pos >= self.W or x_pos + self.thumb_size[0] <= 0:
-                continue
             canvas.paste(self.thumbs[(current + 1 + slot) % self.count], (x_pos, self.thumb_y), self.thumb_mask)
         if progress <= 0:
             return canvas
@@ -1046,10 +1112,11 @@ class Fan(Cover):
         _x_axis, y_axis = axes(self.size)
         self.shade = rgba_from_alpha(self.base_color(), np.clip((0.86 - y_axis * 0.5) * self.scrim_strength(), 0, 1))
 
-        self.poster_h = int(H * 0.69)
+        # 正中那张完整地落在画面里，两边的才滑出画面
+        self.poster_h = int(H * 0.65)
         self.poster_w = int(self.poster_h * 0.68)
         self.orbit = H * 1.42
-        self.pivot = (W / 2.0, H * 0.67 + self.orbit)
+        self.pivot = (W / 2.0, H * 0.65 + self.orbit)
         scale = 2
         size = (self.poster_w * scale, self.poster_h * scale)
         radius = int(30 * s * scale)
@@ -1104,7 +1171,7 @@ class Fan(Cover):
         return canvas
 
 
-DESIGNS = {1: Gallery, 2: Titan, 3: Glint, 4: Trailer, 5: Surround, 6: Depth, 7: Detail, 8: Fan}
+DESIGNS = {1: Gallery, 2: Titan, 3: NotFound, 4: Trailer, 5: Surround, 6: Depth, 7: Detail, 8: Fan}
 
 
 # ---------------------------------------------------------------- 输出
@@ -1116,35 +1183,11 @@ def encode_jpeg(image, quality=92):
     return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
 
-def encode_gif(render_frame, duration, fps, reduce_colors, stop_event):
-    """逐帧渲染并调用 ffmpeg 合成 GIF，stop_event 触发时立即中止并返回 False。"""
-    safe_fps = max(1, int(fps))
-    total = max(2, int(round(safe_fps * max(1, float(duration)))))
-    colors, dither = {
-        "off": ("256", "bayer:bayer_scale=4"),
-        "medium": ("192", "bayer:bayer_scale=3"),
-        "strong": ("96", "bayer:bayer_scale=2"),
-    }.get(reduce_colors, ("192", "bayer:bayer_scale=3"))
-
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_path = Path(temp_dir)
-        logger.info(f"开始生成动画帧，共 {total} 帧")
-        for index in range(total):
-            if stop_event and stop_event.is_set():
-                return False
-            render_frame(index / float(total)).convert("RGB").save(temp_path / f"frame_{index:04d}.bmp", format="BMP")
-
-        output = temp_path / "output.gif"
-        # 有序抖动不随帧变化，静止区域的像素完全相同，GIF 只记录真正变化的部分
-        command = [
-            "ffmpeg", "-hide_banner", "-y", "-framerate", str(safe_fps),
-            "-i", str(temp_path / "frame_%04d.bmp"), "-threads", "0",
-            "-filter_complex",
-            f"[0:v] split [a][b]; [a] palettegen=max_colors={colors}:stats_mode=full [p]; "
-            f"[b][p] paletteuse=dither={dither}:diff_mode=rectangle",
-            "-loop", "0", "-f", "gif", str(output),
-        ]
-        process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+def _run_ffmpeg(command, stop_event):
+    """运行 ffmpeg，可被停止信号打断。返回 (退出码, 错误输出)，被打断时退出码为 None。"""
+    # 错误输出写到文件：写进管道又没人读的话，管道一满 ffmpeg 就会卡死
+    with tempfile.TemporaryFile() as errors:
+        process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=errors)
         while process.poll() is None:
             if stop_event and stop_event.is_set():
                 process.terminate()
@@ -1153,14 +1196,82 @@ def encode_gif(render_frame, duration, fps, reduce_colors, stop_event):
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait(timeout=2)
-                return False
+                return None, ""
             time.sleep(0.05)
-        if process.returncode != 0:
-            detail = process.stderr.read().decode("utf-8", "ignore")[-400:] if process.stderr else ""
-            raise RuntimeError(f"ffmpeg 退出码 {process.returncode}: {detail}")
-        data = output.read_bytes()
-        logger.info(f"动图生成完成，{total} 帧，{len(data) / 1024 / 1024:.1f} MB")
+        errors.seek(0)
+        return process.returncode, errors.read().decode("utf-8", "ignore")[-400:]
+
+
+def encode_gif(render_frame, duration, fps, reduce_colors, stop_event):
+    """
+    逐帧渲染并调用 ffmpeg 合成 GIF，stop_event 触发时立即中止并返回 False。
+
+    全片共用一张调色板再抖动，暗部和渐变上会有一层点状噪点。这里每帧用自己的调色板、不抖动，画面干净得多。
+    每帧调色板不能靠帧差压缩，所以静止的帧要合并成一帧，用延长显示时间代替。
+    """
+    safe_fps = max(1, int(fps))
+    total = max(2, int(round(safe_fps * max(1, float(duration)))))
+    step = 1.0 / safe_fps
+    colors = {"off": 256, "medium": 192, "strong": 96}.get(reduce_colors, 192)
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        logger.info(f"开始生成动画帧，共 {total} 帧")
+        kept = []
+        previous = None
+        for index in range(total):
+            if stop_event and stop_event.is_set():
+                return False
+            frame = render_frame(index / float(total)).convert("RGB")
+            pixels = frame.tobytes()
+            if pixels == previous:
+                kept[-1][1] += step
+                continue
+            previous = pixels
+            name = f"frame_{index:04d}.bmp"
+            frame.save(temp_path / name, format="BMP")
+            kept.append([name, step])
+
+        listing = temp_path / "frames.txt"
+        lines = []
+        for name, shown in kept:
+            lines += [f"file '{name}'", f"duration {shown:.4f}"]
+        # concat 要求最后一个文件重复一次，否则最后一帧的时长会被忽略
+        lines.append(f"file '{kept[-1][0]}'")
+        listing.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        data = _compose_gif(listing, temp_path / "output.gif", colors, stop_event)
+        if data is None:
+            return False
+        logger.info(f"动图生成完成，{len(kept)}/{total} 帧，{len(data) / 1024 / 1024:.1f} MB")
         return base64.b64encode(data).decode("utf-8")
+
+
+def _compose_gif(listing, output, colors, stop_event):
+    """
+    合成 GIF，返回文件内容，被停止时返回 None。
+    不能只看退出码：线上出现过 ffmpeg 退出码为 0 却没有输出文件的情况，一次失败不该让整个媒体库失败。
+    旧版 ffmpeg 不认识 -fps_mode；每帧调色板都失败时退回全片一张调色板，画质差一点但一定能出图。
+    """
+    per_frame = (f"[0:v] split [a][b]; [a] palettegen=max_colors={colors}:stats_mode=single [p]; "
+                 f"[b][p] paletteuse=new=1:dither=none")
+    shared = (f"[0:v] split [a][b]; [a] palettegen=max_colors={colors}:stats_mode=full [p]; "
+              f"[b][p] paletteuse=dither=bayer:bayer_scale=4")
+    attempts = ((["-fps_mode", "vfr"], per_frame), (["-vsync", "vfr"], per_frame), (["-fps_mode", "vfr"], per_frame),
+                (["-fps_mode", "vfr"], shared), (["-vsync", "vfr"], shared))
+    failure = ""
+    for sync, graph in attempts:
+        output.unlink(missing_ok=True)
+        command = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", str(listing),
+                   "-threads", "0", *sync, "-filter_complex", graph, "-loop", "0", "-f", "gif", str(output)]
+        code, detail = _run_ffmpeg(command, stop_event)
+        if code is None:
+            return None
+        if code == 0 and output.is_file() and output.stat().st_size > 0:
+            return output.read_bytes()
+        failure = f"ffmpeg 退出码 {code}，{'没有生成文件' if code == 0 else '合成失败'}：{detail}"
+        logger.warning(f"合成 GIF 失败，换一种方式再试。{failure}")
+    raise RuntimeError(failure)
 
 
 def _accent_and_tint(image, info, config):
@@ -1190,21 +1301,21 @@ def _accent_and_tint(image, info, config):
 
 def create_cover(index, animated, library_dir, title, fonts, spec, size, image_count=None,
                  blur_size=50, color_ratio=0.8, bg_color_config=None,
-                 animation_duration=12, animation_fps=15, animation_reduce_colors="medium", stop_event=None):
+                 animation_duration=12, animation_fps=15, animation_reduce_colors="medium", stop_event=None,
+                 display_font=None):
     """生成封面，返回图片的 base64：静态为 JPEG，动态为 GIF。失败时返回 False。"""
     info = style_info(index)
     try:
         count = max(info.slots, int(image_count or 0)) if animated else info.slots
-        images = load_images(library_dir, count)
+        # 原图比画布大太多只会拖慢速度，但要留够人脸检测需要的清晰度
+        limit = max(int(max(size) * 1.6), DETECT_SIZE)
+        images = load_pictures(library_dir, count, limit)
         if not images:
             logger.warning(f"风格「{info.name}」没有找到可用的素材")
             return False
-        # 原图比画布大太多只会拖慢速度
-        limit = int(max(size) * 1.6)
-        for image in images:
-            image.thumbnail((limit, limit), Image.Resampling.LANCZOS)
-        accent, tint = _accent_and_tint(images[0], info, bg_color_config)
-        cover = DESIGNS[info.index](size, images, title, fonts, spec, accent, tint, blur_size, color_ratio, animated)
+        accent, tint = _accent_and_tint(images[0].main.image, info, bg_color_config)
+        cover = DESIGNS[info.index](size, images, title, fonts, spec, accent, tint, blur_size, color_ratio, animated,
+                                   display_font=display_font)
         if not animated:
             return encode_jpeg(cover.frame(0.0))
         return encode_gif(cover.frame, animation_duration, animation_fps, animation_reduce_colors, stop_event)

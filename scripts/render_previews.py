@@ -104,12 +104,14 @@ def render_all():
     for info in STYLE_CATALOG:
         with tempfile.TemporaryDirectory() as folder:
             source = art_folder(STYLE_ART[info.index], folder)
-            results[info.index] = create_cover(info.index, False, source, TITLE, style_fonts(info.type), info.type, size)
+            display = font_path(info.display) if info.display else None
+            results[info.index] = create_cover(info.index, False, source, TITLE, style_fonts(info.type), info.type, size,
+                                               display_font=display)
             if has_ffmpeg:
                 # 和真实封面相同的节奏：12 秒一圈
                 animations[info.index] = create_cover(
                     info.index, True, source, TITLE, style_fonts(info.type), info.type, (320, 180), image_count=6,
-                    animation_duration=12, animation_fps=12, animation_reduce_colors="medium",
+                    animation_duration=12, animation_fps=12, animation_reduce_colors="medium", display_font=display,
                 )
 
     # 字体预设统一用标题最清楚的预告风格展示，差异都来自字体
