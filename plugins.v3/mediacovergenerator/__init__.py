@@ -74,6 +74,11 @@ COVER_NAME_PATTERN = re.compile(
     re.IGNORECASE,
 )
 LIVE_TV_TYPE = "livetv"
+# 极影视（极空间）走 Emby 兼容接口，媒体库 ID 字段和上传方式都按 Emby 处理
+EMBY_COMPATIBLE_TYPES = ("emby", "zspace")
+SUPPORTED_SERVER_TYPES = EMBY_COMPATIBLE_TYPES + ("jellyfin",)
+SERVER_TYPE_NAMES = {"emby": "Emby", "zspace": "极影视", "jellyfin": "Jellyfin", "plex": "Plex",
+                     "trimemedia": "飞牛影视", "ugreen": "绿联影视", "navidrome": "Navidrome"}
 # 下载的素材：N.jpg 是这个条目的首选图，N.alt.jpg 是另一种比例的图
 NUMBERED_IMAGE_PATTERN = re.compile(r"^[1-9][0-9]*(\.alt)?\.jpg$", re.IGNORECASE)
 # 素材的长边上限。封面最大 1920 宽，再大只会多花下载时间
@@ -136,7 +141,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标（前端按地址缓存图标，换图时要换文件名）
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/animated-cover.png"
     # 插件版本
-    plugin_version = "1.8.1"
+    plugin_version = "1.8.2"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -411,7 +416,8 @@ class MediaCoverGenerator(_PluginBase):
                     # 媒体服务器不可用不应该影响插件加载
                     logger.warning(f"读取媒体服务器 {server} 的媒体库失败: {error}")
         else:
-            logger.info("未选择媒体服务器")
+            hint = self.__server_hint()
+            logger.info(f"未选择媒体服务器：{hint}" if hint else "未选择媒体服务器，请在插件设置的「基础」页选择并保存")
 
         cleanup_triggered = False
         if self._clean_images:
@@ -1197,7 +1203,7 @@ class MediaCoverGenerator(_PluginBase):
         fallback = None
         for server, service in (self._servers or {}).items():
             for library in self.__get_server_libraries(service) or []:
-                library_id = library.get("Id") if service.type == "emby" else library.get("ItemId")
+                library_id = library.get("Id") if service.type in EMBY_COMPATIBLE_TYPES else library.get("ItemId")
                 key = f"{server}-{library_id}"
                 if library_key and key == library_key:
                     return service, library
@@ -1281,10 +1287,32 @@ class MediaCoverGenerator(_PluginBase):
     def __server_configs(self) -> List[Any]:
         try:
             return [config for config in self.mediaserver_helper.get_configs().values()
-                    if config.type in ("emby", "jellyfin")]
+                    if config.type in SUPPORTED_SERVER_TYPES]
         except Exception as error:
             logger.warning(f"读取媒体服务器配置失败: {error}")
             return []
+
+    def __server_hint(self) -> str:
+        """MoviePilot 里配了服务器、插件却一个都选不了时，说明原因。"""
+        if self.__server_configs():
+            return ""
+        try:
+            configs = list(self.mediaserver_helper.get_configs(include_disabled=True).values())
+        except TypeError:
+            # 旧版 MoviePilot 的 get_configs 没有 include_disabled 参数
+            configs = list(self.mediaserver_helper.get_configs().values())
+        except Exception as error:
+            logger.debug(f"读取媒体服务器配置失败: {error}")
+            return ""
+        if not configs:
+            return "MoviePilot 里还没有配置媒体服务器，请先在「设定 → 媒体服务器」中添加"
+        disabled = [config.name for config in configs
+                    if config.type in SUPPORTED_SERVER_TYPES and getattr(config, "enabled", True) is False]
+        if disabled:
+            return f"媒体服务器 {'、'.join(disabled)} 在 MoviePilot 中未启用，请先在「设定 → 媒体服务器」中启用"
+        labels = [(config.name, SERVER_TYPE_NAMES.get(config.type, config.type)) for config in configs]
+        others = "、".join(name if name == label else f"{name}（{label}）" for name, label in labels)
+        return f"本插件支持 Emby、Jellyfin 和极影视，MoviePilot 里配置的 {others} 不受支持"
 
     def __libraries_for_form(self) -> List[Dict[str, str]]:
         """列出所有已配置服务器的媒体库，这样勾选新服务器后无需先保存就能选媒体库。"""
@@ -1339,6 +1367,7 @@ class MediaCoverGenerator(_PluginBase):
         ]
         ctx = {
             "server_items": [{"title": config.name, "value": config.name} for config in self.__server_configs()],
+            "server_hint": self.__server_hint() or "支持 Emby、Jellyfin 和极影视",
             # 媒体库选项跟随已选服务器变化，表达式在前端按当前表单值计算
             "library_items_expr": "{{ %s.filter(item => (selected_servers || []).includes(item.server)) }}"
                                   % json.dumps(library_items, ensure_ascii=False),
@@ -1361,7 +1390,8 @@ class MediaCoverGenerator(_PluginBase):
             "note": "" if self._enabled else "在设置中启用后才能生成封面",
         }]
         if not self._selected_servers:
-            checks.append({"ok": False, "title": "未选择媒体服务器", "note": "在设置的「基础」页选择"})
+            checks.append({"ok": False, "title": "未选择媒体服务器",
+                           "note": self.__server_hint() or "在设置的「基础」页选择"})
         for server in self._selected_servers:
             service = (self._servers or {}).get(server)
             connected = False
@@ -1432,7 +1462,7 @@ class MediaCoverGenerator(_PluginBase):
         if not self._enabled:
             warnings.append("插件尚未启用，请在设置中启用并保存")
         if not self._selected_servers:
-            warnings.append("还没有选择媒体服务器，请在设置中选择并保存")
+            warnings.append(self.__server_hint() or "还没有选择媒体服务器，请在设置中选择并保存")
         elif not self._servers:
             warnings.append("媒体服务器配置尚未生效，请在设置中保存后重试")
         if self._title_config_error:
@@ -1802,7 +1832,7 @@ class MediaCoverGenerator(_PluginBase):
         if not library:
             logger.warning(f"找不到 {title_year} 所在媒体库")
             return
-        if service.type == 'emby':
+        if service.type in EMBY_COMPATIBLE_TYPES:
             library_id = library.get("Id")
         else:
             library_id = library.get("ItemId")
@@ -1939,7 +1969,7 @@ class MediaCoverGenerator(_PluginBase):
                     logger.warning(f"服务器 {server} 的媒体库列表获取失败")
                     continue
                 for library in libraries:
-                    library_id = library.get("Id") if service.type == 'emby' else library.get("ItemId")
+                    library_id = library.get("Id") if service.type in EMBY_COMPATIBLE_TYPES else library.get("ItemId")
                     key = f"{server}-{library_id}"
                     if library_key:
                         if key != library_key:
@@ -2020,7 +2050,7 @@ class MediaCoverGenerator(_PluginBase):
         if not image_data or not self.__set_library_image(service, library, image_data):
             return False
         # 上传成功才算这些图用过。失败时不记录，入库更新才能重试
-        library_id = library.get("Id") if service.type == 'emby' else library.get("ItemId")
+        library_id = library.get("Id") if service.type in EMBY_COMPATIBLE_TYPES else library.get("ItemId")
         for item_id in reversed(self._pending_history):
             self.update_cover_history(server=service.name, library_id=library_id, item_id=item_id)
         self._pending_history = []
@@ -2235,7 +2265,7 @@ class MediaCoverGenerator(_PluginBase):
         max_attempts = 20  # 最大尝试次数，防止无限循环
 
         library_type = library.get('CollectionType')
-        if service.type == 'emby':
+        if service.type in EMBY_COMPATIBLE_TYPES:
             library_id = library.get("Id")
         else:
             library_id = library.get("ItemId")
@@ -2362,7 +2392,7 @@ class MediaCoverGenerator(_PluginBase):
     def __handle_boxset_library(self, service, library, title):
 
         include_types = 'BoxSet,Movie'
-        if service.type == 'emby':
+        if service.type in EMBY_COMPATIBLE_TYPES:
             library_id = library.get("Id")
         else:
             library_id = library.get("ItemId")
@@ -2411,7 +2441,7 @@ class MediaCoverGenerator(_PluginBase):
         播放列表图片获取
         """
         include_types = 'Playlist,Movie,Series,Episode,Audio'
-        if service.type == 'emby':
+        if service.type in EMBY_COMPATIBLE_TYPES:
             library_id = library.get("Id")
         else:
             library_id = library.get("ItemId")
@@ -2671,19 +2701,20 @@ class MediaCoverGenerator(_PluginBase):
             return []
         libraries = []
         try:
-            if service.type == 'emby':
+            if service.type in EMBY_COMPATIBLE_TYPES:
                 url = f'[HOST]emby/Library/VirtualFolders/Query?api_key=[APIKEY]'
             else:
                 url = f'[HOST]emby/Library/VirtualFolders/?api_key=[APIKEY]'
             res = service.instance.get_data(url=url)
             if res:
                 data = res.json()
-                libraries = data.get("Items", []) if service.type == 'emby' else data
+                libraries = data.get("Items", []) if service.type in EMBY_COMPATIBLE_TYPES else data
         except Exception as err:
             logger.error(f"获取媒体库列表失败：{str(err)}")
-        return [*libraries, *self.__get_live_tv_views(service, libraries)]
+        # 极影视没有实现 VirtualFolders/Query（返回 404），这时整份媒体库列表都从用户视图里取
+        return [*libraries, *self.__get_view_libraries(service, libraries, live_tv_only=bool(libraries))]
 
-    def __get_live_tv_views(self, service, libraries) -> List[Dict[str, Any]]:
+    def __get_view_libraries(self, service, libraries, live_tv_only: bool = True) -> List[Dict[str, Any]]:
         """电视直播不是虚拟文件夹，VirtualFolders 接口查不到，要从用户视图里补上。"""
         try:
             res = service.instance.get_data(url='[HOST]emby/Users/[USER]/Views?api_key=[APIKEY]')
@@ -2693,19 +2724,22 @@ class MediaCoverGenerator(_PluginBase):
             views = []
             for item in res.json().get("Items", []):
                 item_id = item.get("Id")
-                if item.get("CollectionType") != LIVE_TV_TYPE or not item_id or str(item_id) in known_ids:
+                collection_type = item.get("CollectionType") or ""
+                if not item_id or str(item_id) in known_ids:
+                    continue
+                if live_tv_only and collection_type != LIVE_TV_TYPE:
                     continue
                 views.append({
-                    "Name": item.get("Name") or "电视直播",
+                    "Name": item.get("Name") or ("电视直播" if collection_type == LIVE_TV_TYPE else ""),
                     "Id": item_id,
                     "ItemId": item_id,
-                    "CollectionType": LIVE_TV_TYPE,
+                    "CollectionType": collection_type,
                     "Locations": [],
                 })
             return views
         except Exception as err:
             # 视图只用于补充电视直播，失败时不影响普通媒体库
-            logger.debug(f"获取电视直播视图失败：{str(err)}")
+            logger.debug(f"获取媒体库视图失败：{str(err)}")
             return []
 
     @staticmethod
@@ -2739,7 +2773,7 @@ class MediaCoverGenerator(_PluginBase):
             lib_items = []
             libraries = self.__get_server_libraries(service)
             for library in libraries:
-                if service.type == 'emby':
+                if service.type in EMBY_COMPATIBLE_TYPES:
                     library_id = library.get("Id")
                 else:
                     library_id = library.get("ItemId")
@@ -2939,7 +2973,7 @@ class MediaCoverGenerator(_PluginBase):
 
         """设置Emby媒体库封面"""
         try:
-            if service.type == 'emby':
+            if service.type in EMBY_COMPATIBLE_TYPES:
                 library_id = library.get("Id")
             else:
                 library_id = library.get("ItemId")
@@ -2951,7 +2985,7 @@ class MediaCoverGenerator(_PluginBase):
             if image_base64.startswith("R0lG"):
                 # Emby 只把存储的 GIF 发给 Accept 明确接受 GIF 的请求，其余都压成单帧 PNG。
                 # 标成 PNG 后存为 poster.png，无需缩小时 Emby 原样返回这份 GIF 数据
-                content_type = "image/png" if service.type == "emby" else "image/gif"
+                content_type = "image/png" if service.type in EMBY_COMPATIBLE_TYPES else "image/gif"
                 extension = "gif"
             elif image_base64.startswith("UklG"):
                 content_type = "image/webp"

@@ -810,7 +810,7 @@ def _basic_tab(ctx: Dict[str, Any]) -> List[dict]:
             "mdi-server-network", "媒体服务器", "选择要更新封面的服务器和媒体库",
             _row(
                 _col(_select("selected_servers", "媒体服务器", ctx["server_items"], multiple=True, chips=True,
-                             clearable=True, hint="支持 Emby 和 Jellyfin", icon_name="mdi-server"), 6),
+                             clearable=True, hint=ctx.get("server_hint") or "支持 Emby、Jellyfin 和极影视", icon_name="mdi-server"), 6),
                 _col(_select("sort_by", "选图顺序", [
                     {"title": "随机", "value": "Random"},
                     {"title": "最新入库", "value": "DateCreated"},
