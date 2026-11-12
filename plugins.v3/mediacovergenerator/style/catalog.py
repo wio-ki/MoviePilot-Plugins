@@ -45,7 +45,8 @@ class StyleInfo:
     slots: int
     # 这款构图完整展示竖版海报（否则优先横版背景图，避免切开海报上的片名）
     poster: bool
-    accent: Tuple[int, int, int]
+    # 点缀色；None 表示从每张海报取色
+    accent: Optional[Tuple[int, int, int]]
     type: TypeSpec
     # 这款风格自带的展示字体，和标题字体无关
     display: Optional[str] = None
@@ -92,6 +93,17 @@ STYLE_CATALOG = [
         8, "扇面", "海报沿大圆弧排成扇形，粗宋体标题居中在上方", "扇面转动一格，带一点回弹", 8, True, MINT,
         TypeSpec("serifblack", "dmserif", "intersemi", 196, 58,
                  main_tracking=0.03, main_tracking_latin=-0.005, spacing=18),
+    ),
+    # 海报系列：完整展示竖版海报；None 表示逐张取色。
+    StyleInfo(
+        9, "百叶", "海报三色调印在立体百叶窗上，片名在左，完整海报在右", "整幅画面像百叶窗一样逐条翻面", 3, True, None,
+        TypeSpec("glowheavy", "interblack", "intersemi", 220, 56,
+                 main_tracking=0.02, main_tracking_latin=-0.025, sub_tracking=0.16, spacing=34, sub_upper=True),
+    ),
+    StyleInfo(
+        10, "对开", "整幅海报在左，右边是取自海报的色块和片名，前后两张颜色不重样", "新海报从上往下切入，色块带着片名从下往上升起", 3, True, None,
+        TypeSpec("glowheavy", "interblack", "intersemi", 256, 56,
+                 main_tracking=0.02, main_tracking_latin=-0.025, sub_tracking=0.16, spacing=40, sub_upper=True),
     ),
 ]
 STYLE_COUNT = len(STYLE_CATALOG)

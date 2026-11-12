@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>咔嗒调试页</title>
+<!--
+  单独调试插件宠物，不用启动 MoviePilot：
+      python -m http.server 8765        （在仓库根目录运行）
+      打开 http://localhost:8765/scripts/pet_harness.html
+  页面模拟插件详情页：一个 .mcg 容器，里面是加载宠物的隐藏 iframe，状态写在 iframe 的 data-state 上。
+-->
+<style>
+  body { margin: 0; min-height: 100vh; background: #16181d; color: #e9e6df; font: 14px/1.6 system-ui, "Microsoft YaHei", sans-serif; }
+  .mcg { max-width: 760px; margin: 0 auto; padding: 32px 24px; }
+  .v-btn { margin: 0 8px 8px 0; padding: 8px 14px; border: 0; border-radius: 10px; background: #c49a5c; color: #1c160e; font: inherit; font-weight: 600; cursor: pointer; }
+  .mcg-pet-frame { position: absolute; width: 0; height: 0; border: 0; visibility: hidden; }
+  pre { background: #0f1014; padding: 12px; border-radius: 10px; }
+</style>
+</head>
+<body>
+<div class="mcg" id="page">
+  <h2>咔嗒调试页</h2>
+  <p>咔嗒是一块会走路的场记板：点它拍板（连戳会生气、背过身去），在它身上来回移动是擦黑板，拖起来能扔，连扔三次会晕，双击空翻，拖到窗口边松手它会走掉；光标停在它旁边会蹭过来，从上面扑下来它会跳起来顶。右键（触屏长按）打开小菜单：安静模式、原地待命、个头、下班。它也会对你在页面上的操作说话：选风格、切标签、开关、输入、保存、删除、快速滚动、狂点、复制、离开标签页再回来、键入 kada；点到它脚下的输入框时它会让开。生成时它身上的两道粉笔线会变成进度条。下面的按钮模拟插件状态与页面重绘（真实环境里离开插件页后它靠 state.poll 的接口自己问进度，这里没有接口）。</p>
+  <div class="mcg-style" style="display:inline-block;margin:8px 8px 0 0;padding:10px 14px;border-radius:10px;background:#2a2d35">百叶</div><div class="mcg-style" style="display:inline-block;margin:8px 8px 0 0;padding:10px 14px;border-radius:10px;background:#2a2d35">对开</div><div class="mcg-style" style="display:inline-block;margin:8px 0 0 0;padding:10px 14px;border-radius:10px;background:#2a2d35">扇面</div>
+  <div style="margin:12px 0;padding:12px;border-radius:10px;background:#20232b">
+    <div role="tablist"><button class="v-tab" role="tab">风格</button> <button class="v-tab" role="tab">字体</button> <button class="v-tab" role="tab">高级</button></div>
+    <div class="v-input v-switch"><label class="v-label"><input type="checkbox"> 定时轮换风格</label></div>
+    <div class="v-input v-switch"><label class="v-label"><input type="checkbox" checked> 插件宠物「咔嗒」</label></div>
+    <div class="v-input v-text-field"><label class="v-label">主标题</label> <input type="text"></div>
+    <button class="v-btn">保存</button> <button class="v-btn">删除</button>
+  </div>
+  <button class="v-btn" onclick="update({running:true,done:0,total:10,library:'日番'})">开始生成</button>
+  <button class="v-btn" onclick="update({done:(state.done||0)+1})">进度 +1</button>
+  <button class="v-btn" onclick="update({running:false,failed:0,library:''})">生成完成</button>
+  <button class="v-btn" onclick="update({running:false,failed:2,library:''})">生成失败</button>
+  <button class="v-btn" onclick="document.body.style.background=document.body.style.background?'':'#f4f5f8'">切换明暗</button>
+  <button class="v-btn" onclick="update({style: state.style==="百叶"?"对开":"百叶"})">换风格</button>
+  <button class="v-btn" onclick="rerender()">模拟整页重绘</button>
+  <button class="v-btn" onclick="document.querySelector('.mcg-pet-frame').remove()">关闭详情页</button>
+  <pre id="dump"></pre>
+  <iframe class="mcg-pet-frame" src="../plugins.v3/mediacovergenerator/pet.html" data-state='{"enabled":true,"style":"百叶"}'></iframe>
+</div>
+<script>
+  var state = { enabled: true, style: "百叶" };
+  function update(change) {
+    Object.assign(state, change);
+    var frame = document.querySelector(".mcg-pet-frame");
+    if (frame) { frame.setAttribute("data-state", JSON.stringify(state)); }
+    document.getElementById("dump").textContent = JSON.stringify(state);
+  }
+  function rerender() {
+    var old = document.querySelector(".mcg-pet-frame");
+    if (old) { old.remove(); }
+    var frame = document.createElement("iframe");
+    frame.className = "mcg-pet-frame";
+    frame.setAttribute("data-state", JSON.stringify(state));
+    frame.src = "../plugins.v3/mediacovergenerator/pet.html";
+    document.getElementById("page").appendChild(frame);
+  }
+  update({});
+</script>
+</body>
+</html>

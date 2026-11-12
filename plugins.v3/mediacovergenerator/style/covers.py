@@ -1,5 +1,5 @@
 """
-八款封面风格的构图。每款有自己的切换方式，切换也是设计的一部分，不共用同一种转场。
+前八款封面风格的构图（以海报为主角的四款在 poster_covers.py）。每款有自己的切换方式，切换也是设计的一部分，不共用同一种转场。
 
 每款风格是一个 Cover 子类：prepare() 预先算好不变的图层，frame(phase) 画出循环中某一时刻的画面。
 静态封面就是 phase=0 的高清帧，动图是同一套构图的低分辨率逐帧输出，所以两者外观一致。
@@ -1190,6 +1190,14 @@ class Fan(Cover):
 DESIGNS = {1: Gallery, 2: Titan, 3: NotFound, 4: Trailer, 5: Surround, 6: Depth, 7: Detail, 8: Fan}
 
 
+def design_for(index):
+    """按编号取风格。海报风格在另一个模块里，它要用这里的工具函数，所以用到时才导入。"""
+    if index in DESIGNS:
+        return DESIGNS[index]
+    from app.plugins.mediacovergenerator.style.poster_covers import POSTER_DESIGNS
+    return POSTER_DESIGNS[index]
+
+
 # ---------------------------------------------------------------- 输出
 
 
@@ -1330,7 +1338,7 @@ def create_cover(index, animated, library_dir, title, fonts, spec, size, image_c
             logger.warning(f"风格「{info.name}」没有找到可用的素材")
             return False
         accent, tint = _accent_and_tint(images[0].main.image, info, bg_color_config)
-        cover = DESIGNS[info.index](size, images, title, fonts, spec, accent, tint, blur_size, color_ratio, animated,
+        cover = design_for(info.index)(size, images, title, fonts, spec, accent, tint, blur_size, color_ratio, animated,
                                    display_font=display_font)
         if not animated:
             return encode_jpeg(cover.frame(0.0))

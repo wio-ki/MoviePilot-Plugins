@@ -4,9 +4,10 @@
     python scripts/render_previews.py
 
 需要 pillow 和 numpy，有 ffmpeg 时还会生成动图样张。素材是 Unsplash 上的插画，生成时才下载，不放进仓库，来源见 images/CREDITS.md。
-输出到 images/style_N.jpeg、images/style_N.gif 与两个插件版本的 ui_previews.py（界面内嵌的小图）。
+输出到 images/style_N.jpeg、images/style_N.gif 与 V3 的 ui_previews.py（界面内嵌的小图）。
 """
 import base64
+import argparse
 import logging
 import shutil
 import sys
@@ -19,7 +20,8 @@ from pathlib import Path
 from PIL import Image
 
 REPO = Path(__file__).resolve().parent.parent
-PLUGIN_DIRS = [REPO / "plugins.v3" / "mediacovergenerator", REPO / "plugins.v2" / "mediacovergenerator"]
+# 只维护 V3，V2 的预览图不再更新
+PLUGIN_DIRS = [REPO / "plugins.v3" / "mediacovergenerator"]
 TITLE = ("动漫", "Anime")
 # 插画不放进仓库，生成预览时才下载到系统临时目录。来源见 images/CREDITS.md
 ART = Path(tempfile.gettempdir()) / "mcg-preview-art"
@@ -39,6 +41,8 @@ STYLE_ART = {
     6: ["door", "night", "sunset", "sea", "star", "fall"],
     7: ["sunset", "night", "door", "star", "sea", "fall"],
     8: ["star", "fox", "sunset", "ninja", "sea", "bat", "rainbow", "storm"],
+    9: ["fox", "star", "sunset", "ninja", "sea", "bat", "rainbow", "storm", "night", "door"],
+    10: ["star", "fox", "sunset", "ninja", "sea", "bat"],
 }
 TYPOGRAPHY_ART = ["star", "fox", "sunset", "ninja"]
 FONT_FILES = {
@@ -89,11 +93,12 @@ def art_folder(names, folder):
     return Path(folder)
 
 
-def style_fonts(spec):
-    return font_path(spec.main_font), font_path(spec.sub_font)
+def style_fonts(spec, title=TITLE):
+    main = spec.main_font if any(ord(char) >= 0x2E80 for char in title[0]) else spec.main_font_latin
+    return font_path(main), font_path(spec.sub_font)
 
 
-def render_all():
+def render_all(selected=None):
     from app.plugins.mediacovergenerator.style.catalog import STYLE_CATALOG, style_info
     from app.plugins.mediacovergenerator.style.covers import create_cover
     from app.plugins.mediacovergenerator.ui_presets import TYPOGRAPHY_PRESETS
@@ -102,6 +107,8 @@ def render_all():
     has_ffmpeg = bool(shutil.which("ffmpeg"))
     results, animations = {}, {}
     for info in STYLE_CATALOG:
+        if selected and info.index not in selected:
+            continue
         with tempfile.TemporaryDirectory() as folder:
             source = art_folder(STYLE_ART[info.index], folder)
             display = font_path(info.display) if info.display else None
@@ -118,8 +125,8 @@ def render_all():
     showcase = style_info(4)
     typography = {}
     with tempfile.TemporaryDirectory() as folder:
-        source = art_folder(TYPOGRAPHY_ART, folder)
-        for preset in TYPOGRAPHY_PRESETS:
+        source = art_folder(TYPOGRAPHY_ART, folder) if not selected else None
+        for preset in TYPOGRAPHY_PRESETS if not selected else ():
             values = preset["values"]
             fonts = (
                 font_path(showcase.type.main_font if values["zh_font_preset"] == "auto" else values["zh_font_preset"]),
@@ -144,13 +151,23 @@ def to_data_uri(image):
 
 
 def write_outputs(images, typography, animations):
+    # 指定风格时保留其他风格与字体预设的小图，避免改动已认可的 1–8。
+    from app.plugins.mediacovergenerator.ui_previews import PREVIEWS, TYPOGRAPHY_PREVIEWS
+    from app.plugins.mediacovergenerator.style.catalog import STYLE_CATALOG
+    known = {info.index for info in STYLE_CATALOG}
+    previews = {index: data for index, data in PREVIEWS.items() if index in known}
+    type_previews = dict(TYPOGRAPHY_PREVIEWS)
     lines = ['"""风格预览小图，由 scripts/render_previews.py 生成，请勿手工修改。"""', "", "PREVIEWS = {"]
     for index, image in sorted(images.items()):
         image.resize((480, 270), Image.Resampling.LANCZOS).save(REPO / "images" / f"style_{index}.jpeg", quality=88)
-        lines.append(f'    {index}: "{to_data_uri(image)}",')
+        previews[index] = to_data_uri(image)
+    for index, data in sorted(previews.items()):
+        lines.append(f'    {index}: "{data}",')
     lines += ["}", "", "TYPOGRAPHY_PREVIEWS = {"]
     for key, image in typography.items():
-        lines.append(f'    "{key}": "{to_data_uri(image)}",')
+        type_previews[key] = to_data_uri(image)
+    for key, data in type_previews.items():
+        lines.append(f'    "{key}": "{data}",')
     lines += ["}", ""]
     text = "\n".join(lines)
     for plugin_dir in PLUGIN_DIRS:
@@ -162,5 +179,8 @@ def write_outputs(images, typography, animations):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="重新生成 V3 封面预览")
+    parser.add_argument("--styles", nargs="+", type=int, help="只更新指定风格，保留其他预览")
+    args = parser.parse_args()
     install_stubs()
-    write_outputs(*render_all())
+    write_outputs(*render_all(set(args.styles) if args.styles else None))

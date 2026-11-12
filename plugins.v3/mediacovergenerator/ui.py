@@ -219,6 +219,66 @@ CSS = """
 .mcg-check-bad .v-icon { color: var(--mcg-bad); }
 .mcg-check-note { color: var(--mcg-muted); font-size: 12px; margin-top: 2px; word-break: break-all; }
 
+/* ---- 2.0 的视觉调整：层次更清楚，选中和悬停的反馈更明确 ---- */
+/* 横幅：两团很淡的光（金色、薄荷色）让深色底有纵深，标题加大一级 */
+.mcg-hero {
+  border-radius: 20px; padding: 28px 28px 24px; margin-bottom: 16px;
+  background:
+    radial-gradient(520px 260px at 88% -10%, rgba(196,154,92,.30), transparent 70%),
+    radial-gradient(420px 240px at 8% 120%, rgba(88,221,163,.16), transparent 70%),
+    linear-gradient(120deg, #17130F 0%, #221B14 55%, #15191A 100%);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.06), 0 14px 34px rgba(0,0,0,.18);
+}
+.mcg-hero h2 { font-size: 32px; letter-spacing: .01em; }
+.mcg-eyebrow { display: inline-flex; align-items: center; gap: 8px; }
+.mcg-eyebrow::before { content: ""; width: 18px; height: 2px; border-radius: 2px; background: var(--mcg-gold); }
+.mcg-stats { gap: 8px; background: transparent; overflow: visible; margin-top: 24px; }
+.mcg-stat { border-radius: 12px; background: rgba(255,255,255,.06); box-shadow: inset 0 0 0 1px rgba(255,255,255,.07); padding: 12px 16px; }
+.mcg-stat-value { font-size: 15px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.mcg-progress { height: 4px; }
+.mcg-progress-bar { background: linear-gradient(90deg, #C49A5C, #58DDA3); }
+/* 按钮：按下有回弹，键盘焦点看得见 */
+.mcg .v-btn.mcg-btn.mcg-btn { transition: transform .18s ease, filter .18s ease; }
+.mcg .v-btn.mcg-btn.mcg-btn:hover { filter: brightness(1.07); }
+.mcg .v-btn.mcg-btn.mcg-btn:active { transform: scale(.98); }
+.mcg .v-btn.mcg-btn.mcg-btn:focus-visible { outline: 2px solid var(--mcg-gold); outline-offset: 2px; }
+/* 页签 */
+.mcg-tabs { border-radius: 14px; margin-bottom: 20px; }
+.mcg-tab { border-radius: 10px; padding: 8px 12px; }
+/* 风格分组 */
+.mcg-group { display: flex; align-items: baseline; gap: 10px; margin: 24px 0 12px; }
+.mcg-group:first-of-type { margin-top: 4px; }
+.mcg-group-name { font-size: 14px; font-weight: 700; letter-spacing: .04em; }
+.mcg-group-note { font-size: 12.5px; color: var(--mcg-muted); }
+.mcg-group::after { content: ""; flex: 1; height: 1px; background: var(--mcg-line); align-self: center; }
+.mcg-new {
+  display: inline-flex; align-items: center; flex: none; padding: 3px 7px; border-radius: 6px; font-size: 10.5px; line-height: 1;
+  font-weight: 800; letter-spacing: .08em; background: linear-gradient(135deg, #7CEBC0, #3FBF8E); color: #06281B;
+}
+/* 风格卡片：悬停时画面略微推近，选中的有一圈金色的光 */
+.mcg-gallery { gap: 16px; }
+.mcg-style { border-radius: 16px; }
+.mcg-style:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,.22); outline-color: rgba(196,154,92,.5); }
+.mcg-style:active { transform: scale(.985); }
+.mcg-style-media img, .mcg-style-motion { transition: transform .5s cubic-bezier(.2,.7,.2,1); }
+.mcg-style:hover .mcg-style-media img, .mcg-style:hover .mcg-style-motion { transform: scale(1.045); }
+.mcg-style-on { box-shadow: 0 0 0 4px var(--mcg-gold-soft), 0 10px 26px rgba(196,154,92,.18); }
+.mcg-style-on .mcg-style-name > span:first-child { color: var(--mcg-gold); }
+.mcg-style-tick { box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+.mcg-style-meta { padding: 12px 12px 14px; }
+.mcg-style-name { justify-content: flex-start; gap: 8px; }
+.mcg-lib, .mcg-cover, .mcg-box, .mcg-section { border-radius: 16px; }
+.mcg-lib { padding: 12px; transition: border-color .2s ease, background .2s ease; }
+.mcg-lib:hover { border-color: rgba(196,154,92,.45); background: var(--mcg-raise-strong); }
+.mcg-cover { transition: transform .2s ease, box-shadow .2s ease; }
+.mcg-cover:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(0,0,0,.2); }
+@media (prefers-reduced-motion: reduce) {
+  .mcg *, .mcg *::before, .mcg *::after { transition: none !important; animation: none !important; }
+}
+
+/* 插件宠物的加载器：看不见的 iframe，宠物本身由它放到外层页面里 */
+.mcg-pet-frame { position: absolute; width: 0; height: 0; border: 0; visibility: hidden; pointer-events: none; }
+
 /* 设置页 */
 .mcg-form .v-tabs { margin-bottom: 18px; border-bottom: 1px solid var(--mcg-line); }
 .mcg-form .v-tab { text-transform: none; letter-spacing: .02em; }
@@ -284,6 +344,34 @@ def style_label(index: int, variant: str) -> str:
 
 def recommend_badge() -> Dict[str, Any]:
     return node("span", cls="mcg-rec", text="推荐")
+
+
+# 风格分两组展示：海报系列是 2.0 新增的，放在前面
+STYLE_GROUPS = [
+    ("海报系列", "竖版海报是主角，完整地摆出来，配色跟着每张海报走", lambda entry: entry.poster and entry.index >= 9),
+    ("场景系列", "满幅画面和斜切、弧幕等构图，背景图好看时用背景图", lambda entry: not (entry.poster and entry.index >= 9)),
+]
+
+
+def style_name(entry) -> List[dict]:
+    """卡片上的风格名，新增的风格带一个「新」标记。"""
+    children = [node("span", text=entry.name)]
+    if entry.index >= 9:
+        children.append(node("span", cls="mcg-new", text="NEW"))
+    return children
+
+
+def grouped_gallery(card_of) -> List[dict]:
+    """按系列分组的风格画廊。card_of(entry) 返回一张卡片。"""
+    blocks: List[dict] = []
+    for name, note, belongs in STYLE_GROUPS:
+        entries = [entry for entry in STYLE_CATALOG if belongs(entry)]
+        if not entries:
+            continue
+        blocks.append(div("mcg-group", node("span", cls="mcg-group-name", text=name),
+                          node("span", cls="mcg-group-note", text=note)))
+        blocks.append(div("mcg-gallery", *[card_of(entry) for entry in entries]))
+    return blocks
 
 
 def _preview_media(entry, show_motion: Any, local: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -374,6 +462,10 @@ def _hero(ctx: Dict[str, Any]) -> Dict[str, Any]:
         children.append(div("mcg-progress-note", text=f"{note}（生成在后台进行，可随时关闭此窗口）"))
     elif ctx.get("last_result"):
         children.append(div("mcg-progress-note", text=ctx["last_result"]))
+    elif ctx["enabled"] and ctx["libraries"] and not ctx["warnings"] and not ctx.get("last_run_text"):
+        # 保存设置不会自动生成，第一次要手动点一下，否则看起来像插件没反应
+        children.append(div("mcg-progress-note",
+                            text="设置已生效。点右上角「生成全部封面」开始第一次生成，之后新片入库或定时任务会自动更新。"))
     return div("mcg-hero", *children)
 
 
@@ -425,6 +517,8 @@ def _local_preview_bar(ctx: Dict[str, Any], target: Optional[Dict[str, Any]]) ->
     path = f"generate_preview?library={source['encoded_key']}&tab=style"
     if local:
         note = f"下面是你的媒体库「{local['library']}」的真实效果（{local['time']} 生成）。"
+        if local.get("stale"):
+            note = f"下面是「{local['library']}」在 {local['time']} 生成的预览，风格在那之后更新过，重新生成才是现在的效果。"
         actions = [button("看示例图", "quiet", prefix, "clear_preview?tab=style", size="small"),
                    button(f"用「{source['name']}」重新生成", "gold", prefix, path, size="small")]
     else:
@@ -444,10 +538,6 @@ def _style_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
         variant, style_index = ctx["style_variant"], ctx["style_index"]
     target_query = f"&library={target['encoded_key']}" if target else ""
     children: List[dict] = []
-    if ctx["warnings"]:
-        children.append(
-            div("mcg-notice", icon("mdi-information-outline"), div(None, text="；".join(ctx["warnings"])))
-        )
     children.append(
         div(
             "mcg-heading",
@@ -470,24 +560,22 @@ def _style_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
     children.extend(_style_targets(ctx, target))
     children.extend(_local_preview_bar(ctx, target))
     local_styles = (ctx.get("local_preview") or {}).get("styles") or {}
-    cards = []
-    for entry in STYLE_CATALOG:
+    def card(entry):
         selected = entry.index == style_index
         motion_note = f"动态：{entry.motion}" if variant == "animated" else entry.desc
-        cards.append(
+        return div(
+            "mcg-style" + (" mcg-style-on" if selected else ""),
+            _preview_media(entry, variant == "animated", local_styles.get(entry.index)),
+            div("mcg-style-tick", icon("mdi-check", 16)),
             div(
-                "mcg-style" + (" mcg-style-on" if selected else ""),
-                _preview_media(entry, variant == "animated", local_styles.get(entry.index)),
-                div("mcg-style-tick", icon("mdi-check", 16)),
-                div(
-                    "mcg-style-meta",
-                    div("mcg-style-name", node("span", text=entry.name)),
-                    div("mcg-style-desc", text=motion_note),
-                ),
-                events=post(prefix, f"select_style?index={entry.index}&tab=style{target_query}"),
-            )
+                "mcg-style-meta",
+                div("mcg-style-name", *style_name(entry)),
+                div("mcg-style-desc", text=motion_note),
+            ),
+            events=post(prefix, f"select_style?index={entry.index}&tab=style{target_query}"),
         )
-    children.append(div("mcg-gallery", *cards))
+
+    children.extend(grouped_gallery(card))
     return div("mcg-panel mcg-panel-style", *children)
 
 
@@ -676,11 +764,17 @@ def build_page(ctx: Dict[str, Any]) -> List[dict]:
             node("style", text=CSS),
             *radios,
             _hero(ctx),
+            # 提示放在页签外面，停在哪个页签都看得到
+            *([div("mcg-notice", icon("mdi-information-outline"), div(None, text="；".join(ctx["warnings"])))]
+              if ctx["warnings"] else []),
             tabs,
             _style_panel(ctx),
             _libraries_panel(ctx),
             _history_panel(ctx),
             _maintain_panel(ctx),
+            *([node("iframe", cls="mcg-pet-frame", src=ctx["pet"]["url"], title="咔嗒", tabindex="-1",
+                    **{"aria-hidden": "true", "data-state": json.dumps(ctx["pet"]["state"], ensure_ascii=False)})]
+              if ctx.get("pet") else []),
         )
     ]
 
@@ -763,10 +857,9 @@ def _toggle(model: str, label: str, options: List[tuple], recommended: Any = Non
 
 
 def _style_picker() -> Dict[str, Any]:
-    cards = []
-    for entry in STYLE_CATALOG:
+    def card(entry):
         value = f"static_{entry.index}"
-        cards.append(
+        return (
             node(
                 "div",
                 content=[
@@ -774,7 +867,7 @@ def _style_picker() -> Dict[str, Any]:
                     div("mcg-style-tick", icon("mdi-check", 16)),
                     div(
                         "mcg-style-meta",
-                        div("mcg-style-name", node("span", text=entry.name)),
+                        div("mcg-style-name", *style_name(entry)),
                         div("mcg-style-desc", text=f"动态：{entry.motion}",
                             show="{{ cover_style_variant === 'animated' }}"),
                         div("mcg-style-desc", text=entry.desc, show="{{ cover_style_variant !== 'animated' }}"),
@@ -786,7 +879,7 @@ def _style_picker() -> Dict[str, Any]:
                 },
             )
         )
-    return div("mcg-gallery", *cards)
+    return div(None, *grouped_gallery(card))
 
 
 def _basic_tab(ctx: Dict[str, Any]) -> List[dict]:
@@ -803,7 +896,9 @@ def _basic_tab(ctx: Dict[str, Any]) -> List[dict]:
                 _col(node("VCronField", model="cron", label="定时更新", placeholder="5 位 cron 表达式，留空不启用",
                           density="comfortable", variant="outlined", color=ACCENT), 4),
                 _col(_switch("rotate_style", "定时轮换风格",
-                             "每次定时更新换下一款风格，所有媒体库保持统一；单独设置过风格的媒体库不变"), 12),
+                             "每次定时更新换下一款风格，所有媒体库保持统一；单独设置过风格的媒体库不变"), 8),
+                _col(_switch("pet_enabled", "插件宠物「咔嗒」",
+                             "一块会走路的场记板，开工喊 Action、收工喊 Cut；点它、拖它、擦它的黑板都有反应"), 4),
             ),
         ),
         _section(
@@ -847,7 +942,7 @@ def _style_tab() -> List[dict]:
             ),
         ),
         _section(
-            "mdi-palette-outline", "点缀色", "标题线条、胶囊标签等处使用的颜色。默认每款风格有自己的颜色，同一排封面看起来更统一",
+            "mdi-palette-outline", "点缀色", "标题线条、胶囊标签等处使用的颜色。默认每款风格有自己的颜色；海报系列默认跟着每张海报的主色走",
             _row(
                 _col(_select("bg_color_mode", "颜色来源", [
                     {"title": "风格默认", "value": "auto"},
@@ -1027,6 +1122,7 @@ def default_form_model() -> Dict[str, Any]:
         "notify": False,
         "cron": "",
         "rotate_style": False,
+        "pet_enabled": True,
         "delay": 60,
         "selected_servers": [],
         "include_libraries": [],

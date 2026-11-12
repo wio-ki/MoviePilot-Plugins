@@ -51,15 +51,18 @@ from app.plugins.mediacovergenerator.style.catalog import STYLE_CATALOG, TypeSpe
 from app.plugins.mediacovergenerator.style.covers import create_cover
 from app.plugins.mediacovergenerator.style.framing import ALT_SUFFIX, IMAGE_EXTENSIONS
 from app.plugins.mediacovergenerator.style.typography import is_cjk_text
-from app.plugins.mediacovergenerator.style.quality import ACCEPT_SCORE, assess, rank
+from app.plugins.mediacovergenerator.style.quality import (ACCEPT_SCORE, GOOD_WIDE_SCORE, GOOD_WIDE_SCORE_ANIME,
+                                                           POSTER_BONUS, Assessment, assess, rank)
 from app.plugins.mediacovergenerator.ui import (
     STYLE_COUNT,
     PAGE_TABS,
     build_form,
     build_page,
     default_form_model,
+    node,
     style_label,
 )
+from app.plugins.mediacovergenerator.ui_previews import PREVIEWS
 from app.plugins.mediacovergenerator.utils.image_manager import ResolutionConfig
 from app.plugins.mediacovergenerator.utils.network_helper import NetworkHelper, validate_font_file
 from app.plugins.mediacovergenerator.utils.performance_helper import memory_efficient_operation
@@ -127,6 +130,11 @@ HISTORY_PAGE_SIZE = 8
 SELECTION_POOL_FACTOR = 3
 SELECTION_POOL_MAX = 36
 SELECTION_PREVIEW_SIZE = 480
+# 动画：条目的类型或媒体库的名字里有这些词。动画的背景图多是宣传图，和海报一样能用
+ANIME_GENRES = ("动画", "动漫", "animation", "anime", "アニメ", "cartoon", "卡通")
+ANIME_LIBRARY = re.compile(r"动漫|动画|番剧|新番|日番|卡通|anime|animation|アニメ|cartoon", re.IGNORECASE)
+# 最新入库的单集连续这么多批都没有新的剧，就不再往后翻，直接用整部剧补足
+STALE_EPISODE_BATCHES = 3
 # 本地预览的动图尺寸，和图库卡片差不多大
 PREVIEW_SIZE = (320, 180)
 LIBRARY_CACHE_SECONDS = 120
@@ -137,11 +145,11 @@ class MediaCoverGenerator(_PluginBase):
     # 插件名称
     plugin_name = "动态封面工坊"
     # 插件描述
-    plugin_desc = "让媒体库封面动起来：8 款 GIF 动态风格，Hills、yamby、小幻影视都能播放，支持 Emby/Jellyfin"
+    plugin_desc = "让媒体库封面动起来：10 款 GIF 动态风格，Hills、yamby、小幻影视都能播放，支持 Emby/Jellyfin"
     # 插件图标（前端按地址缓存图标，换图时要换文件名）
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/animated-cover.png"
     # 插件版本
-    plugin_version = "1.8.2"
+    plugin_version = "2.0.0"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -167,6 +175,8 @@ class MediaCoverGenerator(_PluginBase):
     _cron = None
     _delay = 60
     _rotate_style = False
+    # 详情页里的插件宠物「咔嗒」
+    _pet_enabled = True
     _servers = None
     _selected_servers = []
     _all_libraries = []
@@ -276,6 +286,7 @@ class MediaCoverGenerator(_PluginBase):
             self._notify = bool(config.get("notify", False))
             self._cron = config.get("cron")
             self._rotate_style = bool(config.get("rotate_style", False))
+            self._pet_enabled = bool(config.get("pet_enabled", True))
             self._delay = config.get("delay")
             self._selected_servers = config.get("selected_servers")
             self._include_libraries = config.get("include_libraries")
@@ -415,6 +426,11 @@ class MediaCoverGenerator(_PluginBase):
                 except Exception as error:
                     # 媒体服务器不可用不应该影响插件加载
                     logger.warning(f"读取媒体服务器 {server} 的媒体库失败: {error}")
+            # 每次加载都写一行当前状态，免得日志里最后一条还是保存前的「未选择媒体服务器」
+            missing = [name for name in self._selected_servers if name not in self._servers]
+            logger.info(f"已选择媒体服务器 {'、'.join(self._servers) or '无'}，读取到 {len(self._all_libraries)} 个媒体库"
+                        + (f"；{'、'.join(missing)} 在 MoviePilot 中找不到或未启用" if missing else "")
+                        + ("" if self._enabled else "；插件未启用"))
         else:
             hint = self.__server_hint()
             logger.info(f"未选择媒体服务器：{hint}" if hint else "未选择媒体服务器，请在插件设置的「基础」页选择并保存")
@@ -523,7 +539,7 @@ class MediaCoverGenerator(_PluginBase):
         return slots
 
     def __get_required_items(self) -> int:
-        """这一轮要准备多少个条目的素材。预览的 8 款风格共用一批素材，要够最多的那款用。"""
+        """这一轮要准备多少个条目的素材。预览的全部风格共用一批素材，要够最多的那款用。"""
         if self._preview_mode:
             return max(max(entry.slots for entry in STYLE_CATALOG), int(self._animation_image_count))
         return self.__style_item_count()
@@ -549,6 +565,7 @@ class MediaCoverGenerator(_PluginBase):
             "notify": self._notify,
             "cron": self._cron,
             "rotate_style": self._rotate_style,
+            "pet_enabled": self._pet_enabled,
             "delay": self._delay,
             "selected_servers": self._selected_servers,
             "include_libraries": self._include_libraries,
@@ -853,6 +870,25 @@ class MediaCoverGenerator(_PluginBase):
                     "response_model": None,
                     "summary": "获取本地生成的风格预览",
                 })
+            # 插件宠物的页面由 iframe 加载，同样带不了登录凭据。内容是固定的静态文件，不含任何数据
+            for route_path in ("/pet", "pet"):
+                result.append({
+                    "path": route_path,
+                    "endpoint": self.api_pet,
+                    "methods": ["GET"],
+                    "allow_anonymous": True,
+                    "response_model": None,
+                    "summary": "插件宠物页面",
+                })
+            for route_path in ("/pet_state", "pet_state"):
+                result.append({
+                    "path": route_path,
+                    "endpoint": self.api_pet_state,
+                    "methods": ["GET"],
+                    "allow_anonymous": True,
+                    "response_model": None,
+                    "summary": "插件宠物状态",
+                })
         return result
 
     @staticmethod
@@ -1060,7 +1096,7 @@ class MediaCoverGenerator(_PluginBase):
             return self.__api_response(False, f"恢复失败: {e}")
 
     def api_generate_preview(self, library: str = "", tab: str = ""):
-        """用媒体库的真实图片生成 8 款风格的预览。只生成不上传，不会改动媒体库封面。"""
+        """用媒体库的真实图片生成全部风格的预览。只生成不上传，不会改动媒体库封面。"""
         self.__set_page_tab(tab)
         if not self._enabled:
             return self.__api_response(False, "插件未启用，请先在设置页启用插件并保存")
@@ -1094,6 +1130,80 @@ class MediaCoverGenerator(_PluginBase):
             return Response(status_code=404)
         return FileResponse(path=str(target), media_type="image/gif", headers={"Cache-Control": "private, max-age=86400"})
 
+    def api_pet(self):
+        """插件宠物「咔嗒」的页面：一个静态文件，由详情页里看不见的 iframe 加载。"""
+        from fastapi.responses import FileResponse, Response
+        page = Path(__file__).parent / "pet.html"
+        if not self._pet_enabled or not page.is_file():
+            return Response(status_code=404)
+        return FileResponse(path=str(page), media_type="text/html; charset=utf-8",
+                            headers={"Cache-Control": "private, max-age=3600"})
+
+    def api_pet_state(self, token: str = ""):
+        """咔嗒轮询的插件状态。只有几个数字和风格名，靠保存在插件数据里的随机令牌保护。"""
+        from fastapi.responses import JSONResponse, Response
+        try:
+            if not hmac.compare_digest(str(token), self.__pet_token()):
+                return Response(status_code=404)
+            if not self._pet_enabled:
+                return Response(status_code=410)
+            task = dict(self._task)
+            if self._update_lock.locked():
+                task["running"] = True
+            _last_time, last_message = self.__run_summary()
+            return JSONResponse(self.__pet_state(task, last_message), headers={"Cache-Control": "no-store"})
+        except Exception:
+            return Response(status_code=500)
+
+    def __pet_token(self) -> str:
+        token = getattr(self, "_pet_token_cache", None)
+        if token:
+            return token
+        try:
+            value = self.get_data("pet_token")
+            if isinstance(value, str) and re.fullmatch(r"[\w-]{16,64}", value):
+                token = value
+            else:
+                token = secrets.token_urlsafe(16)
+                self.save_data("pet_token", token)
+        except Exception:
+            token = secrets.token_urlsafe(16)
+        self._pet_token_cache = token
+        return token
+
+    def __pet_state(self, task, last_message) -> Dict[str, Any]:
+        """供页面和咔嗒轮询共用的插件状态。"""
+        failed = re.search(r"失败\s*(\d+)", last_message or "")
+        current = str(task.get("current") or "")
+        return {
+            "enabled": bool(self._enabled),
+            "noServer": not self._servers,
+            "running": bool(task.get("running")),
+            "done": int(task.get("done") or 0),
+            "total": int(task.get("total") or 0),
+            "failed": int(failed.group(1)) if failed else 0,
+            "style": style_info(self.__current_index()).name,
+            "library": current.split("：", 1)[-1].replace("（入库更新）", "").strip(),
+            "auto": "（入库更新）" in current,
+            "ts": round(time.time(), 3),
+        }
+
+    def __pet_context(self, task: Dict[str, Any], last_message: str) -> Optional[Dict[str, Any]]:
+        """咔嗒需要知道的插件状态，它会据此说话：正在生成、生成完了、还没选服务器。"""
+        if not self._pet_enabled or not self.__supports_anonymous_route():
+            return None
+        # 地址带上文件内容的摘要：页面缓存一小时，只带版本号的话，同版本里改过的宠物要等缓存过期才看得到
+        if not getattr(self, "_pet_digest", None):
+            page = Path(__file__).parent / "pet.html"
+            self._pet_digest = hashlib.md5(page.read_bytes()).hexdigest()[:8] if page.is_file() else "0"
+        return {
+            "url": f"/api/v1/{self.__api_prefix()}/pet?v={self.plugin_version}-{self._pet_digest}",
+            "state": {
+                **self.__pet_state(task, last_message),
+                "poll": f"/api/v1/{self.__api_prefix()}/pet_state?token={self.__pet_token()}",
+            },
+        }
+
     def __preview_root(self) -> Path:
         return self.get_data_path() / "preview"
 
@@ -1118,14 +1228,31 @@ class MediaCoverGenerator(_PluginBase):
             still = self.__thumbnail(folder / f"style_{index}.jpg", (320, 180), 62)
             if not still:
                 continue
-            has_gif = anonymous and (folder / f"style_{index}.gif").is_file()
+            gif_path = folder / f"style_{index}.gif"
+            has_gif = anonymous and gif_path.is_file()
+            revision = gif_path.stat().st_mtime_ns if has_gif else 0
             styles[index] = {
                 "still": still,
-                "gif": f"/api/v1/{self.__api_prefix()}/local_preview?token={meta['token']}&index={index}" if has_gif else None,
+                "gif": f"/api/v1/{self.__api_prefix()}/local_preview?token={meta['token']}&index={index}&v={revision}" if has_gif else None,
             }
         if not styles:
             return None
-        return {"library": meta.get("library") or "", "time": meta.get("time") or "", "styles": styles}
+        # 预览是用当时的风格代码画的，风格更新以后它就过期了，页面上要说一声
+        return {"library": meta.get("library") or "", "time": meta.get("time") or "", "styles": styles,
+                "stale": meta.get("digest") != self.__styles_digest()}
+
+    def __styles_digest(self) -> str:
+        """风格代码的摘要，用来判断本地预览是不是更新前生成的。"""
+        digest = getattr(self, "_styles_digest_cache", None)
+        if not digest:
+            hasher = hashlib.md5()
+            for name in ("catalog.py", "covers.py", "poster_covers.py", "typography.py"):
+                try:
+                    hasher.update((Path(__file__).parent / "style" / name).read_bytes())
+                except OSError:
+                    pass
+            digest = self._styles_digest_cache = hasher.hexdigest()[:10]
+        return digest
 
     def __run_preview(self, library_key: str, task: Dict[str, Any]):
         if not self._update_lock.acquire(blocking=False):
@@ -1174,6 +1301,7 @@ class MediaCoverGenerator(_PluginBase):
             self.save_data("local_preview", {
                 "token": token, "library": name, "key": library_key,
                 "time": datetime.datetime.now().strftime("%m-%d %H:%M"), "styles": done,
+                "digest": self.__styles_digest(),
             })
             if previous and previous["token"] != token:
                 shutil.rmtree(self.__preview_root() / previous["token"], ignore_errors=True)
@@ -1383,6 +1511,40 @@ class MediaCoverGenerator(_PluginBase):
             return "", ""
         return str(last_run.get("time")), str(last_run.get("message") or "")
 
+    def get_dashboard_meta(self) -> Optional[List[Dict[str, str]]]:
+        """在首页的组件选择中注册咔嗒。"""
+        return [{"key": "kada", "name": "动态封面工坊 · 咔嗒"}]
+
+    def get_dashboard(self, key: str, **kwargs) -> Optional[Tuple[Dict[str, Any], Dict[str, Any], Optional[List[dict]]]]:
+        """首页只带一张内嵌小图和轻量状态，宠物沿用详情页的匿名地址。"""
+        if key != "kada":
+            return None
+        # 默认风格直接读配置，避免媒体库单独生成时临时风格覆盖首页预览。
+        _variant, index = self.__get_cover_style_parts(self._cover_style)
+        info = style_info(index)
+        task = dict(self._task)
+        if self._update_lock.locked():
+            task["running"] = True
+        last_time, last_message = self.__run_summary()
+        lines = [f"当前风格 · {info.name}", f"{len(self._all_libraries or [])} 个媒体库"]
+        if task.get("running"):
+            lines.append(f"正在生成 {int(task.get('done') or 0)}/{int(task.get('total') or 0)}")
+        elif last_time:
+            lines.append(f"上次更新 {last_time}")
+        elements = [node("div", cls="d-flex align-center ga-3", content=[
+            node("img", src=PREVIEWS.get(info.index, ""), alt=info.name, width=120,
+                 style="width:120px;border-radius:8px;flex-shrink:0"),
+            node("div", cls="text-caption", content=[node("div", text=line) for line in lines]),
+        ])]
+        pet = self.__pet_context(task, last_message)
+        if pet:
+            # 首页没有详情页 CSS，直接隐藏；字符串 style 不与 show 混用。
+            elements.append(node("iframe", cls="mcg-pet-frame", src=pet["url"], title="咔嗒", tabindex="-1",
+                                 style="position:absolute;width:0;height:0;border:0;visibility:hidden;pointer-events:none",
+                                 **{"aria-hidden": "true", "data-state": json.dumps(pet["state"], ensure_ascii=False)}))
+        return ({"cols": 12, "md": 6, "lg": 4},
+                {"refresh": 20, "border": True, "title": "动态封面工坊", "subtitle": "咔嗒在这儿"}, elements)
+
     def __page_checks(self) -> List[Dict[str, Any]]:
         checks = [{
             "ok": self._enabled,
@@ -1541,6 +1703,7 @@ class MediaCoverGenerator(_PluginBase):
             "clean_armed": self._clean_armed,
             "cache_images": image_cache,
             "cache_fonts": font_cache,
+            "pet": self.__pet_context(task, last_message),
         })
 
     def __list_saved_covers(self) -> List[Dict[str, Any]]:
@@ -2063,7 +2226,7 @@ class MediaCoverGenerator(_PluginBase):
         # 从配置获取标题和背景颜色
         zh_title, en_title, config_bg_color = self.__get_title_from_config(library_name)
         title = (zh_title, en_title)
-        # 预览的 8 款风格用同一批素材，才看得出风格之间的差别
+        # 预览的全部风格用同一批素材，才看得出风格之间的差别
         if self._preview_mode and self._preview_stocked:
             return self.__generate_cover(service.name, library_name, title, config_bg_color)
         custom_images = self.__check_custom_image(library_name)
@@ -2153,7 +2316,8 @@ class MediaCoverGenerator(_PluginBase):
                     and str(main_text or "").strip() and not is_cjk_text(main_text)):
                 main_font = sub_font
         else:
-            main_font = preset_font(spec.main_font if is_cjk_text(main_text) else spec.main_font_latin)
+            main_preset = spec.main_font if is_cjk_text(main_text) else spec.main_font_latin
+            main_font = preset_font(main_preset)
         if not main_font or not sub_font:
             return None
 
@@ -2285,9 +2449,14 @@ class MediaCoverGenerator(_PluginBase):
             include_types = "Movie,Episode" if self._sort_by == "DateCreated" else "Movie,Series"
             logger.debug(f"媒体库筛选类型: {include_types}, 排序方式: {self._sort_by}")
         self._seen_keys = set()
+        self._anime_library = bool(ANIME_LIBRARY.search(str(library.get("Name") or "")))
+        self._image_sizes = {}
         # 多拉一些候选，打分后挑最适合做封面的；按入库时间排序时只往后多看一点，保持「最新」的意思
         keep_order = self._sort_by == "DateCreated" or bool(self._monitor_sort)
         pool_size = min(SELECTION_POOL_MAX, required_items * (2 if keep_order else SELECTION_POOL_FACTOR))
+        # 实际查询的类型：入库监控触发时 __get_items_batch 会把整部剧换成单集
+        scans_episodes = include_types == "Movie,Episode" or (bool(self._monitor_sort) and include_types == "Movie,Series")
+        stale = 0
         for attempt in range(max_attempts):
             if self._event.is_set():
                 logger.info("检测到停止信号，中断媒体项获取 ...")
@@ -2307,8 +2476,33 @@ class MediaCoverGenerator(_PluginBase):
             # 候选够多就停止获取
             if len(items) >= pool_size:
                 break
+            # 一次入库几百集同一部剧时，后面几十批也全是它，翻下去只是白白请求
+            stale = 0 if valid_items else stale + 1
+            if scans_episodes and stale >= STALE_EPISODE_BATCHES:
+                break
 
             offset += batch_size
+
+        if len(items) < pool_size and scans_episodes:
+            # 最新入库的全是同一部剧的单集时（一次入库几百集），去重后只剩一两个条目。
+            # 剩下的用整部剧和电影补足，仍然按入库时间从新到旧
+            newest = len(items)
+            offset = 0
+            for attempt in range(max_attempts):
+                if self._event.is_set():
+                    logger.info("检测到停止信号，中断媒体项获取 ...")
+                    return False
+                batch_items = self.__get_items_batch(service, parent_id, offset=offset, limit=batch_size,
+                                                     include_types="Movie,Series", exact_types=True)
+                if not batch_items:
+                    break
+                items.extend(self.__filter_valid_items(batch_items))
+                if len(items) >= pool_size:
+                    break
+                offset += batch_size
+            if len(items) > newest:
+                logger.info(f"媒体库 {service.name}：{library['Name']} 最新入库的单集只来自 {newest} 部剧，"
+                            f"已用媒体库里的其他剧集和电影补足")
 
         # 使用获取到的有效项目更新封面
         if len(items) > 0:
@@ -2323,41 +2517,125 @@ class MediaCoverGenerator(_PluginBase):
             logger.warning(f"媒体库 {service.name}：{library['Name']} 无法找到有效的图片项目 (筛选类型: {include_types})")
             return False
 
+    def __native_size(self, service, candidate) -> Optional[Tuple[int, int]]:
+        """
+        媒体服务器上原图的尺寸。老剧常见几百像素的小海报，缩成小图打分时看不出来，要看原图。
+        每个条目只问一次（海报和背景图在同一个列表里），失败时返回 None，只按小图判断。
+        """
+        item_id, image_path = candidate[0], str(candidate[1])
+        sizes = getattr(self, "_image_sizes", None)
+        if sizes is None:
+            sizes = self._image_sizes = {}
+        if item_id not in sizes:
+            sizes[item_id] = {}
+            try:
+                response = service.instance.get_data(url=f'[HOST]emby/Items/{item_id}/Images?api_key=[APIKEY]')
+                if response is not None and response.status_code == 200:
+                    for info in response.json() or []:
+                        width, height = int(info.get("Width") or 0), int(info.get("Height") or 0)
+                        if width and height:
+                            key = (str(info.get("ImageType")), int(info.get("ImageIndex") or 0))
+                            sizes[item_id][key] = (width, height)
+            except Exception as error:
+                logger.debug(f"读取原图尺寸失败，只看小图：{error}")
+        kind, _sep, index = image_path.partition("/")
+        return sizes[item_id].get((kind, int(index) if index.isdigit() else 0))
+
+    def __is_animation(self, item) -> bool:
+        """条目是动画：类型里有动画，或者所在媒体库就是动画库。"""
+        if getattr(self, "_anime_library", False):
+            return True
+        genres = [str(genre).lower() for genre in (item.get("Genres") or [])]
+        return any(word in genre for genre in genres for word in ANIME_GENRES)
+
+    def __assess_candidate(self, service, candidate):
+        """下载一张小图打分。失败时返回 None，按合格处理。"""
+        if not candidate:
+            return None
+        url = (f'[HOST]emby/Items/{candidate[0]}/Images/{candidate[1]}?tag={candidate[2]}&api_key=[APIKEY]'
+               f'&maxWidth={SELECTION_PREVIEW_SIZE}&maxHeight={SELECTION_PREVIEW_SIZE}')
+        try:
+            response = service.instance.get_data(url=url)
+            if response is not None and response.status_code == 200 and response.content:
+                native = self.__native_size(service, candidate)
+                with Image.open(BytesIO(response.content)) as opened:
+                    return assess(opened.convert("RGB"), key=url, requested=SELECTION_PREVIEW_SIZE, native=native)
+        except Exception as error:
+            logger.debug(f"选图评分失败，按合格处理：{error}")
+        return None
+
+    def __assess_item(self, service, item, wants_poster: bool):
+        """
+        给一个条目的海报和背景图分别打分，决定这个条目用哪张，返回条目的评分。
+        海报是专门设计过的画面，几乎都能用；背景图良莠不齐，剧照、特写、暗图很多。所以：
+        - 摆海报的风格只看海报
+        - 摆横图的风格，背景图要确实好看才用；不够好就改用这个条目的海报，而不是硬用背景图
+        - 动画的背景图多是官方宣传图，没有明显毛病就用
+        - 海报本身有毛病（老剧的小图、发糊、发灰）时，背景图过得去就用背景图
+        决定写在 item["_mcg_use"] 里：tall 表示只用海报，没有这一项表示两张都下载、按画框挑。
+        """
+        item.pop("_mcg_use", None)
+        tall, wide = self.__image_sets(item)
+        if not tall and not wide:
+            return None
+        if self._use_primary not in (None, "", "auto"):
+            # 用户指定了只用海报或只用背景图
+            return self.__assess_candidate(service, ((tall or wide) if self._use_primary else (wide or tall))[0])
+        if wants_poster and not self._preview_mode:
+            return self.__assess_candidate(service, (tall or wide)[0])
+        wide_result = self.__assess_candidate(service, wide[0]) if wide else None
+        good_wide = GOOD_WIDE_SCORE_ANIME if self.__is_animation(item) else GOOD_WIDE_SCORE
+        if wide and (wide_result is None or wide_result.score >= good_wide):
+            return wide_result
+        if not tall:
+            return wide_result
+        tall_result = self.__assess_candidate(service, tall[0])
+        if tall_result is None:
+            return wide_result
+        def poster_only(score, reasons):
+            if wide:
+                item["_mcg_use"] = "tall"
+            return Assessment(score, reasons, tall_result.brightness, tall_result.sharpness, tall_result.largest_face)
+
+        poster_reasons = [f"海报{tall_result.describe()}"] if tall_result.reasons else []
+        if wide_result is None:
+            # 只有海报
+            return poster_only(min(tall_result.score - POSTER_BONUS, 0.0) - 0.1, poster_reasons)
+        wide_note = [f"背景图{wide_result.describe() if wide_result.reasons else '平平'}"]
+        # 海报没有明显毛病：用海报。海报放进横画框要裁或者留边，所以排在背景图好看的条目后面
+        if tall_result.score >= GOOD_WIDE_SCORE:
+            return poster_only(min(tall_result.score - POSTER_BONUS, 0.0) - 0.1, poster_reasons + wide_note)
+        # 海报也有毛病：背景图还过得去就用背景图，两张都不行时挑分数高的
+        if wide_result.score >= ACCEPT_SCORE and wide_result.score >= tall_result.score - POSTER_BONUS:
+            return Assessment(min(wide_result.score, -0.3), wide_note + poster_reasons, wide_result.brightness,
+                              wide_result.sharpness, wide_result.largest_face)
+        return poster_only(tall_result.score - POSTER_BONUS - 0.3, poster_reasons + wide_note)
+
     def __choose_items(self, service, library, items, required, keep_order):
         """
-        给每个候选下载一张小图打分，挑出适合做封面的：太暗、发糊的截图、脸部特写过近的往后放。
+        给每个候选下载小图打分，挑出适合做封面的：太暗、发糊的截图、脸部特写过近的往后放。
         第一张是静态封面和动图的第一帧，放分数最高的。评分失败的条目按合格处理，不会因此少图。
         """
-        # 风格一屏要摆的图不能少，多出来的轮换图宁可少几张；预览的 8 款共用一批，按最多的那款算
-        minimum = (max(entry.slots for entry in STYLE_CATALOG) if self._preview_mode
-                   else style_info(self.__current_index()).slots)
-        # 条目不多、没得挑时也要打分：至少把最好的那张放在第一帧
-        if len(items) <= 1:
-            return items
+        # 风格一屏要摆的图不能少，多出来的轮换图宁可少几张；预览的全部风格共用一批，按最多的那款算
+        info = style_info(self.__current_index())
+        minimum = max(entry.slots for entry in STYLE_CATALOG) if self._preview_mode else info.slots
         assessed = []
         for item in items:
             if self._event.is_set():
                 break
-            result = None
-            urls = self.__material_urls(item)
-            if urls:
-                url = urls[0].replace(f"maxWidth={MATERIAL_MAX_SIZE}&maxHeight={MATERIAL_MAX_SIZE}",
-                                      f"maxWidth={SELECTION_PREVIEW_SIZE}&maxHeight={SELECTION_PREVIEW_SIZE}")
-                try:
-                    response = service.instance.get_data(url=url)
-                    if response is not None and response.status_code == 200 and response.content:
-                        with Image.open(BytesIO(response.content)) as opened:
-                            result = assess(opened.convert("RGB"), key=url)
-                except Exception as error:
-                    logger.debug(f"选图评分失败，按合格处理：{error}")
-            assessed.append((item, result))
+            assessed.append((item, self.__assess_item(service, item, info.poster)))
+        # 条目不多、没得挑时也要打分：每个条目用海报还是背景图是在打分时定的
+        if len(assessed) <= 1:
+            return [item for item, _result in assessed] or items
         chosen, skipped = rank(assessed, required, keep_order=keep_order, minimum=minimum)
+        swapped = sum(1 for item, _result in chosen if item.get("_mcg_use") == "tall")
+        note = f"，其中 {swapped} 个背景图不够好、改用海报" if swapped else ""
         dropped = [(item, result) for item, result in skipped if result is not None and result.score < ACCEPT_SCORE]
         if dropped:
             details = "；".join(f"{item.get('Name') or item.get('Id')}（{result.describe()}）" for item, result in dropped[:8])
-            logger.info(f"媒体库 {library['Name']}：从 {len(assessed)} 个候选里选了 {len(chosen)} 个，没用的：{details}")
+            logger.info(f"媒体库 {library['Name']}：从 {len(assessed)} 个候选里选了 {len(chosen)} 个{note}，没用的：{details}")
         else:
-            logger.info(f"媒体库 {library['Name']}：从 {len(assessed)} 个候选里选了 {len(chosen)} 个")
+            logger.info(f"媒体库 {library['Name']}：从 {len(assessed)} 个候选里选了 {len(chosen)} 个{note}")
         return [item for item, _result in chosen]
 
     def __handle_live_tv_library(self, service, library, title):
@@ -2485,7 +2763,7 @@ class MediaCoverGenerator(_PluginBase):
             logger.warning(f"无法为播放列表 {service.name}：{library['Name']} 找到有效的图片项目")
             return False
 
-    def __get_items_batch(self, service, parent_id, offset=0, limit=20, include_types=None):
+    def __get_items_batch(self, service, parent_id, offset=0, limit=20, include_types=None, exact_types=False):
         # 调用API获取项目
         try:
             if not service:
@@ -2497,13 +2775,13 @@ class MediaCoverGenerator(_PluginBase):
             if self._monitor_sort:
                 sort_by = 'DateCreated'
                 # 入库更新时包含 Episode 以获取最新内容；音乐、合集、播放列表保持原有类型
-                if include_types in ('Movie,Series', 'Movie,Episode'):
+                if not exact_types and include_types in ('Movie,Series', 'Movie,Episode'):
                     include_types = 'Movie,Episode'
 
             url = f'[HOST]emby/Items/?api_key=[APIKEY]' \
                   f'&ParentId={parent_id}&SortBy={sort_by}&Limit={limit}' \
                   f'&StartIndex={offset}&IncludeItemTypes={include_types}' \
-                  f'&Recursive=True&SortOrder=Descending'
+                  f'&Recursive=True&SortOrder=Descending&Fields=Genres,ProductionYear'
 
             res = service.instance.get_data(url=url)
             if res:
@@ -2559,6 +2837,9 @@ class MediaCoverGenerator(_PluginBase):
                 return f"album:{item.get('AlbumId')}"
             if item.get("ParentBackdropItemId"):
                 return f"parent:{item.get('ParentBackdropItemId')}"
+
+        if item_type == "Series" and item.get("Id"):
+            return f"series:{item.get('Id')}"
 
         if item.get("Id"):
             return f"item:{item.get('Id')}"
@@ -2853,6 +3134,9 @@ class MediaCoverGenerator(_PluginBase):
         用户指定只用海报或只用背景图时，只有另一种完全没有才用。
         """
         tall, wide = self.__image_sets(item)
+        # 选图时已经判定这个条目的背景图不够好：只用海报
+        if item.get("_mcg_use") == "tall" and tall:
+            wide = []
         if self._use_primary in (None, "", "auto"):
             first, second = (tall, wide) if self.__prefer_primary() else (wide, tall)
             # 备用图要是另一种比例：首选图都下载失败时才轮到同类的下一张
