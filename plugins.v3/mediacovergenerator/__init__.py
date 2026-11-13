@@ -62,7 +62,6 @@ from app.plugins.mediacovergenerator.ui import (
     node,
     style_label,
 )
-from app.plugins.mediacovergenerator.ui_previews import PREVIEWS
 from app.plugins.mediacovergenerator.utils.image_manager import ResolutionConfig
 from app.plugins.mediacovergenerator.utils.network_helper import NetworkHelper, validate_font_file
 from app.plugins.mediacovergenerator.utils.performance_helper import memory_efficient_operation
@@ -89,6 +88,8 @@ MATERIAL_MAX_SIZE = 1920
 # 字体选「跟随风格」时，字体、字号、字距都由风格决定
 AUTO_FONT = "auto"
 FONT_BASE_URL = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/fonts/"
+EXAMPLE_BASE_URL = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/images/"
+EXAMPLE_NAME_PATTERN = re.compile(r"^(?:style_(\d{1,2})(?:_motion)?|type_[a-z]{2,16})\.webp$")
 FONT_FILES = {
     "glowbold": "glowbold.otf",
     "glowheavy": "glowheavy.otf",
@@ -135,8 +136,8 @@ ANIME_GENRES = ("动画", "动漫", "animation", "anime", "アニメ", "cartoon"
 ANIME_LIBRARY = re.compile(r"动漫|动画|番剧|新番|日番|卡通|anime|animation|アニメ|cartoon", re.IGNORECASE)
 # 最新入库的单集连续这么多批都没有新的剧，就不再往后翻，直接用整部剧补足
 STALE_EPISODE_BATCHES = 3
-# 本地预览的动图尺寸，和图库卡片差不多大
-PREVIEW_SIZE = (320, 180)
+# 本地预览不上传，保留足够像素供高密度屏幕显示
+PREVIEW_SIZE = (480, 270)
 LIBRARY_CACHE_SECONDS = 120
 THUMBNAIL_CACHE_SIZE = 256
 
@@ -149,7 +150,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标（前端按地址缓存图标，换图时要换文件名）
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/animated-cover.png"
     # 插件版本
-    plugin_version = "2.0.0"
+    plugin_version = "2.1.0"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -255,8 +256,12 @@ class MediaCoverGenerator(_PluginBase):
         self._monitor_pending: Dict[str, Any] = {}
         self._monitor_timer = None
         self._monitor_batch_updated: set = set()
-        self._thumbnail_cache: "OrderedDict[Tuple[Any, ...], str]" = OrderedDict()
+        self._thumbnail_cache: "OrderedDict[Tuple[Any, ...], bytes]" = OrderedDict()
         self._thumbnail_lock = threading.Lock()
+        self._example_lock = threading.Lock()
+        self._example_downloads: set = set()
+        self._example_failures: Dict[str, float] = {}
+        self._generation_lock = threading.Lock()
         self._library_cache: Dict[str, Tuple[float, List[Dict[str, str]]]] = {}
         self._history_visible = HISTORY_PAGE_SIZE
         self._clean_armed = ""
@@ -832,6 +837,8 @@ class MediaCoverGenerator(_PluginBase):
             ("/set_style_variant", self.api_set_style_variant, "切换静态或动态"),
             ("/style_target", self.api_style_target, "选择要设置风格的媒体库"),
             ("/clear_library_style", self.api_clear_library_style, "让媒体库恢复跟随默认风格"),
+            ("/reset_library_styles", self.api_reset_library_styles, "让全部媒体库恢复跟随默认风格"),
+            ("/assign_styles", self.api_assign_styles, "按顺序分配媒体库动态风格"),
             ("/generate_preview", self.api_generate_preview, "用媒体库的真实图片生成风格预览"),
             ("/clear_preview", self.api_clear_preview, "删除本地预览，恢复示例图"),
         ]
@@ -861,6 +868,15 @@ class MediaCoverGenerator(_PluginBase):
         # 图片标签带不了登录凭据，动态预览走匿名路由，靠每次生成都换的随机令牌保护，只能取到生成好的预览。
         # 不支持匿名路由的 MoviePilot 版本不注册，页面上仍有内嵌的静态预览
         if self.__supports_anonymous_route():
+            for path, endpoint, summary in (
+                ("/example", self.api_example, "获取风格示例图"),
+                ("/thumb", self.api_thumb, "获取封面缩略图"),
+            ):
+                for route_path in (path, path.lstrip("/")):
+                    result.append({
+                        "path": route_path, "endpoint": endpoint, "methods": ["GET"],
+                        "allow_anonymous": True, "response_model": None, "summary": summary,
+                    })
             for route_path in ("/local_preview", "local_preview"):
                 result.append({
                     "path": route_path,
@@ -914,6 +930,11 @@ class MediaCoverGenerator(_PluginBase):
     def __api_prefix(self) -> str:
         return f"plugin/{self.__class__.__name__}"
 
+    def __asset_base(self) -> str:
+        if self.__supports_anonymous_route():
+            return f"/api/v1/{self.__api_prefix()}/example?v={self.plugin_version}&name="
+        return EXAMPLE_BASE_URL
+
     def __set_page_tab(self, tab: str):
         """记住操作发生的页签，操作后页面刷新时停留在原处。"""
         valid_tabs = {item[0] for item in PAGE_TABS}
@@ -921,7 +942,7 @@ class MediaCoverGenerator(_PluginBase):
             self._page_tab = tab
 
     def __confirm_clean(self, what: str) -> bool:
-        """清理不能撤销：第一次点只记下要清理什么，页面换成确认按钮，再点一次才执行。"""
+        """批量操作会影响多个文件或媒体库，第二次点击才执行。"""
         if self._clean_armed != what:
             self._clean_armed = what
             return False
@@ -972,27 +993,80 @@ class MediaCoverGenerator(_PluginBase):
     def api_generate_now(self, library: str = "", tab: str = ""):
         """启动后台生成并立即返回，进度显示在详情页。"""
         self.__set_page_tab(tab)
+        error = self.__start_generation(library)
+        return self.__api_response(not error, error or "封面生成任务已在后台启动")
+
+    def __start_generation(self, library: str = "", prepare=None) -> str:
+        # 检查、批量改风格和标记任务必须连续完成，避免两个生成请求同时通过检查。
+        with self._generation_lock:
+            return self.__prepare_generation(library, prepare)
+
+    def __prepare_generation(self, library: str, prepare) -> str:
         if not self._enabled:
-            return self.__api_response(False, "插件未启用，请先在设置页启用插件并保存")
+            return "插件未启用，请先在设置页启用插件并保存"
         if not self._selected_servers:
-            return self.__api_response(False, "未选择媒体服务器，请先在设置页选择并保存")
+            return "未选择媒体服务器，请先在设置页选择并保存"
         if not self._servers:
-            return self.__api_response(False, "媒体服务器连接信息为空，请检查设置并保存后重试")
+            return "媒体服务器连接信息为空，请检查设置并保存后重试"
         if self.__is_running():
-            return self.__api_response(False, "已有封面生成任务正在运行")
+            return "已有封面生成任务正在运行"
+
+        if prepare:
+            prepare()
 
         # 先清除信号再标记运行中：任务线程启动的这段时间里点「停止」也不会丢失
         self._event.clear()
         task = {"running": True, "total": 0, "done": 0, "current": ""}
         self._task = task
-        threading.Thread(
-            target=self.__run_in_background,
-            args=((library or "").strip() or None, task),
-            name="MediaCoverGenerator",
-            daemon=True,
-        ).start()
+        try:
+            threading.Thread(
+                target=self.__run_in_background,
+                args=((library or "").strip() or None, task),
+                name="MediaCoverGenerator",
+                daemon=True,
+            ).start()
+        except Exception:
+            self._task = {"running": False}
+            raise
         logger.info(f"【MediaCoverGenerator】已启动后台生成，风格: {self._cover_style}，媒体库: {library or '全部'}")
-        return self.__api_response(True, "封面生成任务已在后台启动")
+        return ""
+
+    def api_reset_library_styles(self, tab: str = ""):
+        self.__set_page_tab(tab)
+        if not self.__confirm_clean("reset_styles"):
+            return self.__api_response(True, "")
+        count = len(self._library_styles)
+        self._library_styles = {}
+        self.save_data("library_styles", self._library_styles)
+        self._style_target = ""
+        message = f"已让 {count} 个媒体库恢复跟随默认风格" if count else "没有单独设置风格的媒体库"
+        logger.info(f"【MediaCoverGenerator】{message}")
+        return self.__api_response(True, message)
+
+    def api_assign_styles(self, tab: str = "", generate: bool = False):
+        self.__set_page_tab(tab)
+        if not self.__confirm_clean("assign_generate" if generate else "assign_styles"):
+            return self.__api_response(True, "")
+        if not self._all_libraries:
+            return self.__api_response(False, "还没有读取到媒体库，请先在设置中选择媒体服务器并保存")
+        libraries = [item for item in self._all_libraries if self.__in_batch(item["value"], item.get("type"))]
+
+        def assign():
+            styles = dict(self._library_styles)
+            styles.update({item["value"]: f"animated_{index % STYLE_COUNT + 1}"
+                           for index, item in enumerate(libraries)})
+            self.save_data("library_styles", styles)
+            self._library_styles = styles
+            logger.info(f"【MediaCoverGenerator】已按顺序给 {len(libraries)} 个媒体库分配动态风格")
+
+        if generate:
+            error = self.__start_generation(prepare=assign)
+            if error:
+                return self.__api_response(False, error)
+        else:
+            assign()
+        message = f"已按 1 到 {STYLE_COUNT} 的顺序给 {len(libraries)} 个媒体库分配动态风格"
+        return self.__api_response(True, message + ("，已开始生成" if generate else ""))
 
     def __run_in_background(self, library_key: Optional[str], task: Dict[str, Any]):
         try:
@@ -1119,16 +1193,114 @@ class MediaCoverGenerator(_PluginBase):
         self.save_data("local_preview", {})
         return self.__api_response(True, "已恢复示例图")
 
-    def api_local_preview(self, token: str = "", index: int = 0):
-        """返回一张动态预览。路径只由保存的令牌和序号组成，不接受外部传入的路径。"""
+    def api_example(self, name: str = "", v: str = ""):
+        from fastapi.responses import FileResponse, RedirectResponse, Response
+        match = EXAMPLE_NAME_PATTERN.fullmatch(name)
+        if not match or (match.group(1) is not None and not 1 <= int(match.group(1)) <= STYLE_COUNT):
+            return Response(status_code=404)
+        for root in (Path(__file__).parent / "examples", self.get_data_path() / "examples"):
+            target = root / name
+            if target.is_file() and target.resolve().parent == root.resolve():
+                return FileResponse(str(target), media_type="image/webp",
+                                    headers={"Cache-Control": "public, max-age=604800"})
+        self.__queue_example_download(name)
+        return RedirectResponse(EXAMPLE_BASE_URL + name, status_code=302, headers={"Cache-Control": "no-store"})
+
+    def __queue_example_download(self, name: str):
+        with self._example_lock:
+            if name in self._example_downloads or time.monotonic() < self._example_failures.get(name, 0):
+                return
+            self._example_downloads.add(name)
+        try:
+            threading.Thread(target=self.__download_example, args=(name,),
+                             name="MediaCoverGeneratorExample", daemon=True).start()
+        except Exception as error:
+            with self._example_lock:
+                self._example_downloads.discard(name)
+                self._example_failures[name] = time.monotonic() + 600
+            logger.warning(f"启动示例图下载失败 {name}: {error}")
+
+    def __download_example(self, name: str):
+        # 独立下载避免网络助手的字体错误日志影响可选示例图；限制流大小也避免坏响应耗尽磁盘。
+        success = False
+        temporary = None
+        try:
+            import requests
+            target = self.get_data_path() / "examples" / name
+            temporary = target.with_suffix(f".{secrets.token_hex(8)}.temp")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            for strategy, url, proxies in self.__download_strategies(EXAMPLE_BASE_URL + name):
+                try:
+                    with requests.get(url, stream=True, timeout=(15, 30), proxies=proxies,
+                                      headers={"User-Agent": "MoviePilot-MediaCoverGenerator/2.1"}) as response:
+                        response.raise_for_status()
+                        size = 0
+                        with temporary.open("wb") as output:
+                            for chunk in response.iter_content(chunk_size=64 * 1024):
+                                size += len(chunk)
+                                if size > 8 * 1024 * 1024:
+                                    raise ValueError("示例图超过 8 MB")
+                                output.write(chunk)
+                    with temporary.open("rb") as downloaded:
+                        header = downloaded.read(12)
+                    if size < 1024 or header[:4] != b"RIFF" or header[8:12] != b"WEBP":
+                        raise ValueError("示例图大小或 WebP 标识无效")
+                    temporary.replace(target)
+                    success = True
+                    break
+                except Exception as error:
+                    logger.debug(f"示例图下载失败 {name}（{strategy}）: {error}")
+        except Exception as error:
+            logger.warning(f"缓存示例图失败 {name}: {error}")
+        finally:
+            try:
+                if temporary is not None:
+                    temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+            with self._example_lock:
+                self._example_downloads.discard(name)
+                if success:
+                    self._example_failures.pop(name, None)
+                else:
+                    self._example_failures[name] = time.monotonic() + 600
+            if not success:
+                logger.warning(f"示例图 {name} 暂不可用，10 分钟后再尝试缓存")
+
+    def api_thumb(self, token: str = "", file: str = "", w: str = "640"):
+        from fastapi.responses import Response
+        if not hmac.compare_digest(str(token).encode("utf-8"), self.__pet_token().encode("utf-8")):
+            return Response(status_code=404)
+        target = self.__resolve_saved_cover_path(file)
+        if not target:
+            return Response(status_code=404)
+        try:
+            width = int(w)
+        except (TypeError, ValueError):
+            width = 640
+        if width not in (320, 480, 640, 960):
+            width = 640
+        data = self.__thumbnail_bytes(target, (width, width * 9 // 16), 82)
+        if not data:
+            return Response(status_code=404)
+        return Response(data, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=604800"})
+
+    def __thumb_url(self, cover: Dict[str, Any], width: int) -> str:
+        return (f"/api/v1/{self.__api_prefix()}/thumb?token={quote(self.__pet_token(), safe='')}"
+                f"&file={quote(cover['name'], safe='')}&w={width}&v={int(cover['mtime_ts'])}")
+
+    def api_local_preview(self, token: str = "", index: int = 0, still: int = 0):
+        """路径只由保存的令牌和序号组成，不接受外部传入的路径。"""
         from fastapi.responses import FileResponse, Response
         meta = self.__local_preview_meta()
         if not meta or not hmac.compare_digest(str(token), meta["token"]) or index not in meta["styles"]:
             return Response(status_code=404)
-        target = self.__preview_root() / meta["token"] / f"style_{index}.gif"
+        extension = "jpg" if still == 1 else "gif"
+        target = self.__preview_root() / meta["token"] / f"style_{index}.{extension}"
         if not target.is_file():
             return Response(status_code=404)
-        return FileResponse(path=str(target), media_type="image/gif", headers={"Cache-Control": "private, max-age=86400"})
+        return FileResponse(path=str(target), media_type="image/jpeg" if still == 1 else "image/gif",
+                            headers={"Cache-Control": "private, max-age=86400"})
 
     def api_pet(self):
         """插件宠物「咔嗒」的页面：一个静态文件，由详情页里看不见的 iframe 加载。"""
@@ -1217,7 +1389,7 @@ class MediaCoverGenerator(_PluginBase):
         return {**meta, "styles": styles}
 
     def __local_preview_context(self) -> Optional[Dict[str, Any]]:
-        """详情页用的预览信息。静态图内嵌在页面里，动图只放地址。"""
+        """支持匿名路由时按需加载图片，旧版本仍内嵌静态图。"""
         meta = self.__local_preview_meta()
         if not meta:
             return None
@@ -1225,7 +1397,16 @@ class MediaCoverGenerator(_PluginBase):
         styles: Dict[int, Dict[str, Optional[str]]] = {}
         anonymous = self.__supports_anonymous_route()
         for index in meta["styles"]:
-            still = self.__thumbnail(folder / f"style_{index}.jpg", (320, 180), 62)
+            still_path = folder / f"style_{index}.jpg"
+            if anonymous:
+                try:
+                    revision = still_path.stat().st_mtime_ns
+                except OSError:
+                    continue
+                still = (f"/api/v1/{self.__api_prefix()}/local_preview?token={meta['token']}"
+                         f"&index={index}&still=1&v={revision}")
+            else:
+                still = self.__thumbnail(still_path, (320, 180), 62)
             if not still:
                 continue
             gif_path = folder / f"style_{index}.gif"
@@ -1344,8 +1525,7 @@ class MediaCoverGenerator(_PluginBase):
         raw = base64.b64decode(image_base64)
         with Image.open(BytesIO(raw)) as image:
             still = image.convert("RGB")
-            still.thumbnail((480, 270))
-            still.save(folder / f"style_{index}.jpg", quality=86)
+            still.save(folder / f"style_{index}.jpg", quality=88)
         if raw[:3] == b"GIF":
             (folder / f"style_{index}.gif").write_bytes(raw)
         return True
@@ -1391,13 +1571,22 @@ class MediaCoverGenerator(_PluginBase):
 
     def __scheduled_update(self):
         """
-        定时任务的入口。开启轮换时先把默认风格换成下一款，所有媒体库仍然统一；
-        改的是默认风格，所以入库更新也会跟上，单独设置过风格的媒体库不受影响。
+        定时任务的入口。开启轮换时默认风格与单独设置的风格各进一款，保留静态或动态类型。
+        保存后的风格也用于后续入库更新。
         """
         if self._rotate_style and not self.__is_running():
             variant, index = self.__get_cover_style_parts()
-            self.__apply_style(f"{variant}_{index % STYLE_COUNT + 1}")
-            logger.info(f"定时轮换风格：这次使用「{style_info(index % STYLE_COUNT + 1).name}」")
+            next_index = index % STYLE_COUNT + 1
+            self._cover_style = f"{variant}_{next_index}"
+            self._cover_style_base, self._cover_style_variant = self.__resolve_cover_style_ui(self._cover_style)
+            self.__update_config()
+            styles = {}
+            for key, style in self._library_styles.items():
+                own_variant, own_index = self.__get_cover_style_parts(style)
+                styles[key] = f"{own_variant}_{own_index % STYLE_COUNT + 1}"
+            self.save_data("library_styles", styles)
+            self._library_styles = styles
+            logger.info(f"定时轮换风格：默认使用「{style_info(next_index).name}」，{len(styles)} 个单独设置的媒体库各进一款")
         return self.__update_all_libraries()
 
     def stop_task(self):
@@ -1494,6 +1683,7 @@ class MediaCoverGenerator(_PluginBase):
             for library in libraries
         ]
         ctx = {
+            "asset_base": self.__asset_base(),
             "server_items": [{"title": config.name, "value": config.name} for config in self.__server_configs()],
             "server_hint": self.__server_hint() or "支持 Emby、Jellyfin 和极影视",
             # 媒体库选项跟随已选服务器变化，表达式在前端按当前表单值计算
@@ -1516,12 +1706,13 @@ class MediaCoverGenerator(_PluginBase):
         return [{"key": "kada", "name": "动态封面工坊 · 咔嗒"}]
 
     def get_dashboard(self, key: str, **kwargs) -> Optional[Tuple[Dict[str, Any], Dict[str, Any], Optional[List[dict]]]]:
-        """首页只带一张内嵌小图和轻量状态，宠物沿用详情页的匿名地址。"""
+        """首页只带一张示例图和轻量状态，宠物沿用详情页的匿名地址。"""
         if key != "kada":
             return None
         # 默认风格直接读配置，避免媒体库单独生成时临时风格覆盖首页预览。
         _variant, index = self.__get_cover_style_parts(self._cover_style)
         info = style_info(index)
+        asset_base = self.__asset_base()
         task = dict(self._task)
         if self._update_lock.locked():
             task["running"] = True
@@ -1532,7 +1723,7 @@ class MediaCoverGenerator(_PluginBase):
         elif last_time:
             lines.append(f"上次更新 {last_time}")
         elements = [node("div", cls="d-flex align-center ga-3", content=[
-            node("img", src=PREVIEWS.get(info.index, ""), alt=info.name, width=120,
+            node("img", src=f"{asset_base}style_{index}.webp", alt=info.name, width=120,
                  style="width:120px;border-radius:8px;flex-shrink:0"),
             node("div", cls="text-caption", content=[node("div", text=line) for line in lines]),
         ])]
@@ -1632,11 +1823,12 @@ class MediaCoverGenerator(_PluginBase):
 
         page_tab = self._page_tab if self._page_tab in {item[0] for item in PAGE_TABS} else "style"
         all_covers = self.__list_saved_covers()
-        # 操作后整个页面都要重新下载。历史图片只在打开历史页时才带上，其他页签保持轻量
+        anonymous = self.__supports_anonymous_route()
+        # 旧版本仍内嵌历史图片，只在打开历史页时传输这些图片。
         history = []
-        if page_tab == "history":
+        if anonymous or page_tab == "history":
             for cover in all_covers[:min(limit, self._history_visible)]:
-                source = self.__thumbnail(cover["file"])
+                source = self.__thumb_url(cover, 640) if anonymous else self.__thumbnail(cover["file"])
                 if source:
                     history.append({**cover, "src": source, "encoded_name": quote(cover["name"], safe="")})
 
@@ -1664,7 +1856,8 @@ class MediaCoverGenerator(_PluginBase):
                 "encoded_key": quote(key, safe=""),
                 "active": self.__in_batch(key, library.get("type")),
                 "status": status_map.get(key),
-                "thumb": self.__thumbnail(cover["file"], (224, 126), 60) if cover else None,
+                "thumb": (self.__thumb_url(cover, 480) if anonymous else
+                          self.__thumbnail(cover["file"], (224, 126), 60)) if cover else None,
                 "own_style": self._library_styles.get(key) or "",
             })
         for library in libraries:
@@ -1682,6 +1875,10 @@ class MediaCoverGenerator(_PluginBase):
         # 横幅背景会被模糊，很小的图就够了
         hero_image = self.__thumbnail(all_covers[0]["file"], (160, 90), 50) if all_covers else None
         return build_page({
+            "asset_base": self.__asset_base(),
+            "rotate_style": bool(self._rotate_style),
+            "cron": self._cron or "",
+            "anonymous": anonymous,
             "local_preview": self.__local_preview_context() if page_tab == "style" else None,
             "api_prefix": self.__api_prefix(),
             "enabled": self._enabled,
@@ -1741,7 +1938,11 @@ class MediaCoverGenerator(_PluginBase):
         return items
 
     def __thumbnail(self, file_path: Path, size: Tuple[int, int] = (320, 180), quality: int = 65) -> Optional[str]:
-        """生成缩略图 data URI 并按文件修改时间缓存，页面刷新时不必重复解码原图。"""
+        data = self.__thumbnail_bytes(file_path, size, quality)
+        return "data:image/jpeg;base64," + base64.b64encode(data).decode("utf-8") if data else None
+
+    def __thumbnail_bytes(self, file_path: Path, size: Tuple[int, int] = (320, 180), quality: int = 65) -> Optional[bytes]:
+        """缓存 JPEG 字节，让匿名图片路由和旧版页面共用解码结果。"""
         try:
             cache_key = (str(file_path), file_path.stat().st_mtime, size)
         except OSError:
@@ -1762,7 +1963,7 @@ class MediaCoverGenerator(_PluginBase):
         except Exception as error:
             logger.debug(f"生成缩略图失败 {file_path}: {error}")
             return None
-        source = "data:image/jpeg;base64," + base64.b64encode(buffer.getvalue()).decode("utf-8")
+        source = buffer.getvalue()
         with self._thumbnail_lock:
             self._thumbnail_cache[cache_key] = source
             while len(self._thumbnail_cache) > THUMBNAIL_CACHE_SIZE:
@@ -1801,12 +2002,13 @@ class MediaCoverGenerator(_PluginBase):
 
     def __resolve_saved_cover_path(self, raw_name: str) -> Optional[Path]:
         """只接受文件名，且必须是保存目录下插件生成的封面。"""
-        name = Path(str(raw_name or "").strip()).name
-        if not COVER_NAME_PATTERN.match(name):
+        raw_name = str(raw_name or "").strip()
+        name = Path(raw_name).name
+        if name != raw_name or "/" in name or "\\" in name or not COVER_NAME_PATTERN.fullmatch(name):
             return None
         for directory in self.__get_saved_cover_dirs():
             candidate = directory / name
-            if candidate.is_file():
+            if candidate.is_file() and candidate.resolve().parent == directory.resolve():
                 return candidate
         return None
 
@@ -3538,6 +3740,18 @@ class MediaCoverGenerator(_PluginBase):
             logger.error(f"字体下载过程中出现异常: {e}")
             return False
 
+    @staticmethod
+    def __download_strategies(url: str) -> List[Tuple[str, str, Any]]:
+        strategies = []
+        is_github_url = bool(re.search(r"(^|\.)github\.com$|(^|\.)raw\.githubusercontent\.com$", urlparse(url).hostname or ""))
+        if is_github_url and getattr(settings, "GITHUB_PROXY", None):
+            strategies.append(("GitHub镜像站", f"{UrlUtils.standardize_base_url(settings.GITHUB_PROXY)}{url}", None))
+        proxies = getattr(settings, "PROXY", None)
+        if proxies:
+            strategies.append(("系统代理", url, proxies))
+        strategies.append(("直连", url, None))
+        return strategies
+
     def download_font_safely(self, font_url: str, font_path: Path, retries: int = 2, timeout: int = 30):
         """
         从链接下载字体文件到指定目录，使用优化的网络助手
@@ -3552,24 +3766,7 @@ class MediaCoverGenerator(_PluginBase):
         # 使用优化的网络助手进行下载
         network_helper = NetworkHelper(timeout=timeout, max_retries=retries)
 
-        # 准备下载策略：GitHub 镜像 → MoviePilot 的系统代理（PROXY_HOST）→ 直连，逐个尝试
-        strategies = []
-
-        # 判断是否为GitHub链接
-        is_github_url = bool(re.search(r"(^|\.)github\.com$|(^|\.)raw\.githubusercontent\.com$", urlparse(font_url).hostname or ""))
-
-        # 对于GitHub链接，优先使用GitHub镜像站
-        if is_github_url and getattr(settings, "GITHUB_PROXY", None):
-            github_proxy_url = f"{UrlUtils.standardize_base_url(settings.GITHUB_PROXY)}{font_url}"
-            strategies.append(("GitHub镜像站", github_proxy_url, None))
-
-        # 和 MoviePilot 访问外网一样走系统代理
-        proxies = getattr(settings, "PROXY", None)
-        if proxies:
-            strategies.append(("系统代理", font_url, proxies))
-
-        # 直接使用原始URL
-        strategies.append(("直连", font_url, None))
+        strategies = self.__download_strategies(font_url)
 
         # 遍历所有策略
         for strategy_name, target_url, strategy_proxies in strategies:

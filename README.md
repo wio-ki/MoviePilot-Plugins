@@ -16,15 +16,15 @@
 
 ## 封面风格
 
-每款都有自己的切换方式。下图的[示例素材](images/CREDITS.md)是 Unsplash 上的插画，实际效果取决于媒体库的图片。想看自己片库的效果，可以生成[本地预览](#用自己的片库预览)。
+每款都有自己的切换方式。下图的[示例素材](images/CREDITS.md)是吉卜力工作室官网公开的场面写真，实际效果取决于媒体库的图片。想看自己片库的效果，可以生成[本地预览](#用自己的片库预览)。
 
 | | | | |
 | :-: | :-: | :-: | :-: |
-| ![序幕](images/style_1.gif) | ![巨幕](images/style_2.gif) | ![404](images/style_3.gif) | ![预告](images/style_4.gif) |
+| ![序幕](images/style_1_motion.webp) | ![巨幕](images/style_2_motion.webp) | ![404](images/style_3_motion.webp) | ![预告](images/style_4_motion.webp) |
 | 序幕 | 巨幕 | 404 | 预告 |
-| ![环幕](images/style_5.gif) | ![景深](images/style_6.gif) | ![详情](images/style_7.gif) | ![扇面](images/style_8.gif) |
+| ![环幕](images/style_5_motion.webp) | ![景深](images/style_6_motion.webp) | ![详情](images/style_7_motion.webp) | ![扇面](images/style_8_motion.webp) |
 | 环幕 | 景深 | 详情 | 扇面 |
-| ![百叶](images/style_9.gif) | ![对开](images/style_10.gif) | | |
+| ![百叶](images/style_9_motion.webp) | ![对开](images/style_10_motion.webp) | | |
 | 百叶 | 对开 | | |
 
 百叶和对开是海报系列，完整保留竖版海报，配色跟着每张海报走：百叶是片名在左、海报在右，整幅画面像百叶窗一样逐条翻面；对开是左边的海报从上往下切入，右边取自海报的色块带着片名从下往上升起，前后两张的颜色不会重样，黄色、黄绿这类压暗会发脏的颜色做成浅色块配深色字。

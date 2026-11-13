@@ -2,19 +2,18 @@
 插件界面：设置页（FormRender）与详情页（PageRender）的 Vuetify JSON。
 
 这里只有纯函数，不依赖 MoviePilot，所需数据都由主类组装后传入。
-颜色通过 Vuetify 的主题变量取透明度，浅色、深色、玻璃主题都能保持可读；只有点缀色固定。
+封面本身色彩很满，界面就保持安静：没有横幅和卡片底，靠细线、留白和字重分层，只有一个点缀色（咔嗒眼睛的薄荷绿）。
+颜色都从 Vuetify 的主题变量取，浅色、深色、玻璃主题下都能读。
 """
 import json
 from typing import Any, Dict, List, Optional
 
 from app.plugins.mediacovergenerator.style.catalog import STYLE_CATALOG, STYLE_COUNT, style_info
 from app.plugins.mediacovergenerator.ui_presets import TYPOGRAPHY_PRESETS
-from app.plugins.mediacovergenerator.ui_previews import PREVIEWS, TYPOGRAPHY_PREVIEWS
 
-# Vuetify 组件自带主题类，会重置 CSS 变量，所以点缀色要用具体色值传给 color 属性
-ACCENT = "#B0843F"
-# 动态预览放在仓库里，不进页面数据：页面每次操作都会整个重新下载。加载失败时露出下面的静态图
-PREVIEW_GIF = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/images/style_{index}.gif"
+# Vuetify 组件自带主题类，会重置 CSS 变量，所以点缀色要用具体色值传给 color 属性。
+# 这个绿在浅色和深色底上都够对比度
+ACCENT = "#2FA97C"
 
 PAGE_TABS = [
     ("style", "风格", "mdi-palette-swatch-outline"),
@@ -36,264 +35,258 @@ TITLE_EXAMPLE = """# 按媒体库名称配置封面标题，名称需与媒体�
 
 CSS = """
 .mcg {
-  --mcg-ink: rgb(var(--v-theme-on-surface));
-  --mcg-muted: rgba(var(--v-theme-on-surface), .64);
-  --mcg-faint: rgba(var(--v-theme-on-surface), .44);
-  --mcg-line: rgba(var(--v-theme-on-surface), .11);
-  --mcg-raise: rgba(var(--v-theme-on-surface), .035);
-  --mcg-raise-strong: rgba(var(--v-theme-on-surface), .07);
-  --mcg-gold: #C49A5C;
-  --mcg-gold-soft: rgba(196, 154, 92, .16);
-  --mcg-ok: #4E9B7A;
-  --mcg-bad: #C8664F;
-  --v-theme-primary: 196, 154, 92;
-  --v-theme-on-primary: 28, 22, 14;
-  color: var(--mcg-ink);
+  --k-ink: rgb(var(--v-theme-on-surface));
+  --k-ink-2: rgba(var(--v-theme-on-surface), .68);
+  --k-ink-3: rgba(var(--v-theme-on-surface), .48);
+  --k-rule: rgba(var(--v-theme-on-surface), .12);
+  --k-rule-2: rgba(var(--v-theme-on-surface), .24);
+  --k-fill: rgba(var(--v-theme-on-surface), .045);
+  --k-fill-2: rgba(var(--v-theme-on-surface), .09);
+  --k-mint: #58DDA3;
+  --k-mint-ink: #05281A;
+  --k-accent: #2FA97C;
+  --k-bad: #D9604A;
+  --k-warn: #C98A1B;
+  --k-mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --v-theme-primary: 47, 169, 124;
+  --v-theme-on-primary: 255, 255, 255;
+  color: var(--k-ink); font-size: 14px; line-height: 1.5;
   font-feature-settings: "palt";
+}
+/* 文字和线条用的点缀色跟着主题走：深色底上偏亮，浅色底上偏深，两边都读得清 */
+@supports (color: color-mix(in srgb, red, blue)) {
+  .mcg { --k-accent: color-mix(in srgb, #58DDA3 50%, rgb(var(--v-theme-on-surface))); }
 }
 .mcg * { box-sizing: border-box; }
 .mcg-radio { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 
-/* 顶部横幅：内容固定浅色，不随主题变化 */
-.mcg-hero {
-  position: relative; overflow: hidden; border-radius: 18px; color: #F5F0E6;
-  background: linear-gradient(120deg, #17130F 0%, #221B14 55%, #15191A 100%);
-  padding: 26px 28px 22px; margin-bottom: 18px;
+/* 页头：标题、主要操作，下面一条拍板斜纹和一行场记板字段 */
+.mcg-top-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; padding: 4px 0 16px; }
+.mcg-top h2 { display: flex; align-items: center; font-size: 24px; line-height: 1.2; font-weight: 700; letter-spacing: .01em; margin: 0; font-variant-numeric: tabular-nums; }
+.mcg-top-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* 拍板条：空闲时是静止的斜纹，生成时薄荷色的部分就是进度 */
+.mcg-clap {
+  position: relative; height: 8px; border-radius: 2px; overflow: hidden;
+  background: repeating-linear-gradient(-45deg, var(--k-rule-2) 0 6px, transparent 6px 12px);
 }
-.mcg-hero-art {
-  position: absolute; inset: -24px; background-size: cover; background-position: center;
-  filter: blur(16px) saturate(1.15); opacity: .5;
+.mcg-clap-fill { position: relative; height: 100%; overflow: hidden; border-radius: 2px; background: var(--k-mint); transition: width .4s ease; }
+.mcg-clap-fill::before {
+  content: ""; position: absolute; inset: 0 -34px 0 0;
+  background: repeating-linear-gradient(-45deg, rgba(5,40,26,.34) 0 6px, transparent 6px 12px);
+  animation: mcg-roll .9s linear infinite;
 }
-.mcg-hero-shade {
-  position: absolute; inset: 0;
-  background: linear-gradient(100deg, rgba(14,11,8,.92) 0%, rgba(14,11,8,.68) 52%, rgba(14,11,8,.42) 100%);
-}
-.mcg-hero-body { position: relative; display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-end; justify-content: space-between; }
-.mcg-eyebrow { font-size: 11px; letter-spacing: .28em; color: var(--mcg-gold); font-weight: 600; margin-bottom: 8px; }
-.mcg-hero h2 { font-size: 28px; line-height: 1.2; font-weight: 700; letter-spacing: .02em; margin: 0; color: #FBF7EF; }
-.mcg-hero-sub { font-size: 13px; color: rgba(245,240,230,.70); margin-top: 8px; line-height: 1.6; max-width: 34rem; }
-.mcg-hero-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.mcg-stats {
-  position: relative; display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
-  gap: 1px; margin-top: 20px; border-radius: 12px; overflow: hidden; background: rgba(255,255,255,.10);
-}
-.mcg-stat { background: rgba(18,14,10,.62); padding: 11px 14px; min-width: 0; }
-.mcg-stat-label { font-size: 11px; color: rgba(245,240,230,.58); letter-spacing: .06em; }
-.mcg-stat-value { font-size: 14px; font-weight: 600; color: #FBF7EF; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mcg-progress { position: relative; height: 3px; border-radius: 3px; background: rgba(255,255,255,.14); margin-top: 14px; overflow: hidden; }
-.mcg-progress-bar { height: 100%; background: var(--mcg-gold); transition: width .4s ease; }
-.mcg-progress-note { position: relative; font-size: 12px; color: rgba(245,240,230,.72); margin-top: 8px; }
+@keyframes mcg-roll { to { transform: translateX(-16.97px); } }
+.mcg-slate { display: grid; grid-template-columns: repeat(var(--mcg-n, 4), minmax(0, 1fr)); overflow: hidden; border-bottom: 1px solid var(--k-rule); }
+.mcg-field { padding: 12px 16px; min-width: 0; box-shadow: -1px 0 0 var(--k-rule), 0 -1px 0 var(--k-rule); }
+.mcg-field:first-child { padding-left: 0; }
+.mcg-field-label { font-size: 12px; color: var(--k-ink-3); letter-spacing: .06em; }
+.mcg-field-value { font-size: 14px; font-weight: 600; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.mcg-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; margin-right: 12px; background: var(--k-ink-3); }
+.mcg-dot-ok { background: var(--k-mint); }
+.mcg-dot-off { background: transparent; box-shadow: inset 0 0 0 2px var(--k-ink-3); }
+.mcg-dot-run { background: var(--k-mint); animation: mcg-pulse 1.6s ease-out infinite; }
+@keyframes mcg-pulse { 0% { box-shadow: 0 0 0 0 rgba(88,221,163,.55); } 100% { box-shadow: 0 0 0 8px rgba(88,221,163,0); } }
+.mcg-top-note { font-size: 12px; color: var(--k-ink-2); padding-top: 8px; line-height: 1.6; }
 
-/* 按钮 */
-.mcg .v-btn.mcg-btn.mcg-btn { text-transform: none; letter-spacing: .02em; font-weight: 600; border-radius: 10px; box-shadow: none; border-color: transparent; backdrop-filter: none; }
-/* 重复类名是为了压过主题里 html[data-theme] .v-btn.bg-primary 这类高优先级规则 */
-.mcg .v-btn.mcg-btn.mcg-btn-gold.mcg-btn-gold { background-color: var(--mcg-gold) !important; color: #1C160E !important; }
-.mcg .v-btn.mcg-btn.mcg-btn-glass.mcg-btn-glass { background-color: rgba(255,255,255,.13) !important; color: #FBF7EF !important; }
-.mcg .v-btn.mcg-btn.mcg-btn-quiet.mcg-btn-quiet { background-color: var(--mcg-raise-strong) !important; color: var(--mcg-ink) !important; }
-.mcg .v-btn.mcg-btn.mcg-btn-danger.mcg-btn-danger { background-color: rgba(200,102,79,.14) !important; color: var(--mcg-bad) !important; }
+/* 按钮。重复类名是为了压过主题里 html[data-theme] .v-btn.bg-primary 这类高优先级规则 */
+.mcg .v-btn.mcg-btn.mcg-btn {
+  text-transform: none; letter-spacing: 0; font-weight: 600; border-radius: 8px; box-shadow: none; backdrop-filter: none;
+  transition: transform .15s ease, filter .15s ease, background-color .15s ease;
+}
+.mcg .v-btn.mcg-btn.mcg-btn-solid.mcg-btn-solid { background-color: var(--k-mint) !important; color: var(--k-mint-ink) !important; border-color: transparent !important; }
+.mcg .v-btn.mcg-btn.mcg-btn-line.mcg-btn-line { background-color: transparent !important; color: var(--k-ink) !important; border: 1px solid var(--k-rule-2) !important; }
+.mcg .v-btn.mcg-btn.mcg-btn-line.mcg-btn-line:hover { background-color: var(--k-fill) !important; }
+.mcg .v-btn.mcg-btn.mcg-btn-quiet.mcg-btn-quiet { background-color: var(--k-fill-2) !important; color: var(--k-ink) !important; border-color: transparent !important; }
+.mcg .v-btn.mcg-btn.mcg-btn-danger.mcg-btn-danger { background-color: transparent !important; color: var(--k-bad) !important; border: 1px solid rgba(217,96,74,.45) !important; }
+.mcg .v-btn.mcg-btn.mcg-btn:hover { filter: brightness(1.06); }
+.mcg .v-btn.mcg-btn.mcg-btn:active { transform: scale(.98); }
+.mcg .v-btn.mcg-btn.mcg-btn:focus-visible { outline: 2px solid var(--k-accent); outline-offset: 2px; }
 
 /* 页签：单选框 + CSS，切换无需请求后端 */
-.mcg-tabs { display: flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--mcg-raise-strong); margin-bottom: 18px; overflow-x: auto; }
+.mcg-tabs { display: flex; gap: 24px; margin: 16px 0 24px; border-bottom: 1px solid var(--k-rule); overflow-x: auto; scrollbar-width: none; }
+.mcg-tabs::-webkit-scrollbar { display: none; }
 .mcg-tab {
-  flex: 1 1 0; min-width: 84px; display: flex; align-items: center; justify-content: center; gap: 6px;
-  padding: 8px 12px; border-radius: 9px; cursor: pointer; font-size: 13.5px; font-weight: 500;
-  color: var(--mcg-muted); transition: background .18s ease, color .18s ease; white-space: nowrap; margin: 0;
+  display: flex; align-items: baseline; gap: 8px; padding: 12px 0; margin: 0 0 -1px; cursor: pointer; white-space: nowrap;
+  font-size: 14px; color: var(--k-ink-2); border-bottom: 2px solid transparent; transition: color .2s ease, border-color .2s ease;
 }
-.mcg-tab:hover { color: var(--mcg-ink); }
+.mcg-tab:hover { color: var(--k-ink); }
+.mcg-tab-n { font-family: var(--k-mono); font-size: 12px; color: var(--k-ink-3); }
 .mcg-panel, .mcg-when { display: none; }
 /* 弹窗默认垂直居中，页签内容一变高，页签栏就会上下跳。改成贴着顶部，切换时位置不动 */
 .v-dialog > .v-overlay__content:has(.mcg) { align-self: flex-start; margin-top: 24px; }
 /* 右下角的设置齿轮浮在内容上，底部留出位置，不挡最后一行的按钮 */
-.mcg:not(.mcg-form) { padding-bottom: 64px; }
+.mcg:not(.mcg-form) { container: mcg / inline-size; padding-bottom: 64px; }
 #mcg-tab-style:checked ~ .mcg-tabs label[for="mcg-tab-style"],
 #mcg-tab-libraries:checked ~ .mcg-tabs label[for="mcg-tab-libraries"],
 #mcg-tab-history:checked ~ .mcg-tabs label[for="mcg-tab-history"],
-#mcg-tab-maintain:checked ~ .mcg-tabs label[for="mcg-tab-maintain"] {
-  background: rgb(var(--v-theme-surface)); color: var(--mcg-ink); font-weight: 600;
-  box-shadow: 0 1px 3px rgba(0,0,0,.14);
-}
+#mcg-tab-maintain:checked ~ .mcg-tabs label[for="mcg-tab-maintain"] { color: var(--k-ink); font-weight: 600; border-bottom-color: var(--k-accent); }
 #mcg-tab-style:checked ~ .mcg-panel-style,
 #mcg-tab-libraries:checked ~ .mcg-panel-libraries,
 #mcg-tab-history:checked ~ .mcg-panel-history,
-#mcg-tab-maintain:checked ~ .mcg-panel-maintain { display: block; animation: mcg-fade .22s ease; }
-#mcg-tab-style:checked ~ .mcg-hero .mcg-when-style,
-#mcg-tab-libraries:checked ~ .mcg-hero .mcg-when-libraries,
-#mcg-tab-history:checked ~ .mcg-hero .mcg-when-history,
-#mcg-tab-maintain:checked ~ .mcg-hero .mcg-when-maintain { display: inline-flex; gap: 8px; flex-wrap: wrap; }
+#mcg-tab-maintain:checked ~ .mcg-panel-maintain { display: block; animation: mcg-fade .2s ease; }
+#mcg-tab-style:checked ~ .mcg-top .mcg-when-style,
+#mcg-tab-libraries:checked ~ .mcg-top .mcg-when-libraries,
+#mcg-tab-history:checked ~ .mcg-top .mcg-when-history,
+#mcg-tab-maintain:checked ~ .mcg-top .mcg-when-maintain { display: inline-flex; gap: 8px; flex-wrap: wrap; }
 @keyframes mcg-fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
 /* 通用小部件 */
-.mcg-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
-.mcg-heading-title { font-size: 15px; font-weight: 600; }
-.mcg-heading-note { font-size: 12.5px; color: var(--mcg-muted); margin-top: 2px; }
+.mcg-bar { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 16px; margin-bottom: 16px; }
+.mcg-lead { flex: 1 1 280px; font-size: 14px; color: var(--k-ink-2); line-height: 1.6; max-width: 46rem; }
+.mcg-hint {
+  display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between;
+  padding: 12px 16px; border-radius: 8px; background: var(--k-fill); font-size: 14px; line-height: 1.6; margin-bottom: 16px;
+}
+.mcg-hint-text { flex: 1 1 280px; min-width: 0; }
+.mcg-hint-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.mcg-hint-foot { margin: 32px 0 0; }
+/* 等待确认的操作：左边一道点缀色，和普通提示区分开 */
+.mcg-hint-ask { background: rgba(88,221,163,.12); box-shadow: inset 2px 0 0 var(--k-accent); border-radius: 2px 8px 8px 2px; }
 .mcg-notice {
-  display: flex; gap: 10px; align-items: flex-start; font-size: 13px; line-height: 1.6; color: var(--mcg-ink);
-  background: var(--mcg-gold-soft); border-radius: 12px; padding: 11px 14px; margin-bottom: 16px;
+  display: flex; gap: 12px; align-items: flex-start; font-size: 14px; line-height: 1.6;
+  padding: 12px 16px; margin-top: 16px; border-radius: 2px 8px 8px 2px; background: rgba(201,138,27,.12); box-shadow: inset 2px 0 0 var(--k-warn);
 }
-.mcg-notice .v-icon { color: var(--mcg-gold); }
-.mcg-empty { text-align: center; color: var(--mcg-muted); font-size: 13.5px; padding: 44px 16px; border: 1px dashed var(--mcg-line); border-radius: 14px; }
-.mcg-empty .v-icon { color: var(--mcg-faint); margin-bottom: 8px; }
-.mcg-chip { display: inline-flex; align-items: center; font-size: 11px; line-height: 1; padding: 4px 7px; border-radius: 6px; background: var(--mcg-raise-strong); color: var(--mcg-muted); white-space: nowrap; }
-.mcg-chip-gold { background: var(--mcg-gold-soft); color: var(--mcg-gold); }
-.mcg-chip-ok { background: rgba(78,155,122,.15); color: var(--mcg-ok); }
-.mcg-chip-bad { background: rgba(200,102,79,.15); color: var(--mcg-bad); }
+.mcg-notice .v-icon { color: var(--k-warn); margin-top: 2px; }
+.mcg-notice-info { background: var(--k-fill); box-shadow: inset 2px 0 0 var(--k-rule-2); }
+.mcg-notice-info .v-icon { color: var(--k-ink-3); }
+.mcg-empty { text-align: center; color: var(--k-ink-2); font-size: 14px; padding: 48px 16px; border-top: 1px solid var(--k-rule); border-bottom: 1px solid var(--k-rule); }
+.mcg-empty .v-icon { color: var(--k-ink-3); margin-bottom: 8px; }
+.mcg-chip { display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px; border-radius: 4px; font-size: 12px; line-height: 1; background: var(--k-fill-2); color: var(--k-ink-2); white-space: nowrap; }
+.mcg-chip-accent { background: rgba(88,221,163,.16); color: var(--k-accent); font-weight: 600; }
+.mcg-chip-ok::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--k-mint); }
+.mcg-chip-bad { background: rgba(217,96,74,.14); color: var(--k-bad); }
+.mcg-chip-bad::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--k-bad); }
 
-/* 分段选择 */
-.mcg-seg { display: inline-flex; padding: 3px; border-radius: 10px; background: var(--mcg-raise-strong); }
-.mcg-seg-item { display: inline-flex; align-items: center; font-size: 13px; padding: 5px 14px; border-radius: 8px; cursor: pointer; color: var(--mcg-muted); }
-.mcg-rec {
-  display: inline-flex; align-items: center; flex: none; margin-left: 6px; padding: 3px 7px; border-radius: 6px;
-  font-size: 11px; line-height: 1; font-weight: 700; letter-spacing: .04em; white-space: nowrap;
-  background: linear-gradient(135deg, #F7BE62, #EE7F3F); color: #2A1606; box-shadow: 0 1px 6px rgba(238,127,63,.42);
-}
+/* 动态 / 静态 */
+.mcg-seg { display: inline-flex; padding: 2px; border-radius: 8px; background: var(--k-fill-2); flex: none; }
+.mcg-seg-item { display: inline-flex; align-items: center; height: 28px; padding: 0 12px; border-radius: 6px; font-size: 14px; color: var(--k-ink-2); cursor: pointer; white-space: nowrap; }
+.mcg-seg-item:hover { color: var(--k-ink); }
+.mcg-seg-on { background: rgb(var(--v-theme-surface)); color: var(--k-ink); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.18); }
+.mcg-rec { font-size: 12px; font-weight: 600; color: var(--k-accent); margin-left: 6px; white-space: nowrap; }
 
 /* 选择要设置风格的媒体库 */
-.mcg-targets { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 14px; }
-.mcg-targets-label { font-size: 12.5px; color: var(--mcg-muted); margin-right: 4px; }
+.mcg-targets { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: 1 1 320px; min-width: 0; }
+.mcg-targets-label { font-size: 12px; color: var(--k-ink-3); letter-spacing: .06em; margin-right: 4px; white-space: nowrap; }
 .mcg-target {
-  display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 5px 11px; border-radius: 8px; cursor: pointer;
-  background: var(--mcg-raise-strong); color: var(--mcg-muted); max-width: 240px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  display: inline-flex; align-items: center; gap: 6px; flex: none; height: 32px; padding: 0 12px; border-radius: 16px; cursor: pointer;
+  font-size: 14px; color: var(--k-ink-2); box-shadow: inset 0 0 0 1px var(--k-rule-2); max-width: 240px; white-space: nowrap;
+  transition: color .2s ease, background-color .2s ease;
 }
-.mcg-target:hover { color: var(--mcg-ink); }
-.mcg-target-on { background: var(--mcg-gold); color: #1C160E; font-weight: 600; }
-.mcg-target-on:hover { color: #1C160E; }
-.mcg-target-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--mcg-gold); }
-.mcg-target-on .mcg-target-dot { background: #1C160E; }
-.mcg-target-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; font-size: 13px; line-height: 1.6; background: var(--mcg-gold-soft); border-radius: 12px; padding: 9px 12px 9px 14px; margin-bottom: 14px; }
-.mcg-target-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.mcg-seg-item:hover { color: var(--mcg-ink); }
-.mcg-seg-on { background: rgb(var(--v-theme-surface)); color: var(--mcg-ink); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.14); }
+.mcg-target > span:first-child { overflow: hidden; text-overflow: ellipsis; }
+.mcg-target:hover { color: var(--k-ink); background: var(--k-fill); }
+.mcg-target-on, .mcg-target-on:hover { background: var(--k-mint); color: var(--k-mint-ink); font-weight: 600; box-shadow: none; }
+.mcg-target-no { font-family: var(--k-mono); font-size: 12px; color: var(--k-accent); }
+.mcg-target-on .mcg-target-no { color: var(--k-mint-ink); }
 
-/* 风格画廊 */
-.mcg-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(245px, 1fr)); gap: 14px; }
-.mcg-form .mcg-gallery { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
-.mcg-form .mcg-gallery.mcg-gallery-three { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
-.mcg-style {
-  position: relative; display: block; border-radius: 14px; overflow: hidden; cursor: pointer; background: var(--mcg-raise);
-  outline: 1px solid var(--mcg-line); outline-offset: -1px; transition: transform .2s ease, box-shadow .2s ease, outline-color .2s ease;
+/* 风格画廊：图就是主角，没有卡片底，选中的那张外面一圈点缀色 */
+.mcg-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 24px 16px; }
+.mcg-form .mcg-gallery { grid-template-columns: repeat(auto-fill, minmax(184px, 1fr)); }
+.mcg-form .mcg-gallery.mcg-gallery-three { grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); }
+.mcg-style { display: block; min-width: 0; cursor: pointer; }
+.mcg-style-media {
+  position: relative; aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden; background: var(--k-fill-2);
+  transition: transform .2s ease, box-shadow .2s ease;
 }
-.mcg-style:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(0,0,0,.20); }
-.mcg-style-on { outline: 2px solid var(--mcg-gold); outline-offset: -2px; }
-.mcg-style img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
-.mcg-style-media { position: relative; overflow: hidden; }
-.mcg-style-motion { position: absolute; inset: 0; background-size: cover; background-position: center; }
-.mcg-gif-tag { position: absolute; right: 8px; bottom: 8px; padding: 3px 6px; border-radius: 5px; font-size: 10px; line-height: 1; font-weight: 700; letter-spacing: .08em; background: rgba(12,10,8,.74); color: #F7D9A4; }
-.mcg-style-meta { padding: 10px 12px 12px; }
-.mcg-style-name { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 14px; font-weight: 600; }
-.mcg-style-desc { font-size: 12px; color: var(--mcg-muted); margin-top: 4px; line-height: 1.5; }
-.mcg-style-tick {
-  position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; border-radius: 50%; display: none;
-  align-items: center; justify-content: center; background: var(--mcg-gold); color: #1C160E;
+.mcg-style-media img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.mcg-style:hover .mcg-style-media { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,.24); }
+.mcg-style:active .mcg-style-media { transform: scale(.985); }
+.mcg-style-on .mcg-style-media { outline: 2px solid var(--k-accent); outline-offset: 3px; }
+.mcg-flag {
+  position: absolute; left: 8px; top: 8px; display: none; align-items: center; height: 20px; padding: 0 8px; border-radius: 4px;
+  background: var(--k-mint); color: var(--k-mint-ink); font-size: 12px; line-height: 1; font-weight: 700;
 }
-.mcg-style-on .mcg-style-tick { display: flex; }
+.mcg-style-on .mcg-flag { display: inline-flex; }
+.mcg-style-meta { padding-top: 12px; }
+.mcg-style-name { display: flex; align-items: baseline; gap: 8px; font-size: 14px; font-weight: 600; }
+.mcg-style-on .mcg-style-name { color: var(--k-accent); }
+.mcg-no { font-family: var(--k-mono); font-size: 12px; font-weight: 500; color: var(--k-ink-3); font-variant-numeric: tabular-nums; }
+.mcg-new { font-family: var(--k-mono); font-size: 12px; line-height: 1; font-weight: 700; letter-spacing: .06em; color: var(--k-accent); padding: 2px 4px; border-radius: 4px; box-shadow: inset 0 0 0 1px currentColor; align-self: center; }
+.mcg-style-desc { font-size: 12px; color: var(--k-ink-2); margin-top: 4px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
-/* 媒体库列表 */
-.mcg-libs { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
-.mcg-lib { display: flex; gap: 12px; align-items: center; padding: 10px; border-radius: 14px; background: var(--mcg-raise); border: 1px solid var(--mcg-line); min-width: 0; }
-.mcg-lib-art { flex: none; width: 112px; aspect-ratio: 16 / 9; border-radius: 9px; object-fit: cover; background: var(--mcg-raise-strong); display: flex; align-items: center; justify-content: center; color: var(--mcg-faint); }
-.mcg-lib-info { flex: 1; min-width: 0; }
+/* 媒体库：一行一个，细线分隔 */
+.mcg-libs { border-top: 1px solid var(--k-rule); }
+.mcg-lib { display: flex; align-items: center; gap: 16px; padding: 12px 8px; border-bottom: 1px solid var(--k-rule); min-width: 0; transition: background-color .2s ease; }
+.mcg-lib:hover { background: var(--k-fill); }
+.mcg-lib-art { flex: none; width: 128px; aspect-ratio: 16 / 9; border-radius: 4px; object-fit: cover; background: var(--k-fill-2); display: flex; align-items: center; justify-content: center; color: var(--k-ink-3); }
+.mcg-lib-info { flex: 1 1 0; min-width: 0; }
 .mcg-lib-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mcg-lib-note { font-size: 12px; color: var(--mcg-muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mcg-lib-chips { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
-.mcg-lib-actions { flex: none; display: flex; flex-direction: column; gap: 6px; }
+.mcg-lib-note { font-size: 12px; color: var(--k-ink-2); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mcg-lib-tags { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.mcg-lib-actions { flex: none; display: flex; gap: 8px; }
 
 /* 历史 */
-.mcg-history { display: grid; grid-template-columns: repeat(auto-fill, minmax(205px, 1fr)); gap: 14px; }
-.mcg-cover { border-radius: 14px; overflow: hidden; background: var(--mcg-raise); border: 1px solid var(--mcg-line); }
-.mcg-cover img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
-.mcg-cover-meta { display: flex; align-items: center; gap: 6px; padding: 8px 6px 8px 12px; }
+.mcg-history { display: grid; grid-template-columns: repeat(auto-fill, minmax(208px, 1fr)); gap: 24px 16px; }
+.mcg-cover { min-width: 0; }
+.mcg-cover img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; background: var(--k-fill-2); }
+.mcg-cover-meta { display: flex; align-items: center; gap: 4px; padding-top: 8px; }
 .mcg-cover-text { flex: 1; min-width: 0; }
-.mcg-cover-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mcg-cover-sub { font-size: 11.5px; color: var(--mcg-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mcg-more { display: flex; justify-content: center; margin-top: 16px; }
+.mcg-cover-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mcg-cover-sub { font-size: 12px; color: var(--k-ink-2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.mcg-more { display: flex; justify-content: center; margin-top: 24px; }
 
 /* 维护 */
-.mcg-grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
-.mcg-box { padding: 16px; border-radius: 14px; background: var(--mcg-raise); border: 1px solid var(--mcg-line); }
-.mcg-box-title { font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.mcg-box-note { font-size: 12.5px; color: var(--mcg-muted); margin: 6px 0 12px; line-height: 1.6; }
+.mcg-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 32px; }
+.mcg-sub { font-size: 14px; font-weight: 700; letter-spacing: .04em; padding-bottom: 12px; border-bottom: 1px solid var(--k-rule); }
+.mcg-check { display: flex; gap: 12px; align-items: flex-start; font-size: 14px; padding: 12px 0; border-bottom: 1px solid var(--k-rule); }
+.mcg-check-ok .v-icon { color: var(--k-accent); }
+.mcg-check-bad .v-icon { color: var(--k-bad); }
+.mcg-check-note { color: var(--k-ink-2); font-size: 12px; margin-top: 2px; word-break: break-all; }
+.mcg-care { padding: 12px 0 16px; border-bottom: 1px solid var(--k-rule); }
+.mcg-care-title { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 14px; font-weight: 600; }
+.mcg-care-size { font-family: var(--k-mono); font-size: 12px; font-weight: 500; color: var(--k-ink-2); }
+.mcg-care-note { font-size: 12px; color: var(--k-ink-2); margin: 4px 0 12px; line-height: 1.6; }
 .mcg-confirm { display: flex; flex-wrap: wrap; gap: 8px; }
-.mcg-check { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; padding: 8px 0; border-top: 1px solid var(--mcg-line); }
-.mcg-check:first-of-type { border-top: 0; }
-.mcg-check-ok .v-icon { color: var(--mcg-ok); }
-.mcg-check-bad .v-icon { color: var(--mcg-bad); }
-.mcg-check-note { color: var(--mcg-muted); font-size: 12px; margin-top: 2px; word-break: break-all; }
-
-/* ---- 2.0 的视觉调整：层次更清楚，选中和悬停的反馈更明确 ---- */
-/* 横幅：两团很淡的光（金色、薄荷色）让深色底有纵深，标题加大一级 */
-.mcg-hero {
-  border-radius: 20px; padding: 28px 28px 24px; margin-bottom: 16px;
-  background:
-    radial-gradient(520px 260px at 88% -10%, rgba(196,154,92,.30), transparent 70%),
-    radial-gradient(420px 240px at 8% 120%, rgba(88,221,163,.16), transparent 70%),
-    linear-gradient(120deg, #17130F 0%, #221B14 55%, #15191A 100%);
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.06), 0 14px 34px rgba(0,0,0,.18);
-}
-.mcg-hero h2 { font-size: 32px; letter-spacing: .01em; }
-.mcg-eyebrow { display: inline-flex; align-items: center; gap: 8px; }
-.mcg-eyebrow::before { content: ""; width: 18px; height: 2px; border-radius: 2px; background: var(--mcg-gold); }
-.mcg-stats { gap: 8px; background: transparent; overflow: visible; margin-top: 24px; }
-.mcg-stat { border-radius: 12px; background: rgba(255,255,255,.06); box-shadow: inset 0 0 0 1px rgba(255,255,255,.07); padding: 12px 16px; }
-.mcg-stat-value { font-size: 15px; margin-top: 4px; font-variant-numeric: tabular-nums; }
-.mcg-progress { height: 4px; }
-.mcg-progress-bar { background: linear-gradient(90deg, #C49A5C, #58DDA3); }
-/* 按钮：按下有回弹，键盘焦点看得见 */
-.mcg .v-btn.mcg-btn.mcg-btn { transition: transform .18s ease, filter .18s ease; }
-.mcg .v-btn.mcg-btn.mcg-btn:hover { filter: brightness(1.07); }
-.mcg .v-btn.mcg-btn.mcg-btn:active { transform: scale(.98); }
-.mcg .v-btn.mcg-btn.mcg-btn:focus-visible { outline: 2px solid var(--mcg-gold); outline-offset: 2px; }
-/* 页签 */
-.mcg-tabs { border-radius: 14px; margin-bottom: 20px; }
-.mcg-tab { border-radius: 10px; padding: 8px 12px; }
-/* 风格分组 */
-.mcg-group { display: flex; align-items: baseline; gap: 10px; margin: 24px 0 12px; }
-.mcg-group:first-of-type { margin-top: 4px; }
-.mcg-group-name { font-size: 14px; font-weight: 700; letter-spacing: .04em; }
-.mcg-group-note { font-size: 12.5px; color: var(--mcg-muted); }
-.mcg-group::after { content: ""; flex: 1; height: 1px; background: var(--mcg-line); align-self: center; }
-.mcg-new {
-  display: inline-flex; align-items: center; flex: none; padding: 3px 7px; border-radius: 6px; font-size: 10.5px; line-height: 1;
-  font-weight: 800; letter-spacing: .08em; background: linear-gradient(135deg, #7CEBC0, #3FBF8E); color: #06281B;
-}
-/* 风格卡片：悬停时画面略微推近，选中的有一圈金色的光 */
-.mcg-gallery { gap: 16px; }
-.mcg-style { border-radius: 16px; }
-.mcg-style:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(0,0,0,.22); outline-color: rgba(196,154,92,.5); }
-.mcg-style:active { transform: scale(.985); }
-.mcg-style-media img, .mcg-style-motion { transition: transform .5s cubic-bezier(.2,.7,.2,1); }
-.mcg-style:hover .mcg-style-media img, .mcg-style:hover .mcg-style-motion { transform: scale(1.045); }
-.mcg-style-on { box-shadow: 0 0 0 4px var(--mcg-gold-soft), 0 10px 26px rgba(196,154,92,.18); }
-.mcg-style-on .mcg-style-name > span:first-child { color: var(--mcg-gold); }
-.mcg-style-tick { box-shadow: 0 2px 8px rgba(0,0,0,.35); }
-.mcg-style-meta { padding: 12px 12px 14px; }
-.mcg-style-name { justify-content: flex-start; gap: 8px; }
-.mcg-lib, .mcg-cover, .mcg-box, .mcg-section { border-radius: 16px; }
-.mcg-lib { padding: 12px; transition: border-color .2s ease, background .2s ease; }
-.mcg-lib:hover { border-color: rgba(196,154,92,.45); background: var(--mcg-raise-strong); }
-.mcg-cover { transition: transform .2s ease, box-shadow .2s ease; }
-.mcg-cover:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(0,0,0,.2); }
-@media (prefers-reduced-motion: reduce) {
-  .mcg *, .mcg *::before, .mcg *::after { transition: none !important; animation: none !important; }
-}
 
 /* 插件宠物的加载器：看不见的 iframe，宠物本身由它放到外层页面里 */
 .mcg-pet-frame { position: absolute; width: 0; height: 0; border: 0; visibility: hidden; pointer-events: none; }
 
-/* 设置页 */
-.mcg-form .v-tabs { margin-bottom: 18px; border-bottom: 1px solid var(--mcg-line); }
-.mcg-form .v-tab { text-transform: none; letter-spacing: .02em; }
-.mcg-section { padding: 16px 18px; border-radius: 14px; background: var(--mcg-raise); border: 1px solid var(--mcg-line); margin-bottom: 14px; }
-.mcg-section-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
-.mcg-section-mark { width: 30px; height: 30px; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: var(--mcg-gold-soft); color: var(--mcg-gold); flex: none; }
-.mcg-section-title { font-size: 14px; font-weight: 600; }
-.mcg-section-note { font-size: 12px; color: var(--mcg-muted); margin-top: 1px; }
-.mcg-editor { border-radius: 12px; overflow: hidden; border: 1px solid var(--mcg-line); }
+/* 设置页：分节不用卡片，靠一条细线和留白 */
+.mcg-form .v-tabs { margin-bottom: 8px; border-bottom: 1px solid var(--k-rule); }
+.mcg-form .v-tab { text-transform: none; letter-spacing: 0; }
+.mcg-section { padding: 24px 0; border-top: 1px solid var(--k-rule); }
+.mcg-section:first-child { border-top: 0; padding-top: 16px; }
+.mcg-notice + .mcg-section { border-top: 0; }
+.mcg-form .mcg-notice { margin: 16px 0 0; }
+.mcg-section-head { margin-bottom: 16px; }
+.mcg-section-title { font-size: 16px; font-weight: 700; }
+.mcg-section-note { font-size: 12px; color: var(--k-ink-2); margin-top: 4px; line-height: 1.6; max-width: 46rem; }
+.mcg-editor { border-radius: 8px; overflow: hidden; border: 1px solid var(--k-rule); }
 .mcg-editor-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-.mcg-toggle-label { font-size: 12px; color: var(--mcg-muted); margin-bottom: 6px; }
+.mcg-toggle-label { font-size: 12px; color: var(--k-ink-2); margin-bottom: 8px; }
+
+/* 电脑端把状态、场记板字段和操作收在同一行，窄屏保持原版式 */
+@container mcg (min-width: 1160px) {
+  .mcg-top { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 32px; align-items: center; }
+  .mcg-top-row { display: contents; }
+  .mcg-top h2 { order: 1; grid-column: 1; }
+  .mcg-slate { order: 2; grid-column: 2; display: flex; overflow: visible; border-bottom: 0; min-width: 0; }
+  .mcg-top-actions { order: 3; grid-column: 3; }
+  .mcg-field { flex: 0 1 auto; padding: 4px 24px; box-shadow: -1px 0 0 var(--k-rule); }
+  .mcg-field:first-child { padding-left: 24px; }
+  .mcg-field-value { max-width: 280px; }
+  .mcg-clap { order: 4; grid-column: 1 / -1; margin-top: 16px; }
+  .mcg-top-note { order: 5; grid-column: 1 / -1; }
+}
+
 @media (max-width: 600px) {
-  .mcg-hero { padding: 20px 18px 18px; }
-  .mcg-hero h2 { font-size: 23px; }
-  .mcg-libs { grid-template-columns: 1fr; }
+  .mcg-top h2 { font-size: 20px; }
+  .mcg-slate { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mcg-field:nth-child(odd) { padding-left: 0; }
+  .mcg-field:nth-child(even) { padding-right: 0; }
+  /* 字段是单数时，最后一个占满一行 */
+  .mcg-field:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .mcg-tabs { gap: 20px; margin: 12px 0 16px; }
+  /* 手机上两列：一屏能比较更多款，图也不会被拉大到发糊 */
+  .mcg-gallery, .mcg-form .mcg-gallery, .mcg-form .mcg-gallery.mcg-gallery-three, .mcg-history { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 12px; }
+  .mcg-targets { flex-wrap: nowrap; overflow-x: auto; flex-basis: 100%; scrollbar-width: none; padding: 2px 0; }
+  .mcg-targets::-webkit-scrollbar { display: none; }
+  .mcg-lib { gap: 12px; padding: 12px 0; }
+  .mcg-lib-art { width: 96px; }
+  .mcg-lib-actions { flex-direction: column; }
+  .mcg-style-desc { -webkit-line-clamp: 3; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mcg *, .mcg *::before, .mcg *::after { transition: none !important; animation: none !important; }
 }
 """
 
@@ -321,6 +314,10 @@ def div(cls: Optional[str] = None, *children, text: Optional[str] = None, **prop
     return node("div", cls=cls, text=text, content=list(children) if children else None, **props)
 
 
+def span(cls: Optional[str] = None, text: Optional[str] = None, **props) -> Dict[str, Any]:
+    return node("span", cls=cls, text=text, **props)
+
+
 def icon(name: str, size: int = 18, cls: Optional[str] = None) -> Dict[str, Any]:
     # 渲染器总会传默认插槽，VIcon 有插槽时忽略 icon 属性，所以图标名要放在 text 里
     return node("VIcon", cls=cls, text=name, size=size)
@@ -342,58 +339,47 @@ def style_label(index: int, variant: str) -> str:
     return f"{style_info(index).name} · {'动态' if variant == 'animated' else '静态'}"
 
 
+def numbered_label(index: int, variant: str) -> str:
+    return f"{index:02d} {style_label(index, variant)}"
+
+
 def recommend_badge() -> Dict[str, Any]:
-    return node("span", cls="mcg-rec", text="推荐")
-
-
-# 风格分两组展示：海报系列是 2.0 新增的，放在前面
-STYLE_GROUPS = [
-    ("海报系列", "竖版海报是主角，完整地摆出来，配色跟着每张海报走", lambda entry: entry.poster and entry.index >= 9),
-    ("场景系列", "满幅画面和斜切、弧幕等构图，背景图好看时用背景图", lambda entry: not (entry.poster and entry.index >= 9)),
-]
+    return span("mcg-rec", "推荐")
 
 
 def style_name(entry) -> List[dict]:
-    """卡片上的风格名，新增的风格带一个「新」标记。"""
-    children = [node("span", text=entry.name)]
+    """卡片上的风格名：序号、名字，新增的风格带一个标记。"""
+    children = [span("mcg-no", f"{entry.index:02d}"), span(None, entry.name)]
     if entry.index >= 9:
-        children.append(node("span", cls="mcg-new", text="NEW"))
+        children.append(span("mcg-new", "NEW"))
     return children
 
 
-def grouped_gallery(card_of) -> List[dict]:
-    """按系列分组的风格画廊。card_of(entry) 返回一张卡片。"""
-    blocks: List[dict] = []
-    for name, note, belongs in STYLE_GROUPS:
-        entries = [entry for entry in STYLE_CATALOG if belongs(entry)]
-        if not entries:
-            continue
-        blocks.append(div("mcg-group", node("span", cls="mcg-group-name", text=name),
-                          node("span", cls="mcg-group-note", text=note)))
-        blocks.append(div("mcg-gallery", *[card_of(entry) for entry in entries]))
-    return blocks
+def style_gallery(card_of) -> Dict[str, Any]:
+    """全部风格按序号排成一个画廊。card_of(entry) 返回一张卡片。"""
+    return div("mcg-gallery", *[card_of(entry) for entry in sorted(STYLE_CATALOG, key=lambda entry: entry.index)])
 
 
-def _preview_media(entry, show_motion: Any, local: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """风格卡片的预览图。动态预览盖在静态图上，加载不出来时用户看到的仍是静态图。local 是用媒体库生成的预览。"""
-    still = local["still"] if local else PREVIEWS.get(entry.index, "")
-    motion = local["gif"] if local else PREVIEW_GIF.format(index=entry.index)
-    children = [node("img", src=still, alt=entry.name, loading="lazy")]
+def _preview_media(entry, show_motion: Any, asset_base: str, local: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    风格卡片的预览图。静态图是 640 像素宽的文件，手机的高密度屏上也不发糊；
+    动态预览叠在上面，滚动到附近才加载，加载不出来时看到的仍是静态图。local 是用媒体库生成的预览。
+    """
+    still = local["still"] if local else f"{asset_base}style_{entry.index}.webp"
+    motion = local["gif"] if local else f"{asset_base}style_{entry.index}_motion.webp"
+    children = [node("img", src=still, alt=entry.name, loading="lazy", decoding="async")]
     if show_motion and motion:
-        layers = [
-            div("mcg-style-motion", style=f"background-image:url({motion})"),
-            node("span", cls="mcg-gif-tag", text="GIF"),
-        ]
-        # 渲染器处理 show 时会改写 style.display，同一节点上再有字符串 style 就会抛错，整个页签都不显示。
-        # 所以条件放在外层，样式留在内层
-        children += [div(None, *layers, show=show_motion)] if isinstance(show_motion, str) else layers
+        moving = node("img", cls="mcg-style-motion", src=motion, alt="", loading="lazy", decoding="async")
+        # 渲染器处理 show 时会改写 style.display，条件放在单独的外层节点上，这个节点不能再带字符串 style
+        children.append(div(None, moving, show=show_motion) if isinstance(show_motion, str) else moving)
+    children.append(span("mcg-flag", "使用中"))
     return div("mcg-style-media", *children)
 
 
 # ---------------------------------------------------------------- 详情页
 
 
-def _hero(ctx: Dict[str, Any]) -> Dict[str, Any]:
+def _top(ctx: Dict[str, Any]) -> Dict[str, Any]:
     task = ctx["task"]
     prefix = ctx["api_prefix"]
     running = bool(task.get("running"))
@@ -403,70 +389,93 @@ def _hero(ctx: Dict[str, Any]) -> Dict[str, Any]:
         # 同一组按钮按当前页签各渲染一份，操作后刷新页面时能留在原页签
         if running:
             actions = [
-                button("刷新进度", "gold", prefix, f"refresh?tab={tab}", "mdi-refresh"),
-                button("停止", "glass", prefix, f"stop_task?tab={tab}", "mdi-stop-circle-outline"),
+                button("刷新进度", "line", prefix, f"refresh?tab={tab}", "mdi-refresh"),
+                button("停止", "danger", prefix, f"stop_task?tab={tab}", "mdi-stop"),
             ]
         else:
             actions = [
-                button("生成全部封面", "gold", prefix, f"generate_now?tab={tab}", "mdi-play"),
-                button("刷新", "glass", prefix, f"refresh?tab={tab}", "mdi-refresh"),
+                button("刷新", "line", prefix, f"refresh?tab={tab}", "mdi-refresh"),
+                button("生成全部封面", "solid", prefix, f"generate_now?tab={tab}", "mdi-play"),
             ]
         action_groups.append(div(f"mcg-when mcg-when-{tab}", *actions))
 
+    total = max(1, int(task.get("total") or 1))
+    done = min(total, int(task.get("done") or 0))
+    # 弹窗的标题栏已经写着插件名，页头不重复，最大的字留给当前状态
     if running:
-        total = max(1, int(task.get("total") or 1))
-        done = min(total, int(task.get("done") or 0))
-        status_value = f"生成中 {done}/{total}"
+        status = [span("mcg-dot mcg-dot-run"), span(None, f"正在生成 {done}/{total}" if task.get("total") else "正在生成")]
     elif not ctx["enabled"]:
-        status_value = "未启用"
+        status = [span("mcg-dot mcg-dot-off"), span(None, "未启用")]
     else:
-        status_value = "空闲"
+        status = [span("mcg-dot mcg-dot-ok"), span(None, "空闲")]
 
-    children: List[dict] = []
-    if ctx.get("hero_image"):
-        children.append(div("mcg-hero-art", style=f"background-image:url({ctx['hero_image']})"))
-    children.append(div("mcg-hero-shade"))
-    children.append(
-        div(
-            "mcg-hero-body",
-            div(
-                None,
-                div("mcg-eyebrow", text="ANIMATED COVER STUDIO"),
-                node("h2", text="动态封面工坊"),
-                div("mcg-hero-sub", text="让媒体库封面动起来。每款风格都能生成 GIF 动态封面，详细参数在右下角的齿轮设置里。"),
-            ),
-            div("mcg-hero-actions", *action_groups),
-        )
-    )
-    own_styles = sum(1 for library in ctx["libraries"] if library.get("own_style"))
-    stats = [
-        ("状态", status_value),
-        ("默认风格", style_label(ctx["style_index"], ctx["style_variant"])),
-        ("媒体库", (f"{ctx['library_active']} / {len(ctx['libraries'])}"
-                    + (f" · {own_styles} 个单独设置" if own_styles else "")) if ctx["libraries"] else "—"),
+    libraries = ctx["libraries"]
+    own_styles = sum(1 for library in libraries if library.get("own_style"))
+    library_value = "—"
+    if libraries:
+        library_value = f"{ctx['library_active']} / {len(libraries)}" + (f" · {own_styles} 个单独设置" if own_styles else "")
+    fields = [
+        ("默认风格", numbered_label(ctx["style_index"], ctx["style_variant"])),
+        ("媒体库", library_value),
         ("上次运行", ctx.get("last_run_text") or "尚未运行"),
+        ("定时轮换", ("每次定时更新换下一款" if ctx.get("cron") else "已打开，未设置定时更新") if ctx.get("rotate_style")
+         else "未开启"),
     ]
-    children.append(
-        div(
-            "mcg-stats",
-            *[div("mcg-stat", div("mcg-stat-label", text=label), div("mcg-stat-value", text=value, title=value))
-              for label, value in stats],
-        )
-    )
+
+    def field(label, value):
+        return div("mcg-field", div("mcg-field-label", text=label), div("mcg-field-value", text=value, title=value))
+
+    children: List[dict] = [
+        div("mcg-top-row", node("h2", content=status), div("mcg-top-actions", *action_groups)),
+    ]
     if running:
-        total = max(1, int(task.get("total") or 1))
-        percent = int(min(100, int(task.get("done") or 0) * 100 / total))
-        children.append(div("mcg-progress", div("mcg-progress-bar", style=f"width:{max(percent, 4)}%")))
+        percent = int(min(100, done * 100 / total)) if task.get("total") else 0
+        children.append(div("mcg-clap", div("mcg-clap-fill", style=f"width:{max(percent, 3)}%")))
+    else:
+        children.append(div("mcg-clap"))
+    children.append(div("mcg-slate", *[field(*item) for item in fields], style=f"--mcg-n:{len(fields)}"))
+    if running:
         current = task.get("current")
         note = f"正在处理：{current}" if current else "正在准备…"
-        children.append(div("mcg-progress-note", text=f"{note}（生成在后台进行，可随时关闭此窗口）"))
+        children.append(div("mcg-top-note", text=f"{note}（生成在后台进行，可以关掉这个窗口）"))
     elif ctx.get("last_result"):
-        children.append(div("mcg-progress-note", text=ctx["last_result"]))
-    elif ctx["enabled"] and ctx["libraries"] and not ctx["warnings"] and not ctx.get("last_run_text"):
+        children.append(div("mcg-top-note", text=ctx["last_result"]))
+    elif ctx["enabled"] and libraries and not ctx["warnings"] and not ctx.get("last_run_text"):
         # 保存设置不会自动生成，第一次要手动点一下，否则看起来像插件没反应
-        children.append(div("mcg-progress-note",
+        children.append(div("mcg-top-note",
                             text="设置已生效。点右上角「生成全部封面」开始第一次生成，之后新片入库或定时任务会自动更新。"))
-    return div("mcg-hero", *children)
+    return div("mcg-top", *children)
+
+
+BULK_ARMED = ("reset_styles", "assign_styles", "assign_generate")
+
+
+def _bulk_confirm(ctx: Dict[str, Any], tab: str) -> List[dict]:
+    """批量改媒体库风格前的确认条。第一次点只是询问，这里说明后果并给出确认按钮。"""
+    armed = ctx.get("clean_armed")
+    if armed not in BULK_ARMED:
+        return []
+    prefix = ctx["api_prefix"]
+    if armed == "reset_styles":
+        own = sum(1 for library in ctx["libraries"] if library.get("own_style"))
+        default_label = numbered_label(ctx["style_index"], ctx["style_variant"])
+        note = (f"让 {own} 个单独设置的媒体库全部恢复跟随默认风格「{default_label}」？" if own
+                else "现在没有单独设置风格的媒体库。")
+        note += "已经生成的封面不会变，下次生成时生效。"
+        confirm = button("确认，全部恢复默认", "solid", prefix, f"reset_library_styles?tab={tab}", size="small")
+    else:
+        active = ctx["library_active"]
+        note = (f"把参与批量更新的 {active} 个媒体库，按「媒体库」页的顺序依次设为动态风格 01 到 {STYLE_COUNT:02d}"
+                + (f"，第 {STYLE_COUNT + 1} 个起从 01 再排" if active > STYLE_COUNT else "")
+                + "。它们现有的单独设置会被覆盖")
+        if armed == "assign_generate":
+            note += "，然后立即生成全部封面。"
+            confirm = button("确认，分配并生成", "solid", prefix, f"assign_styles?generate=1&tab={tab}", size="small")
+        else:
+            note += "，下次生成时生效。"
+            confirm = button("确认分配", "solid", prefix, f"assign_styles?generate=0&tab={tab}", size="small")
+    return [div("mcg-hint mcg-hint-ask", div("mcg-hint-text", text=note),
+                div("mcg-hint-actions", confirm, button("取消", "line", prefix, f"refresh?tab={tab}", size="small")))]
 
 
 def _style_targets(ctx: Dict[str, Any], target: Optional[Dict[str, Any]]) -> List[dict]:
@@ -476,33 +485,39 @@ def _style_targets(ctx: Dict[str, Any], target: Optional[Dict[str, Any]]) -> Lis
         return []
     prefix = ctx["api_prefix"]
     chips = [
-        div("mcg-targets-label", text="应用到"),
-        node("span", cls="mcg-target" + (" mcg-target-on" if not target else ""), text="所有媒体库",
+        span("mcg-targets-label", "应用到"),
+        node("span", cls="mcg-target" + (" mcg-target-on" if not target else ""), content=[span(None, "所有媒体库")],
              events=post(prefix, "style_target?tab=style")),
     ]
     for library in libraries:
-        content = [node("span", text=library["name"])]
+        content = [span(None, library["name"])]
         if library.get("own_style"):
-            content.append(node("span", cls="mcg-target-dot", title="已单独设置风格"))
+            # 单独设置过的媒体库直接标出它用的是第几款
+            content.append(span("mcg-target-no", f"{library['own_index']:02d}", title="已单独设置风格"))
         selected = target is not None and library["key"] == target["key"]
         chips.append(node("span", cls="mcg-target" + (" mcg-target-on" if selected else ""), content=content,
                           title=library["name"],
                           events=post(prefix, f"style_target?library={library['encoded_key']}&tab=style")))
-    result = [div("mcg-targets", *chips)]
-    if target:
-        if target.get("own_style"):
-            label = style_label(target["own_index"], target["own_variant"])
-            note = f"「{target['name']}」单独使用「{label}」，不受默认风格影响。"
-            actions = [button("恢复跟随默认", "quiet", prefix,
-                              f"clear_library_style?library={target['encoded_key']}&tab=style", size="small")]
-        else:
-            label = style_label(ctx["style_index"], ctx["style_variant"])
-            note = f"「{target['name']}」现在跟随默认风格「{label}」。点下面的卡片可以给它单独设置。"
-            actions = []
-        actions.append(button("生成这个媒体库", "gold", prefix,
+    return chips
+
+
+def _target_note(ctx: Dict[str, Any], target: Optional[Dict[str, Any]]) -> List[dict]:
+    if not target:
+        return []
+    prefix = ctx["api_prefix"]
+    if target.get("own_style"):
+        label = numbered_label(target["own_index"], target["own_variant"])
+        note = f"「{target['name']}」单独使用「{label}」，不跟随默认风格。"
+        actions = [button("恢复跟随默认", "line", prefix,
+                          f"clear_library_style?library={target['encoded_key']}&tab=style", size="small")]
+    else:
+        label = numbered_label(ctx["style_index"], ctx["style_variant"])
+        note = f"「{target['name']}」现在跟随默认风格「{label}」。点下面的图可以给它单独设置。"
+        actions = []
+    if not ctx["task"].get("running"):
+        actions.append(button("生成这个媒体库", "solid", prefix,
                               f"generate_now?library={target['encoded_key']}&tab=style", size="small"))
-        result.append(div("mcg-target-bar", div(None, text=note), div("mcg-target-actions", *actions)))
-    return result
+    return [div("mcg-hint", div("mcg-hint-text", text=note), div("mcg-hint-actions", *actions))]
 
 
 def _local_preview_bar(ctx: Dict[str, Any], target: Optional[Dict[str, Any]]) -> List[dict]:
@@ -519,14 +534,15 @@ def _local_preview_bar(ctx: Dict[str, Any], target: Optional[Dict[str, Any]]) ->
         note = f"下面是你的媒体库「{local['library']}」的真实效果（{local['time']} 生成）。"
         if local.get("stale"):
             note = f"下面是「{local['library']}」在 {local['time']} 生成的预览，风格在那之后更新过，重新生成才是现在的效果。"
-        actions = [button("看示例图", "quiet", prefix, "clear_preview?tab=style", size="small"),
-                   button(f"用「{source['name']}」重新生成", "gold", prefix, path, size="small")]
+        actions = [button("看示例图", "line", prefix, "clear_preview?tab=style", size="small"),
+                   button(f"用「{source['name']}」重新生成", "quiet", prefix, path, size="small")]
     else:
-        note = "想看看自己的片库用上这些风格的样子？只生成预览，不会改动媒体库封面。"
-        actions = [button(f"用「{source['name']}」生成预览", "gold", prefix, path, "mdi-image-multiple-outline", size="small")]
+        note = "上面是示例图。想看自己的片库用上这些风格的样子，可以生成一份预览，不会改动媒体库封面。"
+        actions = [button(f"用「{source['name']}」生成预览", "quiet", prefix, path, "mdi-image-multiple-outline", size="small")]
     if ctx["task"].get("running"):
         actions = []
-    return [div("mcg-target-bar mcg-local-bar", div(None, text=note), div("mcg-target-actions", *actions))]
+    return [div("mcg-hint" + ("" if local else " mcg-hint-foot"), div("mcg-hint-text", text=note),
+                div("mcg-hint-actions", *actions))]
 
 
 def _style_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
@@ -537,81 +553,79 @@ def _style_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
     else:
         variant, style_index = ctx["style_variant"], ctx["style_index"]
     target_query = f"&library={target['encoded_key']}" if target else ""
-    children: List[dict] = []
-    children.append(
-        div(
-            "mcg-heading",
-            div(
-                None,
-                div("mcg-heading-title", text="封面风格"),
-                div("mcg-heading-note", text="点击卡片即可切换，下次生成时生效。"
-                    + ("" if ctx.get("local_preview") else "预览图为示例素材。")),
-            ),
-            div(
-                "mcg-seg",
-                node("span", cls="mcg-seg-item" + (" mcg-seg-on" if variant == "animated" else ""),
-                     content=[node("span", text="动态"), recommend_badge()],
-                     events=post(prefix, f"set_style_variant?variant=animated&tab=style{target_query}")),
-                node("span", cls="mcg-seg-item" + (" mcg-seg-on" if variant == "static" else ""), text="静态",
-                     events=post(prefix, f"set_style_variant?variant=static&tab=style{target_query}")),
-            ),
-        )
+    segment = div(
+        "mcg-seg",
+        node("span", cls="mcg-seg-item" + (" mcg-seg-on" if variant == "animated" else ""),
+             content=[span(None, "动态"), recommend_badge()],
+             events=post(prefix, f"set_style_variant?variant=animated&tab=style{target_query}")),
+        node("span", cls="mcg-seg-item" + (" mcg-seg-on" if variant == "static" else ""), content=[span(None, "静态")],
+             events=post(prefix, f"set_style_variant?variant=static&tab=style{target_query}")),
     )
-    children.extend(_style_targets(ctx, target))
-    children.extend(_local_preview_bar(ctx, target))
-    local_styles = (ctx.get("local_preview") or {}).get("styles") or {}
+    children: List[dict] = _bulk_confirm(ctx, "style")
+    children.append(div("mcg-bar", div("mcg-targets", *_style_targets(ctx, target)), segment))
+    children.extend(_target_note(ctx, target))
+    # 正在看自己片库的预览时，说明放在图的上面；看示例图时，「生成预览」是次要的，放到画廊下面
+    local = ctx.get("local_preview")
+    if local:
+        children.extend(_local_preview_bar(ctx, target))
+    local_styles = (local or {}).get("styles") or {}
+
     def card(entry):
         selected = entry.index == style_index
-        motion_note = f"动态：{entry.motion}" if variant == "animated" else entry.desc
+        motion_note = entry.motion if variant == "animated" else entry.desc
         return div(
             "mcg-style" + (" mcg-style-on" if selected else ""),
-            _preview_media(entry, variant == "animated", local_styles.get(entry.index)),
-            div("mcg-style-tick", icon("mdi-check", 16)),
-            div(
-                "mcg-style-meta",
-                div("mcg-style-name", *style_name(entry)),
-                div("mcg-style-desc", text=motion_note),
-            ),
+            _preview_media(entry, variant == "animated", ctx["asset_base"], local_styles.get(entry.index)),
+            div("mcg-style-meta", div("mcg-style-name", *style_name(entry)), div("mcg-style-desc", text=motion_note)),
             events=post(prefix, f"select_style?index={entry.index}&tab=style{target_query}"),
         )
 
-    children.extend(grouped_gallery(card))
+    children.append(style_gallery(card))
+    if not local:
+        children.extend(_local_preview_bar(ctx, target))
     return div("mcg-panel mcg-panel-style", *children)
 
 
 def _libraries_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
     prefix = ctx["api_prefix"]
     libraries = ctx["libraries"]
-    children: List[dict] = [
-        div(
-            "mcg-heading",
-            div(
-                None,
-                div("mcg-heading-title", text="媒体库"),
-                div("mcg-heading-note", text="每个媒体库可以用同一款风格，也可以单独设置；还可以只更新其中一个，方便试用新风格。"),
-            ),
-        )
-    ]
     if not libraries:
-        children.append(
-            div("mcg-empty", icon("mdi-folder-off-outline", 32),
-                div(None, text="还没有可用的媒体库。请在设置中选择媒体服务器并保存。"))
-        )
-        return div("mcg-panel mcg-panel-libraries", *children)
+        return div("mcg-panel mcg-panel-libraries",
+                   div("mcg-empty", icon("mdi-folder-off-outline", 32),
+                       div(None, text="还没有可用的媒体库。请在设置中选择媒体服务器并保存。")))
+
+    own = sum(1 for library in libraries if library.get("own_style"))
+    default_label = numbered_label(ctx["style_index"], ctx["style_variant"])
+    lead = (f"{own} 个媒体库单独设置了风格，其余跟随默认风格「{default_label}」。" if own
+            else f"所有媒体库都跟随默认风格「{default_label}」。")
+    if ctx.get("rotate_style"):
+        lead += ("定时轮换已开启：每次定时更新，默认风格和单独设置的媒体库各换下一款。" if ctx.get("cron")
+                 else "定时轮换已打开，但还没有设置定时更新，所以不会轮换。")
+    running = bool(ctx["task"].get("running"))
+    bulk = []
+    if ctx.get("clean_armed") not in BULK_ARMED:
+        if own:
+            bulk.append(button("全部恢复默认", "line", prefix, "reset_library_styles?tab=libraries", "mdi-restore", "small"))
+        bulk.append(button(f"依次分配 01–{STYLE_COUNT:02d}", "line", prefix, "assign_styles?generate=0&tab=libraries",
+                           "mdi-format-list-numbered", "small"))
+        if not running:
+            bulk.append(button("分配并生成", "quiet", prefix, "assign_styles?generate=1&tab=libraries",
+                               "mdi-play", "small"))
+    children: List[dict] = [div("mcg-bar", div("mcg-lead", text=lead), div("mcg-hint-actions", *bulk))]
+    children.extend(_bulk_confirm(ctx, "libraries"))
 
     rows = []
     for library in libraries:
         if library.get("own_style"):
-            chips = [node("span", cls="mcg-chip mcg-chip-gold",
-                          text=style_label(library["own_index"], library["own_variant"]))]
+            tags = [span("mcg-chip mcg-chip-accent", numbered_label(library["own_index"], library["own_variant"]))]
         else:
-            chips = [node("span", cls="mcg-chip", text="跟随默认风格")]
+            tags = [span("mcg-chip", "跟随默认")]
         status = library.get("status") or {}
         if status:
-            chips.append(node("span", cls="mcg-chip " + ("mcg-chip-ok" if status.get("ok") else "mcg-chip-bad"),
-                              text="成功" if status.get("ok") else "失败"))
+            tags.append(span("mcg-chip " + ("mcg-chip-ok" if status.get("ok") else "mcg-chip-bad"),
+                             "成功" if status.get("ok") else "失败"))
         if not library.get("active"):
-            chips.append(node("span", cls="mcg-chip", text="未纳入批量更新"))
+            tags.append(span("mcg-chip", "不参与批量更新"))
         if status and not status.get("ok") and status.get("message"):
             note = status["message"]
         elif status:
@@ -622,23 +636,17 @@ def _libraries_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
             art = node("img", cls="mcg-lib-art", src=library["thumb"], alt=library["name"], loading="lazy")
         else:
             art = div("mcg-lib-art", icon("mdi-image-outline", 22))
-        info = [div("mcg-lib-name", text=library["name"], title=library["name"]),
-                div("mcg-lib-note", text=note, title=status.get("message") or note),
-                div("mcg-lib-chips", *chips)]
-        rows.append(
-            div(
-                "mcg-lib",
-                art,
-                div("mcg-lib-info", *info),
-                div(
-                    "mcg-lib-actions",
-                    button("生成", "quiet", prefix, f"generate_now?library={library['encoded_key']}&tab=libraries",
-                           size="small"),
-                    button("换风格", "quiet", prefix, f"style_target?library={library['encoded_key']}&tab=style",
-                           size="small"),
-                ),
-            )
-        )
+        actions = [button("换风格", "line", prefix, f"style_target?library={library['encoded_key']}&tab=style",
+                          size="small")]
+        if not running:
+            actions.append(button("生成", "quiet", prefix,
+                                  f"generate_now?library={library['encoded_key']}&tab=libraries", size="small"))
+        rows.append(div(
+            "mcg-lib", art,
+            div("mcg-lib-info", div("mcg-lib-name", text=library["name"], title=library["name"]),
+                div("mcg-lib-note", text=note, title=status.get("message") or note), div("mcg-lib-tags", *tags)),
+            div("mcg-lib-actions", *actions),
+        ))
     children.append(div("mcg-libs", *rows))
     return div("mcg-panel mcg-panel-libraries", *children)
 
@@ -647,16 +655,9 @@ def _history_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
     prefix = ctx["api_prefix"]
     items = ctx["history"]
     total = ctx["history_total"]
-    ready = ctx["page_tab"] == "history"
+    ready = ctx["page_tab"] == "history" or bool(items)
     children: List[dict] = [
-        div(
-            "mcg-heading",
-            div(
-                None,
-                div("mcg-heading-title", text="历史封面"),
-                div("mcg-heading-note", text=f"共 {total} 张。每个媒体库最多保留 {ctx['history_limit']} 张，可在设置中调整。"),
-            ),
-        )
+        div("mcg-bar", div("mcg-lead", text=f"每个媒体库最多保留 {ctx['history_limit']} 张，可以在设置的「目录与历史」里调整。")),
     ]
     if not items:
         note = "还没有生成记录。生成一次封面后会出现在这里。" if ready or not total else "正在载入…"
@@ -665,29 +666,21 @@ def _history_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
 
     cards = []
     for item in items:
-        cards.append(
+        cards.append(div(
+            "mcg-cover",
+            node("img", src=item["src"], alt=item["title"], loading="lazy", decoding="async"),
             div(
-                "mcg-cover",
-                node("img", src=item["src"], alt=item["title"], loading="lazy"),
-                div(
-                    "mcg-cover-meta",
-                    div(
-                        "mcg-cover-text",
-                        div("mcg-cover-name", text=item["title"], title=item["title"]),
-                        div("mcg-cover-sub", text=f"{item['mtime']} · {item['size']}"),
-                    ),
-                    node("VBtn", icon="mdi-delete-outline", variant="text", size="small", title="删除",
-                         color="#C8664F",
-                         events=post(prefix, f"delete_saved_cover?file={item['encoded_name']}&tab=history")),
-                ),
-            )
-        )
+                "mcg-cover-meta",
+                div("mcg-cover-text", div("mcg-cover-name", text=item["title"], title=item["title"]),
+                    div("mcg-cover-sub", text=f"{item['mtime']} · {item['size']}")),
+                node("VBtn", icon="mdi-delete-outline", variant="text", size="small", title="删除", color="#D9604A",
+                     events=post(prefix, f"delete_saved_cover?file={item['encoded_name']}&tab=history")),
+            ),
+        ))
     children.append(div("mcg-history", *cards))
     if total > len(items):
-        children.append(
-            div("mcg-more", button(f"显示更多（还有 {total - len(items)} 张）", "quiet", prefix,
-                                   "history_more?tab=history"))
-        )
+        children.append(div("mcg-more", button(f"显示更多（还有 {total - len(items)} 张）", "line", prefix,
+                                               "history_more?tab=history")))
     return div("mcg-panel mcg-panel-history", *children)
 
 
@@ -699,43 +692,37 @@ def _clean_actions(ctx: Dict[str, Any], what: str, path: str, prepend: str) -> L
     return [div(
         "mcg-confirm",
         button("确认清理，不能恢复", "danger", prefix, path, prepend, "small"),
-        button("取消", "quiet", prefix, "refresh?tab=maintain", size="small"),
+        button("取消", "line", prefix, "refresh?tab=maintain", size="small"),
     )]
 
 
 def _maintain_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
-    prefix = ctx["api_prefix"]
     checks = []
     for check in ctx["checks"]:
         state = "ok" if check["ok"] else "bad"
-        mark = "mdi-check-circle-outline" if check["ok"] else "mdi-alert-circle-outline"
+        mark = "mdi-check" if check["ok"] else "mdi-alert-circle-outline"
         body = [div(None, text=check["title"])]
         if check.get("note"):
             body.append(div("mcg-check-note", text=check["note"]))
         checks.append(div(f"mcg-check mcg-check-{state}", icon(mark), div(None, *body)))
+
+    def care(title, size, note, actions):
+        return div("mcg-care", div("mcg-care-title", span(None, title), span("mcg-care-size", size)),
+                   div("mcg-care-note", text=note), *actions)
+
     return div(
         "mcg-panel mcg-panel-maintain",
         div(
-            "mcg-grid-2",
-            div("mcg-box", div("mcg-box-title", text="运行检查"), div("mcg-box-note", text="生成失败时可以先看这里。"), *checks),
+            "mcg-cols",
+            div(None, div("mcg-sub", text="运行检查"), *checks),
             div(
                 None,
-                div(
-                    "mcg-box",
-                    div("mcg-box-title", node("span", text="封面与素材缓存"),
-                        node("span", cls="mcg-chip", text=ctx["cache_images"])),
-                    div("mcg-box-note", text="删除下载的素材和历史封面。媒体库里已经生效的封面不受影响；"
-                                             "自定义保存目录中只会删除插件生成的文件。"),
-                    *_clean_actions(ctx, "images", "clean_images?tab=maintain", "mdi-image-remove-outline"),
-                ),
-                div(
-                    "mcg-box",
-                    div("mcg-box-title", node("span", text="字体缓存"),
-                        node("span", cls="mcg-chip", text=ctx["cache_fonts"])),
-                    div("mcg-box-note", text="字体损坏或想重新下载时使用，下次生成时自动重新获取。"),
-                    *_clean_actions(ctx, "fonts", "clean_fonts?tab=maintain", "mdi-format-font"),
-                    style="margin-top:14px;",
-                ),
+                div("mcg-sub", text="缓存"),
+                care("封面与素材", ctx["cache_images"],
+                     "删除下载的素材和历史封面。媒体库里已经生效的封面不受影响；自定义保存目录中只会删除插件生成的文件。",
+                     _clean_actions(ctx, "images", "clean_images?tab=maintain", "mdi-image-remove-outline")),
+                care("字体", ctx["cache_fonts"], "字体损坏或想重新下载时使用，下次生成时自动重新获取。",
+                     _clean_actions(ctx, "fonts", "clean_fonts?tab=maintain", "mdi-format-font")),
             ),
         ),
     )
@@ -743,31 +730,32 @@ def _maintain_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
 
 def build_page(ctx: Dict[str, Any]) -> List[dict]:
     active_tab = ctx["page_tab"]
+    counts = {"libraries": len(ctx["libraries"]), "history": ctx["history_total"]}
     radios = [
         node("input", cls="mcg-radio", type="radio", name="mcg-tab", id=f"mcg-tab-{tab}", checked=tab == active_tab)
         for tab, _name, _icon in PAGE_TABS
     ]
-    tabs = div(
-        "mcg-tabs",
-        *[
-            node("label", cls="mcg-tab", content=[icon(tab_icon, 16), node("span", text=name)],
-                 # 历史页的图片按需加载：切换过去时请求一次
-                 events=post(ctx["api_prefix"], "refresh?tab=history")
-                 if tab == "history" and active_tab != "history" and ctx["history_total"] else None,
-                 **{"for": f"mcg-tab-{tab}"})
-            for tab, name, tab_icon in PAGE_TABS
-        ],
-    )
+
+    def tab_label(tab, name):
+        content = [span(None, name)]
+        if counts.get(tab):
+            content.append(span("mcg-tab-n", str(counts[tab])))
+        # 不支持按需加载图片的旧版本里，历史图片只在切到历史页时才请求一次
+        lazy = tab == "history" and active_tab != "history" and ctx["history_total"] and not ctx["history"]
+        return node("label", cls="mcg-tab", content=content,
+                    events=post(ctx["api_prefix"], "refresh?tab=history") if lazy else None,
+                    **{"for": f"mcg-tab-{tab}"})
+
     return [
         div(
             "mcg",
             node("style", text=CSS),
             *radios,
-            _hero(ctx),
+            _top(ctx),
             # 提示放在页签外面，停在哪个页签都看得到
-            *([div("mcg-notice", icon("mdi-information-outline"), div(None, text="；".join(ctx["warnings"])))]
+            *([div("mcg-notice", icon("mdi-alert-outline"), div(None, text="；".join(ctx["warnings"])))]
               if ctx["warnings"] else []),
-            tabs,
+            div("mcg-tabs", *[tab_label(tab, name) for tab, name, _icon in PAGE_TABS]),
             _style_panel(ctx),
             _libraries_panel(ctx),
             _history_panel(ctx),
@@ -786,10 +774,10 @@ def _section(mark: str, title: str, note: str, *children, show: Optional[str] = 
     props: Dict[str, Any] = {}
     if show:
         props["show"] = show
+    # mark 是以前分节标题前的图标，新版面不用图标装饰，参数留着免得改动所有调用处
     return div(
         "mcg-section",
-        div("mcg-section-head", div("mcg-section-mark", icon(mark, 17)),
-            div(None, div("mcg-section-title", text=title), div("mcg-section-note", text=note))),
+        div("mcg-section-head", div("mcg-section-title", text=title), div("mcg-section-note", text=note)),
         *children,
         **props,
     )
@@ -856,19 +844,18 @@ def _toggle(model: str, label: str, options: List[tuple], recommended: Any = Non
     )
 
 
-def _style_picker() -> Dict[str, Any]:
+def _style_picker(asset_base: str) -> Dict[str, Any]:
     def card(entry):
         value = f"static_{entry.index}"
         return (
             node(
                 "div",
                 content=[
-                    _preview_media(entry, "{{ cover_style_variant === 'animated' }}"),
-                    div("mcg-style-tick", icon("mdi-check", 16)),
+                    _preview_media(entry, "{{ cover_style_variant === 'animated' }}", asset_base),
                     div(
                         "mcg-style-meta",
                         div("mcg-style-name", *style_name(entry)),
-                        div("mcg-style-desc", text=f"动态：{entry.motion}",
+                        div("mcg-style-desc", text=entry.motion,
                             show="{{ cover_style_variant === 'animated' }}"),
                         div("mcg-style-desc", text=entry.desc, show="{{ cover_style_variant !== 'animated' }}"),
                     ),
@@ -879,7 +866,7 @@ def _style_picker() -> Dict[str, Any]:
                 },
             )
         )
-    return div(None, *grouped_gallery(card))
+    return style_gallery(card)
 
 
 def _basic_tab(ctx: Dict[str, Any]) -> List[dict]:
@@ -896,7 +883,7 @@ def _basic_tab(ctx: Dict[str, Any]) -> List[dict]:
                 _col(node("VCronField", model="cron", label="定时更新", placeholder="5 位 cron 表达式，留空不启用",
                           density="comfortable", variant="outlined", color=ACCENT), 4),
                 _col(_switch("rotate_style", "定时轮换风格",
-                             "每次定时更新换下一款风格，所有媒体库保持统一；单独设置过风格的媒体库不变"), 8),
+                             "每次定时更新，默认风格换下一款；单独设置过风格的媒体库也各自换下一款，10 款轮完回到第 1 款"), 8),
                 _col(_switch("pet_enabled", "插件宠物「咔嗒」",
                              "一块会走路的场记板，开工喊 Action、收工喊 Cut；点它、拖它、擦它的黑板都有反应"), 4),
             ),
@@ -919,15 +906,15 @@ def _basic_tab(ctx: Dict[str, Any]) -> List[dict]:
     ]
 
 
-def _style_tab() -> List[dict]:
+def _style_tab(ctx: Dict[str, Any]) -> List[dict]:
     return [
         _section(
             "mdi-palette-swatch-outline", "封面风格",
-            "这里是所有媒体库的默认风格。想给某个媒体库单独设置，到插件详情页「风格」页上方选择媒体库",
+            "这里是所有媒体库的默认风格。想给某个媒体库单独设置、让各媒体库依次用 01 到 10，或一键全部恢复默认，都在插件详情页里",
             div(None, _toggle("cover_style_variant", "输出类型",
                               [("animated", "GIF 动态封面"), ("static", "静态图片")], recommended="animated"),
                 style="margin-bottom:16px;max-width:380px;"),
-            _style_picker(),
+            _style_picker(ctx["asset_base"]),
         ),
         _section(
             "mdi-image-outline", "选图与输出", "自动匹配：每个画框选比例合适的图，围绕人物取景。只有海报时完整显示海报，不把人物切开",
@@ -982,7 +969,7 @@ def _title_tab(ctx: Dict[str, Any]) -> List[dict]:
     ]
 
 
-def _typography_picker() -> Dict[str, Any]:
+def _typography_picker(asset_base: str) -> Dict[str, Any]:
     """一键换字体的卡片。字号、字距仍由风格决定；选「跟随风格」时连手动填写的参数也一起清空。"""
     numeric_fields = ("zh_font_size", "en_font_size", "zh_font_offset", "title_spacing", "en_line_spacing",
                       "zh_letter_spacing", "en_letter_spacing")
@@ -1000,14 +987,14 @@ def _typography_picker() -> Dict[str, Any]:
             node(
                 "div",
                 content=[
-                    node("img", src=TYPOGRAPHY_PREVIEWS.get(preset["key"], ""), alt=preset["name"], loading="lazy"),
-                    div("mcg-style-tick", icon("mdi-check", 16)),
+                    div("mcg-style-media",
+                        node("img", src=f"{asset_base}type_{preset['key']}.webp", alt=preset["name"], loading="lazy",
+                             decoding="async"),
+                        span("mcg-flag", "使用中")),
                     div(
                         "mcg-style-meta",
-                        div("mcg-style-name",
-                            node("span", content=[node("span", text=preset["name"])]
-                                 + ([recommend_badge()] if preset.get("recommended") else []),
-                                 style="display:inline-flex;align-items:center;")),
+                        div("mcg-style-name", span(None, preset["name"]),
+                            *([recommend_badge()] if preset.get("recommended") else [])),
                         div("mcg-style-desc", text=preset["desc"]),
                     ),
                 ],
@@ -1024,7 +1011,7 @@ def _typography_tab(ctx: Dict[str, Any]) -> List[dict]:
     return [
         _section(
             "mdi-auto-fix", "字体搭配", "每款风格都有设计好的字体和字号。想换字体可以点这里，字号和间距仍然跟随风格",
-            _typography_picker(),
+            _typography_picker(ctx["asset_base"]),
         ),
         _section(
             "mdi-format-font", "字体", "内置字体会自动下载；也可以填字体链接或容器内的本地路径",
@@ -1064,11 +1051,11 @@ def _typography_tab(ctx: Dict[str, Any]) -> List[dict]:
 def _motion_tab() -> List[dict]:
     return [
         div(
-            "mcg-notice", icon("mdi-information-outline"),
+            "mcg-notice mcg-notice-info", icon("mdi-information-outline"),
             div(None, text="Hills、yamby、小幻影视都能播放。客户端请求的宽度小于动图宽度时，Emby 会把它压成静态图，所以尺寸越小越容易动起来。首帧就是完整封面，只显示静态图的客户端也能看到成品。需要容器内有 ffmpeg，没有时自动生成静态封面。"),
         ),
         _section(
-            "mdi-play-box-multiple-outline", "GIF 动图", "只有使用动态封面时才生效。画面大部分时间静止、只在转场时运动，320×180 一张通常 1.5 到 3 MB",
+            "mdi-play-box-multiple-outline", "GIF 动图", "只有使用动态封面时才生效。画面大部分时间静止、只在转场时运动，320×180 一张通常 1.5 到 3.5 MB",
             _row(
                 _col(_select("animation_resolution", "尺寸", [
                     {"title": "480×270（最清晰，部分客户端会变静态）", "value": "480x270"},
@@ -1170,7 +1157,7 @@ def default_form_model() -> Dict[str, Any]:
 def build_form(ctx: Dict[str, Any]) -> List[dict]:
     tabs = [
         ("basic-tab", "基础", "mdi-tune-variant", _basic_tab(ctx)),
-        ("style-tab", "风格", "mdi-palette-swatch-outline", _style_tab()),
+        ("style-tab", "风格", "mdi-palette-swatch-outline", _style_tab(ctx)),
         ("title-tab", "标题", "mdi-format-title", _title_tab(ctx)),
         ("more-tab", "字体排版", "mdi-format-font", _typography_tab(ctx)),
         ("motion-tab", "GIF 动图", "mdi-play-box-multiple-outline", _motion_tab()),
@@ -1182,9 +1169,8 @@ def build_form(ctx: Dict[str, Any]) -> List[dict]:
             node("style", text=CSS),
             node(
                 "VTabs", model="tab", color=ACCENT, showArrows=True,
-                content=[node("VTab", value=key, cls="text-none",
-                              content=[icon(tab_icon, 17, "mr-1"), node("span", text=label)])
-                         for key, label, tab_icon, _body in tabs],
+                content=[node("VTab", value=key, cls="text-none", content=[node("span", text=label)])
+                         for key, label, _icon, _body in tabs],
             ),
             node(
                 "VWindow", model="tab",
