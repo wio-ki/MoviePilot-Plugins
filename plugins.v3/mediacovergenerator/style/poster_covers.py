@@ -1,5 +1,5 @@
 """
-海报系列 9–10：百叶、对开。
+海报系列 9–12：百叶、对开、月洞、展墙。
 
 每张海报单独取色，画面只保留海报和主副标题；静态图与动画首帧使用相同构图。
 prepare() 缓存不变的图层，frame(phase) 只计算当前转场的运动。
@@ -9,11 +9,12 @@ import math
 from dataclasses import dataclass
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps
+from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageOps
 
 from app.plugins.mediacovergenerator.style.covers import (
-    GHOST_WHITE, Cover, composite_at, ease_in_out, ease_out, rgba_from_alpha, warp_onto,
+    GHOST_WHITE, Cover, axes, composite_at, ease_in_out, ease_out, rgba_from_alpha, warp_onto, with_alpha,
 )
+from app.plugins.mediacovergenerator.style.typography import load_font, tracked_width
 
 
 def clamp(value, low=0.0, high=1.0):
@@ -733,6 +734,395 @@ class Diptych(PosterCover):
             slab = self.slabs[following] if lag <= 0 else self._slab(following, lag)
             canvas.paste(slab.crop((0, 0, P, H - top)), (L, top))
         return canvas.convert("RGB")
+# ---------------------------------------------------------------- 风格 11：月洞
 
 
-POSTER_DESIGNS = {9: Lenticular, 10: Diptych}
+def arch_mask(size, box, ratio=0.5, supersample=3):
+    """上端为半圆的拱形，box 是 (left, top, width, height)。超采样画好再缩，边才平滑。"""
+    left, top, width, height = [float(value) for value in box]
+    mask = Image.new("L", (int(size[0] * supersample), int(size[1] * supersample)), 0)
+    ImageDraw.Draw(mask).rounded_rectangle(
+        [left * supersample, top * supersample, (left + width) * supersample - 1, (top + height) * supersample - 1],
+        radius=width * ratio * supersample, corners=(True, True, False, False), fill=255)
+    return mask.resize(size, Image.Resampling.LANCZOS)
+
+
+def wall_tooth(size, seed=11, coarse=0.010, fine=0.006):
+    """墙面的颗粒：低频起伏加细颗粒，返回 -1~1 的浮点场，正负分开叠才不会糊成水痕。"""
+    width, height = max(8, size[0] // 4), max(8, size[1] // 4)
+    rng = np.random.default_rng(seed)
+    field = rng.normal(0.0, 1.0, (height, width)).astype(np.float32) * fine
+    small = rng.normal(0.0, 1.0, (max(2, height // 10), max(2, width // 10))).astype(np.float32)
+    broad = np.asarray(Image.fromarray(((small - small.min()) / (np.ptp(small) + 1e-6) * 255).astype(np.uint8), "L")
+                       .resize((width, height), Image.Resampling.BICUBIC), dtype=np.float32) / 255.0 - 0.5
+    field = np.clip(field + broad * coarse, -1.0, 1.0)
+    return np.asarray(Image.fromarray(((field + 1.0) * 127.5).astype(np.uint8), "L")
+                      .resize(size, Image.Resampling.BILINEAR), dtype=np.float32) / 127.5 - 1.0
+
+
+def grain_over(canvas, field, color, amount):
+    """把颗粒场按正负分别提亮、压暗后叠上去，得到和画布同尺寸的 RGBA 图层。"""
+    alpha = np.where(field >= 0, np.clip(field, 0, 1) * amount, np.clip(-field, 0, 1) * amount)
+    data = np.zeros((canvas.height, canvas.width, 4), dtype=np.uint8)
+    data[..., :3] = color[:3]
+    data[..., 3] = np.clip(alpha * 255, 0, 255).astype(np.uint8)
+    return Image.fromarray(data, "RGBA")
+
+
+class MoonGate(PosterCover):
+    """
+    深色墙上开一扇顶天的大拱龛，完整的海报装在卡纸里，像美术馆的壁龛。
+    龛口右侧是直接刻在墙上的片名：一道色标、一条细线、一块压得很低的标题。
+    换片时旧画顺着龛口滑上去，下一幅从下面推上来；龛口、卡纸和墙上的字都不动，墙的颜色跟着换。
+    """
+
+    MATTE = 13.0     # 卡纸宽度，1080p 像素
+    POSTER_H = 0.885
+    POSTER_W = 0.43
+    ARCH = 0.44      # 拱顶半径占龛口宽度的比例
+
+    def prepare(self):
+        W, H, s = self.W, self.H, self.s
+        self.walls, self.sheets, self.lips, self.blocks = [], [], [], []
+        x_axis, y_axis = axes(self.size)
+        field = wall_tooth(self.size)
+        light = np.exp(-(((x_axis - 0.24) / 0.46) ** 2 + ((y_axis - 0.10) / 0.66) ** 2))
+        floor = np.clip((y_axis - 0.62) / 0.38, 0.0, 1.0) ** 1.7
+
+        # 龛的几何在整个循环里不变，换的只是龛里的画，所以画面不会跳
+        poster_h = H * self.POSTER_H
+        poster_w = min(poster_h * 2.0 / 3.0, W * self.POSTER_W)
+        poster_h = poster_w * 1.5
+        matte = max(2.0, self.MATTE * s)
+        sheet_w, sheet_h = poster_w + matte * 2, poster_h + matte * 2
+        sheet_x = W * 0.042
+        sheet_y = (H - sheet_h) / 2.0
+        self.sheet_box = (sheet_x, sheet_y, sheet_w, sheet_h)
+        thick = max(2.0, 9.0 * s)
+        self.opening = (sheet_x - thick, sheet_y - thick, sheet_w + thick * 2, sheet_h + thick * 2)
+        self.clip = arch_mask(self.size, self.opening, ratio=self.ARCH)
+        inner = arch_mask(self.size, (self.opening[0] + thick * 1.6, self.opening[1] + thick * 1.6,
+                                      self.opening[2] - thick * 3.2, self.opening[3] - thick * 3.2),
+                          ratio=self.ARCH)
+        lip_shape = ImageChops.subtract(self.clip, inner)
+        rim_shape = ImageChops.subtract(
+            arch_mask(self.size, (self.opening[0] - thick, self.opening[1] - thick,
+                                  self.opening[2] + thick * 2, self.opening[3] + thick * 2), ratio=self.ARCH),
+            self.clip)
+        # 光从左上来：龛壁左亮右暗，龛本身再压一层底
+        side = np.clip((x_axis - 0.18) / 0.30, 0.0, 1.0)
+        left_light = Image.fromarray((np.clip((0.55 - side) * 255, 0, 255)).astype(np.uint8), "L")
+        right_shade = Image.fromarray((np.clip((side - 0.45) * 255, 0, 255)).astype(np.uint8), "L")
+
+        text_left = self.opening[0] + self.opening[2] + W * 0.078
+        text_right = W - W * 0.055
+
+        for index in range(self.count):
+            p = self.palette(index)
+            wall = Image.new("RGBA", self.size, p.tone(0.245, 0.072) + (255,))
+            wall.alpha_composite(rgba_from_alpha(p.tone(0.76, 0.045), light * 0.26))
+            wall.alpha_composite(rgba_from_alpha((0, 0, 0), floor * 0.38))
+            wall.alpha_composite(grain_over(wall, field, (255, 255, 255), 0.028))
+            wall.alpha_composite(grain_over(wall, -field, (0, 0, 0), 0.030))
+            # 右侧墙面收边：一道很淡的竖向接缝，墙才不是一块色板
+            ImageDraw.Draw(wall).line([(W * 0.9845, 0), (W * 0.9845, H)],
+                                      fill=p.tone(0.08, 0.02) + (46,), width=max(1, int(round(2 * s))))
+            self.walls.append(wall.convert("RGB"))
+
+            sheet = Image.new("RGBA", self.size, (0, 0, 0, 0))
+            ImageDraw.Draw(sheet).rectangle(
+                [sheet_x, sheet_y, sheet_x + sheet_w, sheet_y + sheet_h], fill=p.tone(0.40, 0.028) + (255,))
+            poster = self.poster_image(index, (int(poster_w), int(poster_h)), p.tone(0.40, 0.028)).convert("RGBA")
+            sheet.alpha_composite(poster, (int(sheet_x + matte), int(sheet_y + matte)))
+            ImageDraw.Draw(sheet).rectangle(
+                [sheet_x + matte, sheet_y + matte, sheet_x + matte + poster_w, sheet_y + matte + poster_h],
+                outline=p.tone(0.15, 0.02) + (175,), width=max(1, int(round(1 * s))))
+            self.sheets.append(sheet)
+
+            lip = Image.new("RGBA", self.size, (0, 0, 0, 0))
+            shade = Image.new("RGBA", self.size, p.tone(0.045, 0.02) + (255,))
+            shade.putalpha(ImageChops.multiply(lip_shape, right_shade.point(lambda value: int(value * 0.92))))
+            lip.alpha_composite(shade)
+            shine = Image.new("RGBA", self.size, p.tone(0.95, 0.012) + (255,))
+            shine.putalpha(ImageChops.multiply(lip_shape, left_light.point(lambda value: int(value * 0.30))))
+            lip.alpha_composite(shine)
+            base = Image.new("RGBA", self.size, p.tone(0.055, 0.02) + (255,))
+            base.putalpha(lip_shape.point(lambda value: int(value * 0.52)))
+            lip.alpha_composite(base)
+            edge = Image.new("RGBA", self.size, p.tone(0.94, 0.01) + (255,))
+            edge.putalpha(rim_shape.point(lambda value: int(value * 0.12)))
+            lip.alpha_composite(edge)
+            self.lips.append(lip)
+
+            self.blocks.append(self._label(p, text_left, text_right))
+
+    def _label(self, palette, left, right):
+        """墙上刻的片名：一枚色标、一条通到右缘的细线，标题压在线上，下面一小段短线收尾。"""
+        W, H, s = self.W, self.H, self.s
+        placed = Image.new("RGBA", self.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(placed)
+        block, margin, ink_h = self.title_block(
+            right - left, sub_style="text",
+            main_fill=palette.tone(0.972, 0.012), sub_fill=palette.tone(0.815, 0.07))
+        top = H * 0.5 - ink_h / 2.0 - 6 * s
+        rule_y = top - 46 * s
+        draw.rectangle([left, rule_y, left + W * 0.0085, rule_y + max(3, 3.4 * s)],
+                       fill=palette.tone(0.70, 0.17) + (255,))
+        draw.rectangle([left + W * 0.0215, rule_y + max(1.0, 1.5 * s), right, rule_y + max(2.0, 2.6 * s)],
+                       fill=palette.tone(0.90, 0.02) + (44,))
+        composite_at(placed, block, left - margin, top - margin)
+        low = top + ink_h + 40 * s
+        draw.rectangle([left, low, left + (right - left) * 0.20, low + max(1.4, 1.8 * s)],
+                       fill=palette.tone(0.88, 0.03) + (58,))
+        draw.rectangle([left + (right - left) * 0.20 + W * 0.012, low, right, low + max(1.0, 1.1 * s)],
+                       fill=palette.tone(0.90, 0.02) + (22,))
+        return placed
+
+    def _clip(self, layer, offset_y=0.0):
+        """把整幅画布大小的图层上下移后按龛口裁好：龛口外面没有东西。"""
+        moved = Image.new("RGBA", self.size, (0, 0, 0, 0))
+        moved.alpha_composite(layer, (0, int(round(offset_y))))
+        clipped = Image.new("RGBA", self.size, (0, 0, 0, 0))
+        clipped.paste(moved, (0, 0), self.clip)
+        return clipped
+
+    def frame(self, phase):
+        current, progress = self.beat(phase, seconds=1.75)
+        following = (current + 1) % self.count
+        blend = ease_in_out(progress)
+        canvas = self.walls[current]
+        if blend > 0:
+            canvas = Image.blend(canvas, self.walls[following], blend)
+        canvas = canvas.convert("RGBA")
+        if progress <= 0:
+            canvas.alpha_composite(self._clip(self.sheets[current]))
+            canvas.alpha_composite(self.lips[current])
+            canvas.alpha_composite(self.blocks[current])
+            return canvas
+        if progress >= 1:
+            canvas.alpha_composite(self._clip(self.sheets[following]))
+            canvas.alpha_composite(self.lips[following])
+            canvas.alpha_composite(self.blocks[following])
+            return canvas
+        # 旧画顺着龛口滑上去，下一幅从下面推上来：龛口不动，像有人在换画
+        travel = self.sheet_box[3] + 30 * self.s
+        glide = ease_in_out(progress)
+        canvas.alpha_composite(self._clip(self.sheets[current], -travel * glide))
+        canvas.alpha_composite(self._clip(self.sheets[following], travel * (1.0 - glide)))
+        canvas.alpha_composite(self.lips[current])
+        canvas.alpha_composite(with_alpha(self.blocks[current], max(0.0, 1.0 - progress * 2.8)))
+        canvas.alpha_composite(with_alpha(self.blocks[following], max(0.0, progress * 2.8 - 1.8)))
+        return canvas
+
+
+# ---------------------------------------------------------------- 风格 12：展墙
+
+
+class VerticalBlock:
+    """
+    竖排的片名：主标题逐字成列，列从右往左排；副标题转九十度，读起来也是从上往下。
+    放不下时先收字号，再让主标题折成两列；返回的图层以文字块左上角为原点。
+    """
+
+    def __init__(self, title, fonts, spec, scale, max_width, max_height, sub_tracking=0.16):
+        self.main = "".join(str(title[0] or "").split())
+        self.sub = " ".join(str(title[1] or "").split()).upper()
+        self.main_path, self.sub_path = fonts[0], fonts[1]
+        self.max_width, self.max_height = float(max_width), float(max_height)
+        self.sub_tracking = sub_tracking
+        self.size, self.columns, self.step, self.gap = self._fit(spec.main_size * scale)
+
+    def _fit(self, main_size):
+        size = main_size
+        while size >= main_size * 0.34:
+            step = size * 1.04
+            rows = max(1, int(self.max_height // step)) if self.main else 1
+            columns = [self.main[i:i + rows] for i in range(0, len(self.main), rows)] if self.main else []
+            gap = size * 0.30
+            width = len(columns) * step + max(0, len(columns) - 1) * gap
+            if self.sub:
+                width += size * 0.30 * 1.8 + size * 0.5
+            if width <= self.max_width:
+                return size, columns, step, gap
+            size *= 0.96
+        size = main_size * 0.34
+        return size, ([self.main] if self.main else []), size * 1.04, 0.0
+
+    def _sub_strip(self, sub_size):
+        font = load_font(self.sub_path, sub_size)
+        tracking = sub_size * self.sub_tracking
+        total = tracked_width(font, self.sub, tracking)
+        strip = Image.new("L", (int(total) + int(sub_size * 1.2), int(sub_size * 1.8)), 0)
+        draw = ImageDraw.Draw(strip)
+        pen = sub_size * 0.6
+        for index, char in enumerate(self.sub):
+            draw.text((pen, strip.height / 2), char, font=font, fill=255, anchor="lm")
+            advance = font.getlength(char) + tracking
+            if index + 1 < len(self.sub):
+                pair = self.sub[index:index + 2]
+                advance += font.getlength(pair) - font.getlength(pair[0]) - font.getlength(pair[1])
+            pen += advance
+        return strip.rotate(-90, expand=True)
+
+    @property
+    def height(self):
+        return max(len(column) for column in self.columns) * self.step if self.columns else self.step
+
+    def render(self, fill, sub_fill):
+        """在巨大的透明图层上画好再裁到笔画，返回 (图层, 文字块高度)。"""
+        size = self.size
+        font = load_font(self.main_path, size)
+        sub_img = self._sub_strip(size * 0.30) if self.sub else None
+        column_w = len(self.columns) * self.step + max(0, len(self.columns) - 1) * self.gap
+        mask = Image.new("L", (max(1, int(column_w + size * 0.8)), max(1, int(self.height + size * 1.2))), 0)
+        draw = ImageDraw.Draw(mask)
+        for index, column in enumerate(self.columns):
+            x = column_w - index * (self.step + self.gap) - self.step / 2.0
+            for row, char in enumerate(column):
+                draw.text((x, size * 0.1 + row * self.step + self.step / 2.0), char,
+                          font=font, fill=255, anchor="mm")
+        if sub_img is not None:
+            mask.paste(sub_img, (int(column_w + size * 0.20), int(size * 0.02)))
+        layer = Image.new("RGBA", mask.size, fill[:3] + (0,))
+        layer.putalpha(mask)
+        if sub_img is not None:
+            sub_layer = Image.new("RGBA", mask.size, sub_fill[:3] + (0,))
+            sub_mask = Image.new("L", mask.size, 0)
+            sub_mask.paste(sub_img, (int(column_w + size * 0.20), int(size * 0.02)))
+            main_mask = ImageChops.subtract(mask, sub_mask)
+            layer.putalpha(main_mask)
+            sub_layer.putalpha(sub_mask)
+            layer.alpha_composite(sub_layer)
+        return layer, self.height
+
+
+class Hanging(PosterCover):
+    """
+    浅色纸墙上一块说明板，板上竖排片名；板子右边一根横杆，挂着一排大小不一的装裱海报。
+    每一帧整排向左挪一点，画从板子后面出来、在右缘淡出，一个循环正好走完一轮，接得上。
+    换成动态封面时这是唯一一款一直在走的风格，静态图取第一帧。
+    """
+
+    RAIL_Y = 0.150
+    POSTER_H = 0.545
+    PITCH = 0.238       # 相邻两幅画的间距，占画布宽度
+    BOARD = 0.286       # 说明板右缘的位置
+    CORD = (0.030, 0.078, 0.048, 0.090, 0.036, 0.066)
+    SCALE = (1.00, 0.88, 0.94, 0.82, 0.97, 0.90)
+
+    def prepare(self):
+        W, H, s = self.W, self.H, self.s
+        x_axis, y_axis = axes(self.size)
+        self.rail_y = H * self.RAIL_Y
+        field = wall_tooth(self.size, seed=5, coarse=0.008, fine=0.005)
+        self.prints = [self._print(index) for index in range(self.count)]
+
+        # 墙只用一种颜色：整排在走，墙的颜色跟着换会闪
+        base = self.palette(0)
+        paper = base.tone(0.960, 0.009, shift=8)
+        wall = Image.new("RGBA", self.size, paper + (255,))
+        wall.alpha_composite(rgba_from_alpha(
+            (255, 255, 255),
+            np.exp(-(((x_axis - 0.50) / 0.58) ** 2 + ((y_axis + 0.06) / 0.58) ** 2)) * 0.52))
+        wall.alpha_composite(rgba_from_alpha(base.tone(0.36, 0.03),
+                                             np.clip((y_axis - 0.74) / 0.26, 0.0, 1.0) ** 1.6 * 0.10))
+        wall.alpha_composite(grain_over(wall, field, (255, 255, 255), 0.020))
+        wall.alpha_composite(grain_over(wall, -field, (0, 0, 0), 0.014))
+        # 横杆：从画面左侧一直拉到右缘，板子会盖在它上面，看起来像杆子从墙后穿过
+        draw = ImageDraw.Draw(wall)
+        ink = base.tone(0.20, 0.02)
+        bar = max(1.2, 2.0 * s)
+        draw.rectangle([0, self.rail_y, W, self.rail_y + bar], fill=ink + (255,))
+        draw.rectangle([0, self.rail_y + bar, W, self.rail_y + bar + max(1.0, 2.2 * s)],
+                       fill=(255, 255, 255, 150))
+        self.wall = wall.convert("RGB")
+
+        # 说明板：比墙微亮的一块竖板，四边留白，右缘一道细线和一层轻投影
+        board_x0, board_x1 = W * 0.045, W * self.BOARD
+        board_y0, board_y1 = H * 0.075, H * 0.925
+        block = VerticalBlock(self.title, self.fonts, self.spec, s,
+                              (board_x1 - board_x0) - W * 0.070, H * 0.60)
+        self.boards, self.titles = [], []
+        for index in range(self.count):
+            p = self.palette(index)
+            board = Image.new("RGBA", self.size, (0, 0, 0, 0))
+            shadow = Image.new("RGBA", self.size, (0, 0, 0, 0))
+            ImageDraw.Draw(shadow).rectangle(
+                [board_x0 + W * 0.006, board_y0 + H * 0.012, board_x1 + W * 0.010, board_y1 + H * 0.012],
+                fill=(0, 0, 0, 46))
+            board.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(10 * s)))
+            draw = ImageDraw.Draw(board)
+            draw.rectangle([board_x0, board_y0, board_x1, board_y1],
+                           fill=p.tone(0.985, 0.005, shift=8) + (255,))
+            draw.rectangle([board_x1 - max(1, 1.2 * s), board_y0, board_x1, board_y1],
+                           fill=p.tone(0.34, 0.03) + (46,))
+            self.boards.append(board)
+
+            layer, text_h = block.render(p.tone(0.125, 0.028) + (255,), p.tone(0.46, 0.05) + (255,))
+            placed = Image.new("RGBA", self.size, (0, 0, 0, 0))
+            text_x = board_x0 + W * 0.048
+            text_y = board_y0 + (board_y1 - board_y0 - text_h) / 2.0 - H * 0.020
+            composite_at(placed, layer, text_x, text_y)
+            ImageDraw.Draw(placed).rectangle(
+                [text_x, text_y + text_h + H * 0.048, text_x + W * 0.062,
+                 text_y + text_h + H * 0.048 + max(2, 2.6 * s)],
+                fill=p.tone(0.64, 0.16) + (255,))
+            self.titles.append(placed)
+
+        self.area_left = W * self.BOARD + W * 0.014
+        self.pitch = W * self.PITCH
+        # 两端渐隐：画从说明板后出来、走到右缘慢慢消失，两处都不会硬切
+        ramp = np.ones((1, W), dtype=np.float32)
+        edge = int(W * 0.075)
+        ramp[0, W - edge:] = np.linspace(1.0, 0.0, edge) ** 1.4
+        start = int(W * (self.BOARD - 0.004))
+        ramp[0, :start] = 0.0
+        rise = int(W * 0.045)
+        ramp[0, start:start + rise] = np.linspace(0.0, 1.0, rise) ** 1.5
+        self.fade = Image.fromarray((ramp * 255).astype(np.uint8), "L").resize((W, H), Image.Resampling.NEAREST)
+
+    def _print(self, index):
+        """第 index 幅画连同绳子和小夹子的图层，画布宽度只到画框外一点。"""
+        W, H, s = self.W, self.H, self.s
+        p = self.palette(index)
+        height = H * self.POSTER_H * self.SCALE[index % len(self.SCALE)]
+        width = height * 2.0 / 3.0
+        top = self.rail_y + H * self.CORD[index % len(self.CORD)]
+        x_pos = 46 * s
+        layer = Image.new("RGBA", (int(width + 104 * s), int(H)), (0, 0, 0, 0))
+        poster = self.poster_image(index, (int(width), int(height)), p.tone(0.94, 0.010, shift=6)).convert("RGBA")
+        self.put_poster(layer, poster, x_pos, top, blur=18 * s, alpha=0.26, offset=9 * s)
+        draw = ImageDraw.Draw(layer)
+        draw.rectangle([x_pos, top, x_pos + width, top + height],
+                       outline=p.tone(0.60, 0.02) + (110,), width=max(1, int(round(1 * s))))
+        cord = p.tone(0.22, 0.02)
+        clip_w = max(2, int(round(6.2 * s)))
+        for cx in (x_pos + width * 0.20, x_pos + width * 0.80):
+            draw.line([(cx, top - clip_w), (cx, self.rail_y + 2 * s)], fill=cord + (235,),
+                      width=max(1, int(round(1.5 * s))))
+            draw.rectangle([cx - clip_w * 0.58, top - clip_w * 1.3, cx + clip_w * 0.58, top + clip_w * 0.5],
+                           fill=p.tone(0.15, 0.02) + (255,))
+        return layer
+
+    def frame(self, phase):
+        W, s = self.W, self.s
+        # 整排匀速向左走完 count 个间距，循环回到第一幅时位置正好接上
+        drift = (phase % 1.0) * self.count * self.pitch
+        base = int(drift // self.pitch) % self.count
+        offset = drift - int(drift // self.pitch) * self.pitch
+        canvas = self.wall.convert("RGBA")
+        band = Image.new("RGBA", self.size, (0, 0, 0, 0))
+        steps = int((W - self.area_left) / self.pitch) + 3
+        for step in range(-1, steps):
+            x = self.area_left + step * self.pitch - offset
+            if x > W + 10 or x + self.pitch < -10:
+                continue
+            band.alpha_composite(self.prints[(base + step) % self.count], (int(x - 46 * s), 0))
+        band.putalpha(ImageChops.multiply(band.getchannel("A"), self.fade))
+        canvas.alpha_composite(band)
+        canvas.alpha_composite(self.boards[base])
+        canvas.alpha_composite(self.titles[base])
+        return canvas
+
+
+POSTER_DESIGNS = {9: Lenticular, 10: Diptych, 11: MoonGate, 12: Hanging}

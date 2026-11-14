@@ -146,11 +146,11 @@ class MediaCoverGenerator(_PluginBase):
     # 插件名称
     plugin_name = "动态封面工坊"
     # 插件描述
-    plugin_desc = "让媒体库封面动起来：10 款 GIF 动态风格，Hills、yamby、小幻影视都能播放，支持 Emby/Jellyfin"
+    plugin_desc = "让媒体库封面动起来：12 款 GIF 动态风格，Hills、yamby、小幻影视都能播放，支持 Emby/Jellyfin"
     # 插件图标（前端按地址缓存图标，换图时要换文件名）
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/animated-cover.png"
     # 插件版本
-    plugin_version = "2.1.0"
+    plugin_version = "2.2.0"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页

@@ -68,6 +68,65 @@ def beats(phase, count, hold=0.72, curve=ease):
     return current, (current + 1) % count, progress
 
 
+def bob(phase, cycles=4):
+    """
+    装饰物自己的轻轻起伏，只给光、边缘、数字这类小东西用，整幅画面不跟着摇。
+    静止的帧靠它有点变化，又不会像镜头一直在晃。返回 -1 到 1。
+    """
+    return math.sin(phase * 2.0 * math.pi * cycles)
+
+
+def breathe(phase, cycles=2, amount=0.03):
+    """
+    缓推缓拉的呼吸，从 1.0 出发再回到 1.0，首尾接得上。整幅画面只放大、不位移，边缘不会露出来。
+    """
+    return 1.0 + amount * (0.5 - 0.5 * math.cos(phase * 2.0 * math.pi * cycles))
+
+
+def glass_sheen(size, mask, phase, period=9.0, offset=0.0, strength=0.16):
+    """
+    只在某块圆角画面里扫过的一道柔光，像镜头前有一块玻璃。
+    比整幅画面都亮一下温和得多，画面本身可以完全不动。
+    """
+    sheen = sweep(size, phase, offset, strength=strength, period=period)
+    if sheen is None:
+        return None
+    clipped = Image.new("RGBA", size, (255, 255, 255, 0))
+    clipped.paste(sheen, (0, 0), mask)
+    return clipped
+
+
+def slid(image, zoom=1.0, pan_x=0.0, pan_y=0.0):
+    """按比例缩放并平移一张图，超出画布的部分裁掉。"""
+    width, height = image.size
+    zoom = max(1.0, zoom)
+    if zoom == 1.0 and not pan_x and not pan_y:
+        return image
+    crop_w, crop_h = width / zoom, height / zoom
+    left = (width - crop_w) / 2.0 + pan_x * crop_w
+    top = (height - crop_h) / 2.0 + pan_y * crop_h
+    left = max(0.0, min(width - crop_w, left))
+    top = max(0.0, min(height - crop_h, top))
+    box = (int(round(left)), int(round(top)), int(round(min(width, left + crop_w))), int(round(min(height, top + crop_h))))
+    return image.resize((width, height), Image.Resampling.BILINEAR, box=box)
+
+
+def sweep(size, t, phase, strength=0.22, period=7.0, slant=0.35):
+    """
+    一道缓慢扫过画面的柔光。返回叠加用的 RGBA 图层；光还没进来时返回 None。
+    画面静止时靠它让人觉得镜头前面有块玻璃，静止的帧也不会完全一样。
+    """
+    amount = 0.5 + 0.5 * math.sin((t / period + phase) * 2.0 * math.pi)
+    if amount < 0.16:
+        return None
+    x_axis, y_axis = axes(size)
+    center = -0.35 + amount * 1.7
+    band = np.exp(-(((x_axis + y_axis * slant) - center) / 0.17) ** 2)
+    alpha = band * strength * min(1.0, (amount - 0.1) * 2.2)
+    return rgba_from_alpha((255, 255, 255), np.clip(alpha, 0.0, 1.0))
+
+
+
 # ---------------------------------------------------------------- 图像工具
 
 
@@ -411,7 +470,7 @@ class Gallery(Cover):
         return min(self._panel_left(strip) + self.pad - self.margin, limit)
 
     def frame(self, phase):
-        current, following, progress = beats(phase, self.STRIPS, hold=0.6, curve=ease_in_out)
+        current, following, progress = beats(phase, self.STRIPS, hold=0.56, curve=ease_in_out)
         active = (self.START + current) % self.STRIPS
         upcoming = (self.START + following) % self.STRIPS
         canvas = Image.new("RGB", self.size, (0, 0, 0))
@@ -431,7 +490,11 @@ class Gallery(Cover):
             else:
                 strip = Image.blend(self.dim[index].crop(box), self.bright[index].crop(box), amount)
             canvas.paste(strip, (x0, 0))
+        # 画面本身不动：展开的那一幅里扫过一道柔光，像画框前面的玻璃慢慢转了个角度
         canvas = canvas.convert("RGBA")
+        sheen = sweep(self.size, phase, 0.2, strength=0.16)
+        if sheen is not None:
+            canvas.alpha_composite(sheen)
         canvas.alpha_composite(self.overlay)
         # 标题不横穿画面：先淡出，再在新展开的画幅里淡入并轻轻升起
         if progress < 0.42:
@@ -484,13 +547,17 @@ class Titan(Cover):
                      H * 0.915 - ink_h - margin + self.spec.offset_y * s)
 
     def frame(self, phase):
-        current, following, progress = beats(phase, self.count, hold=0.58, curve=ease_in_out)
+        current, following, progress = beats(phase, self.count, hold=0.54, curve=ease_in_out)
         image = self.frames[current]
         if progress > 0:
             # 旧画面继续推近，新画面从稍近处退回原位，两者叠化
             image = Image.blend(zoomed(image, 1.0 + 0.09 * progress),
                                 zoomed(self.frames[following], 1.09 - 0.09 * progress), progress)
-        canvas = image.convert("RGBA")
+        # 停留时整幅缓慢地推近一点再退回来，像镜头在对焦，不横着摆
+        canvas = slid(image, breathe(phase, cycles=2, amount=0.035)).convert("RGBA")
+        sheen = sweep(self.size, phase, 0.55, strength=0.14)
+        if sheen is not None:
+            canvas.alpha_composite(sheen)
         canvas.alpha_composite(self.overlay)
         card_now, card_next = self.cards[following], self.cards[(following + 1) % self.count]
         if progress <= 0:
@@ -541,6 +608,7 @@ class NotFound(Cover):
         # 底图：底色加上主副标题，转场时完全不动
         base = Image.new("RGBA", self.size, self.base_color() + (255,))
         composite_at(base, block, W * 0.08 - margin, top + digit_h + gap - margin)
+
         self.base = np.asarray(base.convert("RGB"), dtype=np.float32)
 
         # 数字放到画布上的最终位置
@@ -607,10 +675,20 @@ class NotFound(Cover):
         alpha = self.alpha if alpha is None else alpha
         return self.base + (fill - self.base) * alpha[..., None]
 
-    def _hold(self, key, fill):
-        if key not in self._still:
-            self._still[key] = Image.fromarray(np.clip(self._paint(fill), 0, 255).astype(np.uint8))
-        return self._still[key]
+    def _hold(self, key, fill, phase=0.0):
+        """404 停住的那几秒：数字不动，一条极淡的扫描线从上慢慢走到下，像屏幕在扫。"""
+        still = self._still.get(key)
+        if still is None:
+            still = Image.fromarray(np.clip(self._paint(fill), 0, 255).astype(np.uint8)).convert("RGBA")
+            self._still[key] = still
+        frame = still.copy()
+        travel = (phase * 3.0) % 1.0
+        y = int(round(travel * self.H))
+        line = Image.new("RGBA", self.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(line)
+        draw.line([(0, y), (self.W, y)], fill=(255, 255, 255, 16), width=max(2, int(round(2 * self.s))))
+        frame.alpha_composite(line)
+        return frame
 
     def _snow(self, rng):
         """没有信号时的雪花，颗粒按画面大小缩放。"""
@@ -676,7 +754,7 @@ class NotFound(Cover):
         following = (current + 1) % self.beat_count
         local = position - int(position)
         if local < self.HOLD:
-            return self._hold(("digits", current), self.fills[current])
+            return self._hold(("digits", current), self.fills[current], phase)
 
         rng = np.random.default_rng(current * 100000 + int(local * 90000))
         roll = rng.random()
@@ -891,6 +969,10 @@ class Trailer(Cover):
         bar_layer = Image.new("RGB", self.size)
         bar_layer.paste(bar, self.bar_at)
         canvas.paste(bar_layer, (0, 0), self.bar_mask)
+        # 画面和斜窗都不动：一道光沿着斜边缓缓扫过大图，刻度那边自己有一点起伏
+        sheen = glass_sheen(self.size, self.window_mask, phase, period=9.0, offset=0.72, strength=0.15)
+        if sheen is not None:
+            canvas.alpha_composite(sheen)
         canvas.alpha_composite(self.overlay)
         self._ticks_frame(canvas, current, following, progress)
         return canvas
@@ -937,14 +1019,16 @@ class Surround(Cover):
         return corners
 
     def frame(self, phase):
-        current, _following, progress = beats(phase, self.count, hold=0.66, curve=ease_in_out)
-        key = (current, round(progress, 4))
+        current, _following, progress = beats(phase, self.count, hold=0.62, curve=ease_in_out)
+        # 停留时整圈弧幕仍在慢慢转，正面的画面始终有细微的变化
+        swing = 0.05 * math.sin(phase * 2.0 * math.pi * 3)
+        key = (current, round(progress, 4), round(swing, 4))
         if self._cached and self._cached[0] == key:
             return self._cached[1]
         canvas = self.ground.copy()
         slots = []
         for slot in range(-2, 4):
-            position = slot - progress
+            position = slot - progress + swing
             angle = position * self.step
             if abs(angle) < math.radians(84):
                 slots.append((abs(position), slot, angle))
@@ -953,6 +1037,9 @@ class Surround(Cover):
             card = self.cards[(current + slot) % self.count]
             shade = 1.0 - min(0.5, distance * 0.36)
             warp_onto(canvas, ImageEnhance.Brightness(card).enhance(shade), self._quad(angle))
+        sheen = sweep(self.size, phase, 0.35, strength=0.1)
+        if sheen is not None:
+            canvas.alpha_composite(sheen)
         canvas.alpha_composite(self.overlay)
         self._cached = (key, canvas)
         return canvas
@@ -973,6 +1060,10 @@ class Depth(Cover):
         self.center = (W / 2.0, H * 0.595)
         radius = int(38 * s)
         mask = rounded_mask(self.front_size, radius)
+        # 停留时的那道柔光要落在这张卡的形状里
+        self.front_mask = Image.new("L", self.size, 0)
+        self.front_mask.paste(mask, (int(round(self.center[0] - self.front_size[0] / 2.0)),
+                                     int(round(self.center[1] - self.front_size[1] / 2.0))))
         border = border_layer(self.front_size, radius, (255, 255, 255, 44), 2 * s)
         self.cards = []
         for index in range(self.count):
@@ -1025,6 +1116,10 @@ class Depth(Cover):
             canvas.alpha_composite(self.front_shadow)
             self._draw(canvas, self.cards[current], 0.0)
             canvas.alpha_composite(self.overlay)
+            # 停留时不晃：最前面那张里慢慢扫过一道柔光，后面的卡片停在原地，层次才立得住
+            sheen = glass_sheen(self.size, self.front_mask, phase, period=10.0, offset=0.1, strength=0.1)
+            if sheen is not None:
+                canvas.alpha_composite(sheen)
             return canvas
         # 投影压在正在上前的那张下面。文字留在原位，飞出的卡片从文字前面掠过
         canvas.alpha_composite(self.front_shadow)
@@ -1053,6 +1148,9 @@ class Detail(Cover):
         self.hero_mask = rounded_mask(self.hero_size, radius)
         self.heroes = [ImageEnhance.Contrast(self.fit(index, self.hero_size)).enhance(1.05) for index in range(self.count)]
         hero_full = (*self.hero_box, self.hero_box[0] + self.hero_size[0], self.hero_box[1] + self.hero_size[1])
+        # 停留时的那道柔光要落在这张卡的位置和形状里，另存一份整幅画布大小的遮罩
+        self.hero_sheen_mask = Image.new("L", self.size, 0)
+        self.hero_sheen_mask.paste(self.hero_mask, self.hero_box)
 
         self.overlay = shadow_layer(self.size, hero_full, radius, 30 * s, 0.55, 12 * s)
         # 播放键放在主卡右下角，不挡人物
@@ -1079,15 +1177,20 @@ class Detail(Cover):
         self.thumbs = [ImageEnhance.Brightness(self.fit(index, self.thumb_size)).enhance(0.86) for index in range(self.count)]
 
     def frame(self, phase):
-        current, following, progress = beats(phase, self.count, hold=0.6, curve=ease_in_out)
+        current, following, progress = beats(phase, self.count, hold=0.56, curve=ease_in_out)
         ground = self.grounds[current] if progress <= 0 else Image.blend(self.grounds[current], self.grounds[following], progress)
-        canvas = ground.convert("RGBA")
+        # 背景虚化图本来就看不真切，让它极慢地推一推就有生气，主卡不动
+        canvas = slid(ground, breathe(phase, cycles=2, amount=0.03)).convert("RGBA")
         canvas.alpha_composite(self.shade)
         canvas.alpha_composite(self.overlay)
         hero = self.heroes[current]
         if progress > 0:
             hero = ImageEnhance.Brightness(hero).enhance(1.0 - 0.45 * progress)
         canvas.paste(hero, self.hero_box, self.hero_mask)
+        # 主卡里若有若无地扫过一道柔光，卡片边缘本身不动
+        sheen = glass_sheen(self.size, self.hero_sheen_mask, phase, period=11.0, offset=0.5, strength=0.09)
+        if sheen is not None:
+            canvas.alpha_composite(sheen)
         if progress <= 0:
             canvas.alpha_composite(self.badge, self.badge_at)
 
@@ -1168,13 +1271,14 @@ class Fan(Cover):
         composite_at(canvas, final, x_pos, y_pos)
 
     def frame(self, phase):
-        current, following, progress = beats(phase, self.count, hold=0.66, curve=ease_back)
+        current, following, progress = beats(phase, self.count, hold=0.62, curve=ease_back)
+        # 扇子自己转动、停下时回弹，已经是它该有的动；底图不再跟着晃，只极缓地呼吸
         key = (current, round(progress, 4))
         if self._cached and self._cached[0] == key:
             return self._cached[1]
         blend = max(0.0, min(1.0, progress))
         ground = self.grounds[current] if blend <= 0 else Image.blend(self.grounds[current], self.grounds[following], blend)
-        canvas = ground.convert("RGBA")
+        canvas = slid(ground, breathe(phase, cycles=2, amount=0.026)).convert("RGBA")
         canvas.alpha_composite(self.shade)
         slots = sorted(range(-4, 6), key=lambda slot: -abs(slot - progress))
         for slot in slots:

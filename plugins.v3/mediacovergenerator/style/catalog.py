@@ -105,6 +105,16 @@ STYLE_CATALOG = [
         TypeSpec("glowheavy", "interblack", "intersemi", 256, 56,
                  main_tracking=0.02, main_tracking_latin=-0.025, sub_tracking=0.16, spacing=40, sub_upper=True),
     ),
+    StyleInfo(
+        11, "月洞", "深色墙上开一扇顶天的大拱龛，整幅海报装在卡纸里，片名刻在右侧墙上", "旧画顺着龛口滑上去，下一幅从下面推上来，墙的颜色跟着换", 3, True, None,
+        TypeSpec("serifblack", "dmserif", "intersemi", 228, 56,
+                 main_tracking=0.02, main_tracking_latin=-0.025, sub_tracking=0.16, spacing=32, sub_upper=True),
+    ),
+    StyleInfo(
+        12, "展墙", "纸墙上一块说明板写着竖排片名，横杆上挂着一排大小不一的画", "整排挂画缓缓向左滑过，一幅接一幅从板后出来", 3, True, None,
+        TypeSpec("serifblack", "dmserif", "intersemi", 236, 54,
+                 main_tracking=0.02, main_tracking_latin=-0.025, sub_tracking=0.16, spacing=30, sub_upper=True),
+    ),
 ]
 STYLE_COUNT = len(STYLE_CATALOG)
 

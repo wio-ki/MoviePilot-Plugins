@@ -60,10 +60,69 @@ CSS = """
 .mcg * { box-sizing: border-box; }
 .mcg-radio { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 
-/* 页头：标题、主要操作，下面一条拍板斜纹和一行场记板字段 */
-.mcg-top-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; padding: 4px 0 16px; }
-.mcg-top h2 { display: flex; align-items: center; font-size: 24px; line-height: 1.2; font-weight: 700; letter-spacing: .01em; margin: 0; font-variant-numeric: tabular-nums; }
-.mcg-top-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* 页头。窄屏：一行状态和操作，下面场记板。电脑端：左边状态、说明和操作，右边一排各媒体库现在的封面 */
+.mcg-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 16px; padding-top: 8px; }
+.mcg-top h2 { order: 1; display: flex; align-items: center; font-size: 24px; line-height: 1.2; font-weight: 700; letter-spacing: .01em; margin: 0 0 14px; font-variant-numeric: tabular-nums; }
+.mcg-top-actions { order: 2; display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.mcg-top .mcg-clap { order: 3; flex: 0 0 100%; }
+.mcg-top .mcg-slate { order: 4; flex: 0 0 100%; }
+.mcg-top-note { order: 5; flex: 0 0 100%; }
+/* 看台：页头下方一整行等分的格子，每个媒体库一格：空心序号、库名、它自己的风格，底下一条线连成墙裙。
+   挤不下的库折成第二行，每行的线各自连起来。没有封面图，只靠字和线分层；点一格就去给那个库换风格。窄屏不显示 */
+.mcg-reel {
+  display: none;
+  /* 一行放几格由 --mcg-cols 决定，窄了就用更少的列；每格至少 84px，多出来的库折到下一行 */
+  grid-template-columns: repeat(var(--mcg-cols, 10), minmax(84px, 1fr));
+}
+.mcg-frame {
+  position: relative; min-width: 0; display: flex; flex-direction: column;
+  padding: 0 14px 0; cursor: pointer;
+}
+.mcg-frame:first-child { padding-left: 0; }
+.mcg-frame:last-child { padding-right: 0; }
+/* 格与格之间的竖线，上面一段空着，和格子里第一行的字齐平 */
+.mcg-frame + .mcg-frame::before {
+  content: ""; position: absolute; left: 0; top: 4px; bottom: 18px; width: 1px; background: var(--k-rule);
+}
+/* 序号：空心字，笔画只有 1px，选中时描边变成点缀色 */
+.mcg-frame-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
+.mcg-frame-no {
+  font-family: var(--k-mono); font-size: 30px; line-height: 1; font-weight: 700; letter-spacing: -.03em;
+  font-variant-numeric: tabular-nums; color: transparent; -webkit-text-stroke: 1px var(--k-rule-2);
+  transition: -webkit-text-stroke-color .2s ease;
+}
+/* 格右上角的状态：生成过的是一个实心点，失败的偏红，正在生成的是一个转着的圈，没生成过只有一个空圈 */
+.mcg-frame-flag { flex: none; width: 6px; height: 6px; margin-top: 6px; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--k-rule-2); background: transparent; }
+.mcg-frame[data-ok] .mcg-frame-flag { background: var(--k-mint); box-shadow: none; }
+.mcg-frame[data-fail] .mcg-frame-flag { background: var(--k-bad); box-shadow: none; }
+.mcg-frame[data-now] .mcg-frame-flag {
+  width: 8px; height: 8px; margin-top: 5px; background: transparent; box-shadow: none;
+  border: 1.5px solid var(--k-mint); border-right-color: transparent; animation: mcg-spin 1s linear infinite;
+}
+@keyframes mcg-spin { to { transform: rotate(360deg); } }
+.mcg-frame-text { margin-top: 13px; font-size: 14px; font-weight: 700; line-height: 1.3; letter-spacing: .01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mcg-frame-sub { margin-top: 5px; font-family: var(--k-mono); font-size: 11px; line-height: 1.4; color: var(--k-ink-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 格底一条线，连起来就是这一行的墙裙；还没生成过的库，那条线是虚的 */
+.mcg-frame-rule { margin-top: auto; padding-top: 12px; }
+.mcg-frame-rule span { display: block; height: 2px; background: var(--k-rule); transition: background-color .2s ease; }
+.mcg-frame:hover .mcg-frame-rule span { background: var(--k-rule-2); }
+.mcg-frame-on .mcg-frame-no { -webkit-text-stroke-color: var(--k-accent); }
+.mcg-frame-on .mcg-frame-text { color: var(--k-accent); }
+.mcg-frame-on .mcg-frame-rule span { background: var(--k-accent); }
+/* 正在拍的那一格：线变成薄荷色，一道光从左往右扫 */
+.mcg-frame[data-now] .mcg-frame-rule span { position: relative; overflow: hidden; background: var(--k-mint); }
+.mcg-frame[data-now] .mcg-frame-rule span::after {
+  content: ""; position: absolute; inset: 0; width: 45%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .75), transparent);
+  animation: mcg-sweep 1.5s ease-in-out infinite;
+}
+@keyframes mcg-sweep { 0% { transform: translateX(-100%); } 100% { transform: translateX(320%); } }
+/* 库里还没有封面：库名和风格淡一些，读起来是「待办」而不是「坏了」 */
+.mcg-frame-empty .mcg-frame-text { color: var(--k-ink-2); font-weight: 600; }
+/* 场记板：进度条下面是四个字段，细线分隔。电脑端收成一条，和进度条同高 */
+.mcg-slate { display: grid; grid-template-columns: repeat(var(--mcg-n, 4), minmax(0, 1fr)); overflow: hidden; border-bottom: 1px solid var(--k-rule); }
 /* 拍板条：空闲时是静止的斜纹，生成时薄荷色的部分就是进度 */
 .mcg-clap {
   position: relative; height: 8px; border-radius: 2px; overflow: hidden;
@@ -76,7 +135,6 @@ CSS = """
   animation: mcg-roll .9s linear infinite;
 }
 @keyframes mcg-roll { to { transform: translateX(-16.97px); } }
-.mcg-slate { display: grid; grid-template-columns: repeat(var(--mcg-n, 4), minmax(0, 1fr)); overflow: hidden; border-bottom: 1px solid var(--k-rule); }
 .mcg-field { padding: 12px 16px; min-width: 0; box-shadow: -1px 0 0 var(--k-rule), 0 -1px 0 var(--k-rule); }
 .mcg-field:first-child { padding-left: 0; }
 .mcg-field-label { font-size: 12px; color: var(--k-ink-3); letter-spacing: .06em; }
@@ -254,19 +312,31 @@ CSS = """
 .mcg-editor-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .mcg-toggle-label { font-size: 12px; color: var(--k-ink-2); margin-bottom: 8px; }
 
-/* 电脑端把状态、场记板字段和操作收在同一行，窄屏保持原版式 */
-@container mcg (min-width: 1160px) {
-  .mcg-top { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 32px; align-items: center; }
-  .mcg-top-row { display: contents; }
-  .mcg-top h2 { order: 1; grid-column: 1; }
-  .mcg-slate { order: 2; grid-column: 2; display: flex; overflow: visible; border-bottom: 0; min-width: 0; }
-  .mcg-top-actions { order: 3; grid-column: 3; }
-  .mcg-field { flex: 0 1 auto; padding: 4px 24px; box-shadow: -1px 0 0 var(--k-rule); }
-  .mcg-field:first-child { padding-left: 24px; }
-  .mcg-field-value { max-width: 280px; }
-  .mcg-clap { order: 4; grid-column: 1 / -1; margin-top: 16px; }
-  .mcg-top-note { order: 5; grid-column: 1 / -1; }
+/* 电脑端。弹窗宽度和窗口宽度无关，所以按容器宽度判断。有媒体库时页头分两栏；没有时保持上面那一行 */
+@container mcg (min-width: 760px) {
+  /* 看台占满页头整行：上面一行是状态和操作，下面整面墙，再下是场记板和字段 */
+  .mcg-top-rail {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "status actions" "note note" "rail rail" "clap clap" "slate slate"; gap: 0 24px; align-items: start;
+  }
+  .mcg-top-rail h2 { grid-area: status; font-size: 28px; margin: 0; }
+  .mcg-top-rail .mcg-top-note { grid-area: note; padding-top: 8px; }
+  .mcg-top-rail .mcg-top-actions { grid-area: actions; align-self: center; margin: 0; }
+  .mcg-top-rail .mcg-clap { grid-area: clap; margin-top: 26px; }
+  .mcg-top-rail .mcg-slate { grid-area: slate; }
+  /* 看台占满页头整行：上面一行是状态和操作，下面整行格子，再下是场记板和字段 */
+  .mcg-reel { grid-area: rail; display: grid; margin: 14px 0 2px; }
+  .mcg-reel .mcg-frame { padding-bottom: 2px; }
+  .mcg-reel .mcg-frame-no { font-size: 32px; }
+  .mcg-reel .mcg-frame-text { font-size: 14px; }
+  .mcg-field { padding: 10px 16px; }
+  .mcg-field-label { font-size: 12px; }
+  .mcg-field-value { margin-top: 2px; }
 }
+@property --mcg-fade-l { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --mcg-fade-r { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@keyframes mcg-fade-l { from { --mcg-fade-l: 0px; } to { --mcg-fade-l: 56px; } }
+@keyframes mcg-fade-r { from { --mcg-fade-r: 56px; } to { --mcg-fade-r: 0px; } }
 
 @media (max-width: 600px) {
   .mcg-top h2 { font-size: 20px; }
@@ -318,6 +388,10 @@ def span(cls: Optional[str] = None, text: Optional[str] = None, **props) -> Dict
     return node("span", cls=cls, text=text, **props)
 
 
+def b(text: str, cls: Optional[str] = None) -> Dict[str, Any]:
+    return node("b", cls=cls, text=text)
+
+
 def icon(name: str, size: int = 18, cls: Optional[str] = None) -> Dict[str, Any]:
     # 渲染器总会传默认插槽，VIcon 有插槽时忽略 icon 属性，所以图标名要放在 text 里
     return node("VIcon", cls=cls, text=name, size=size)
@@ -328,11 +402,13 @@ def post(api_prefix: str, path: str) -> Dict[str, Any]:
 
 
 def button(label: str, kind: str, api_prefix: str, path: str, prepend: Optional[str] = None,
-           size: str = "default") -> Dict[str, Any]:
+           size: str = "default", mark: str = "") -> Dict[str, Any]:
     props: Dict[str, Any] = {"variant": "flat", "size": size}
     if prepend:
         props["prepend-icon"] = prepend
-    return node("VBtn", cls=f"mcg-btn mcg-btn-{kind}", text=label, events=post(api_prefix, path), **props)
+    # mark 是给咔嗒认按钮用的类名，不带样式
+    return node("VBtn", cls=f"mcg-btn mcg-btn-{kind}" + (f" {mark}" if mark else ""), text=label,
+                events=post(api_prefix, path), **props)
 
 
 def style_label(index: int, variant: str) -> str:
@@ -379,6 +455,51 @@ def _preview_media(entry, show_motion: Any, asset_base: str, local: Optional[Dic
 # ---------------------------------------------------------------- 详情页
 
 
+def _task_library(task: Dict[str, Any]) -> str:
+    """正在处理的媒体库名。任务里记的是「服务器：媒体库」，入库触发时后面还带一个说明。"""
+    return str(task.get("current") or "").split("：", 1)[-1].replace("（入库更新）", "").strip()
+
+
+def _reel(ctx: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    页头的看台：一整行等分的格子，每个媒体库一格。格子里只有字和线，没有封面图：
+    一个空心的大号序号、右上角一个表示上次结果的小点、库名和它自己的风格，格底一条线连成墙裙。
+    点一格就去给那个库换风格。类名沿用 mcg-reel / mcg-frame，咔嗒靠它们找到这一排和它站上去的沿。
+    """
+    libraries = ctx["libraries"]
+    if not libraries:
+        return None
+    prefix = ctx["api_prefix"]
+    current = _task_library(ctx["task"]) if ctx["task"].get("running") else ""
+    frames = []
+    for position, library in enumerate(libraries, 1):
+        name = library["name"]
+        status = library.get("status") or {}
+        props: Dict[str, Any] = {"title": f"{name}：点这里给它换风格", "data-lib": name}
+        if current and name == current:
+            props["data-now"] = ""
+        elif status:
+            props["data-ok" if status.get("ok") else "data-fail"] = ""
+        # 单独设过风格就写出来，跟随默认时写「跟随默认」
+        note = (numbered_label(library["own_index"], library["own_variant"])
+                if library.get("own_style") else "跟随默认")
+        cls = "mcg-frame"
+        if not library.get("thumb") and not status:
+            cls += " mcg-frame-empty"
+            note = "等待第一次生成"
+        if library["key"] == ctx.get("style_target"):
+            cls += " mcg-frame-on"
+        frames.append(node("span", cls=cls, events=post(prefix, f"style_target?library={library['encoded_key']}&tab=style"),
+                           content=[
+                               div("mcg-frame-head", span("mcg-frame-no", f"{position:02d}"), span("mcg-frame-flag")),
+                               div("mcg-frame-text", text=name, title=name),
+                               div("mcg-frame-sub", text=note, title=note),
+                               div("mcg-frame-rule", span(None)),
+                           ], **props))
+    # 行内直接给出列数：库里少时格子不撑满一行，多了才会折到第二行
+    return div("mcg-reel", *frames, style=f"--mcg-cols:{min(len(libraries), 10)}")
+
+
 def _top(ctx: Dict[str, Any]) -> Dict[str, Any]:
     task = ctx["task"]
     prefix = ctx["api_prefix"]
@@ -389,13 +510,13 @@ def _top(ctx: Dict[str, Any]) -> Dict[str, Any]:
         # 同一组按钮按当前页签各渲染一份，操作后刷新页面时能留在原页签
         if running:
             actions = [
-                button("刷新进度", "line", prefix, f"refresh?tab={tab}", "mdi-refresh"),
+                button("刷新进度", "line", prefix, f"refresh?tab={tab}", "mdi-refresh", mark="mcg-act-refresh"),
                 button("停止", "danger", prefix, f"stop_task?tab={tab}", "mdi-stop"),
             ]
         else:
             actions = [
-                button("刷新", "line", prefix, f"refresh?tab={tab}", "mdi-refresh"),
-                button("生成全部封面", "solid", prefix, f"generate_now?tab={tab}", "mdi-play"),
+                button("刷新", "line", prefix, f"refresh?tab={tab}", "mdi-refresh", mark="mcg-act-refresh"),
+                button("生成全部封面", "solid", prefix, f"generate_now?tab={tab}", "mdi-play", mark="mcg-act-go"),
             ]
         action_groups.append(div(f"mcg-when mcg-when-{tab}", *actions))
 
@@ -403,11 +524,12 @@ def _top(ctx: Dict[str, Any]) -> Dict[str, Any]:
     done = min(total, int(task.get("done") or 0))
     # 弹窗的标题栏已经写着插件名，页头不重复，最大的字留给当前状态
     if running:
-        status = [span("mcg-dot mcg-dot-run"), span(None, f"正在生成 {done}/{total}" if task.get("total") else "正在生成")]
+        status = [span("mcg-dot mcg-dot-run"),
+                  span("mcg-status-text", f"正在生成 {done}/{total}" if task.get("total") else "正在生成")]
     elif not ctx["enabled"]:
-        status = [span("mcg-dot mcg-dot-off"), span(None, "未启用")]
+        status = [span("mcg-dot mcg-dot-off"), span("mcg-status-text", "未启用")]
     else:
-        status = [span("mcg-dot mcg-dot-ok"), span(None, "空闲")]
+        status = [span("mcg-dot mcg-dot-ok"), span("mcg-status-text", "空闲")]
 
     libraries = ctx["libraries"]
     own_styles = sum(1 for library in libraries if library.get("own_style"))
@@ -425,26 +547,34 @@ def _top(ctx: Dict[str, Any]) -> Dict[str, Any]:
     def field(label, value):
         return div("mcg-field", div("mcg-field-label", text=label), div("mcg-field-value", text=value, title=value))
 
-    children: List[dict] = [
-        div("mcg-top-row", node("h2", content=status), div("mcg-top-actions", *action_groups)),
-    ]
+    note = None
+    if running:
+        current = _task_library(task)
+        text = f"正在处理：{current}" if current else "正在准备…"
+        # 咔嗒开着时，这一行、上面的进度和数字都由它实时更新，不用手动刷新
+        note = div("mcg-top-note mcg-top-now", text=f"{text}（可以关掉窗口，后台继续）")
+    elif ctx.get("last_result"):
+        note = div("mcg-top-note", text=ctx["last_result"])
+    elif ctx["enabled"] and libraries and not ctx["warnings"] and not ctx.get("last_run_text"):
+        # 保存设置不会自动生成，第一次要手动点一下，否则看起来像插件没反应
+        note = div("mcg-top-note mcg-top-first",
+                   text="设置已生效。点「生成全部封面」开始第一次生成，之后会自动更新。")
+
+    # 顺序是电脑端左栏从上到下的阅读顺序；窄屏用 order 把说明放回场记板下面
+    reel = _reel(ctx)
+    children: List[dict] = [node("h2", content=status)]
+    if note:
+        children.append(note)
+    children.append(div("mcg-top-actions", *action_groups))
+    if reel:
+        children.append(reel)
     if running:
         percent = int(min(100, done * 100 / total)) if task.get("total") else 0
         children.append(div("mcg-clap", div("mcg-clap-fill", style=f"width:{max(percent, 3)}%")))
     else:
         children.append(div("mcg-clap"))
     children.append(div("mcg-slate", *[field(*item) for item in fields], style=f"--mcg-n:{len(fields)}"))
-    if running:
-        current = task.get("current")
-        note = f"正在处理：{current}" if current else "正在准备…"
-        children.append(div("mcg-top-note", text=f"{note}（生成在后台进行，可以关掉这个窗口）"))
-    elif ctx.get("last_result"):
-        children.append(div("mcg-top-note", text=ctx["last_result"]))
-    elif ctx["enabled"] and libraries and not ctx["warnings"] and not ctx.get("last_run_text"):
-        # 保存设置不会自动生成，第一次要手动点一下，否则看起来像插件没反应
-        children.append(div("mcg-top-note",
-                            text="设置已生效。点右上角「生成全部封面」开始第一次生成，之后新片入库或定时任务会自动更新。"))
-    return div("mcg-top", *children)
+    return div("mcg-top mcg-top-rail" if reel else "mcg-top", *children)
 
 
 BULK_ARMED = ("reset_styles", "assign_styles", "assign_generate")
@@ -883,9 +1013,9 @@ def _basic_tab(ctx: Dict[str, Any]) -> List[dict]:
                 _col(node("VCronField", model="cron", label="定时更新", placeholder="5 位 cron 表达式，留空不启用",
                           density="comfortable", variant="outlined", color=ACCENT), 4),
                 _col(_switch("rotate_style", "定时轮换风格",
-                             "每次定时更新，默认风格换下一款；单独设置过风格的媒体库也各自换下一款，10 款轮完回到第 1 款"), 8),
+                             "每次定时更新，默认风格换下一款；单独设置过风格的媒体库也各自换下一款，12 款轮完回到第 1 款"), 8),
                 _col(_switch("pet_enabled", "插件宠物「咔嗒」",
-                             "一块会走路的场记板，开工喊 Action、收工喊 Cut；点它、拖它、擦它的黑板都有反应"), 4),
+                             "一块会走路的场记板。生成时替你盯进度、拍完自动刷新页面；摸它、喂它爆米花、把它放到页头那排封面上都有反应，右键它有菜单"), 4),
             ),
         ),
         _section(
