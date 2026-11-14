@@ -20,11 +20,11 @@
 
 | | | | |
 | :-: | :-: | :-: | :-: |
-| ![序幕](plugins.v3/mediacovergenerator/examples/style_1.webp) | ![巨幕](plugins.v3/mediacovergenerator/examples/style_2.webp) | ![404](plugins.v3/mediacovergenerator/examples/style_3.webp) | ![预告](plugins.v3/mediacovergenerator/examples/style_4.webp) |
+| ![序幕](images/style_1_motion.webp) | ![巨幕](images/style_2_motion.webp) | ![404](images/style_3_motion.webp) | ![预告](images/style_4_motion.webp) |
 | 序幕 | 巨幕 | 404 | 预告 |
-| ![环幕](plugins.v3/mediacovergenerator/examples/style_5.webp) | ![景深](plugins.v3/mediacovergenerator/examples/style_6.webp) | ![详情](plugins.v3/mediacovergenerator/examples/style_7.webp) | ![扇面](plugins.v3/mediacovergenerator/examples/style_8.webp) |
+| ![环幕](images/style_5_motion.webp) | ![景深](images/style_6_motion.webp) | ![详情](images/style_7_motion.webp) | ![扇面](images/style_8_motion.webp) |
 | 环幕 | 景深 | 详情 | 扇面 |
-| ![百叶](plugins.v3/mediacovergenerator/examples/style_9.webp) | ![对开](plugins.v3/mediacovergenerator/examples/style_10.webp) | ![月洞](plugins.v3/mediacovergenerator/examples/style_11.webp) | ![展墙](plugins.v3/mediacovergenerator/examples/style_12.webp) |
+| ![百叶](images/style_9_motion.webp) | ![对开](images/style_10_motion.webp) | ![月洞](images/style_11_motion.webp) | ![展墙](images/style_12_motion.webp) |
 | 百叶 | 对开 | 月洞 | 展墙 |
 
 百叶、对开、月洞、展墙是海报系列，完整保留竖版海报，配色跟着每张海报走：百叶是片名在左、海报在右，整幅画面像百叶窗一样逐条翻面；对开是左边的海报从上往下切入，右边取自海报的色块带着片名从下往上升起，前后两张的颜色不会重样，黄色、黄绿这类压暗会发脏的颜色做成浅色块配深色字；月洞是深色墙上开一扇顶天的大拱龛，画装在龛里，换片时旧画顺着龛口滑上去、下一幅从下面推上来，片名刻在右侧的墙上；展墙是纸墙上一块说明板写着竖排片名，横杆上挂着一排大小不一的画，整排缓缓向左滑过，一幅接一幅从板后出来。
