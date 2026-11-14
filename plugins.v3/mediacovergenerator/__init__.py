@@ -150,7 +150,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标（前端按地址缓存图标，换图时要换文件名）
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/animated-cover.png"
     # 插件版本
-    plugin_version = "2.2.0"
+    plugin_version = "2.2.1"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -1198,13 +1198,17 @@ class MediaCoverGenerator(_PluginBase):
         match = EXAMPLE_NAME_PATTERN.fullmatch(name)
         if not match or (match.group(1) is not None and not 1 <= int(match.group(1)) <= STYLE_COUNT):
             return Response(status_code=404)
-        for root in (Path(__file__).parent / "examples", self.get_data_path() / "examples"):
+        for root in (Path(__file__).parent / "examples", self.__example_cache_dir()):
             target = root / name
             if target.is_file() and target.resolve().parent == root.resolve():
                 return FileResponse(str(target), media_type="image/webp",
                                     headers={"Cache-Control": "public, max-age=604800"})
         self.__queue_example_download(name)
         return RedirectResponse(EXAMPLE_BASE_URL + name, status_code=302, headers={"Cache-Control": "no-store"})
+
+    def __example_cache_dir(self) -> Path:
+        """示例图缓存按插件版本分目录，升级后旧图自然失效，重新下载当前版本的示例。"""
+        return self.get_data_path() / "examples" / self.plugin_version
 
     def __queue_example_download(self, name: str):
         with self._example_lock:
@@ -1226,7 +1230,7 @@ class MediaCoverGenerator(_PluginBase):
         temporary = None
         try:
             import requests
-            target = self.get_data_path() / "examples" / name
+            target = self.__example_cache_dir() / name
             temporary = target.with_suffix(f".{secrets.token_hex(8)}.temp")
             target.parent.mkdir(parents=True, exist_ok=True)
             for strategy, url, proxies in self.__download_strategies(EXAMPLE_BASE_URL + name):
