@@ -142,6 +142,11 @@ LIBRARY_CACHE_SECONDS = 120
 THUMBNAIL_CACHE_SIZE = 256
 
 
+def _api_root(service) -> str:
+    """MoviePilot 会把 [HOST] 替换为带尾斜杠的服务器地址（含反代子路径）。"""
+    return "[HOST]" if service.type == "jellyfin" else "[HOST]emby/"
+
+
 class MediaCoverGenerator(_PluginBase):
     # 插件名称
     plugin_name = "动态封面工坊"
@@ -150,7 +155,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标（前端按地址缓存图标，换图时要换文件名）
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/animated-cover.png"
     # 插件版本
-    plugin_version = "2.2.1"
+    plugin_version = "2.2.2"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -2735,7 +2740,7 @@ class MediaCoverGenerator(_PluginBase):
         if item_id not in sizes:
             sizes[item_id] = {}
             try:
-                response = service.instance.get_data(url=f'[HOST]emby/Items/{item_id}/Images?api_key=[APIKEY]')
+                response = service.instance.get_data(url=f'{_api_root(service)}Items/{item_id}/Images?api_key=[APIKEY]')
                 if response is not None and response.status_code == 200:
                     for info in response.json() or []:
                         width, height = int(info.get("Width") or 0), int(info.get("Height") or 0)
@@ -2758,7 +2763,7 @@ class MediaCoverGenerator(_PluginBase):
         """下载一张小图打分。失败时返回 None，按合格处理。"""
         if not candidate:
             return None
-        url = (f'[HOST]emby/Items/{candidate[0]}/Images/{candidate[1]}?tag={candidate[2]}&api_key=[APIKEY]'
+        url = (f'{_api_root(service)}Items/{candidate[0]}/Images/{candidate[1]}?tag={candidate[2]}&api_key=[APIKEY]'
                f'&maxWidth={SELECTION_PREVIEW_SIZE}&maxHeight={SELECTION_PREVIEW_SIZE}')
         try:
             response = service.instance.get_data(url=url)
@@ -2851,8 +2856,8 @@ class MediaCoverGenerator(_PluginBase):
         valid_items = []
         common = 'api_key=[APIKEY]&UserId=[USER]&EnableImages=true&Limit=100'
         for url in (
-            f'[HOST]emby/LiveTv/Programs?{common}&IsAiring=true',
-            f'[HOST]emby/LiveTv/Channels?{common}',
+            f'{_api_root(service)}LiveTv/Programs?{common}&IsAiring=true',
+            f'{_api_root(service)}LiveTv/Channels?{common}',
         ):
             if self._event.is_set():
                 return False
@@ -2984,7 +2989,7 @@ class MediaCoverGenerator(_PluginBase):
                 if not exact_types and include_types in ('Movie,Series', 'Movie,Episode'):
                     include_types = 'Movie,Episode'
 
-            url = f'[HOST]emby/Items/?api_key=[APIKEY]' \
+            url = f'{_api_root(service)}Items/?api_key=[APIKEY]' \
                   f'&ParentId={parent_id}&SortBy={sort_by}&Limit={limit}' \
                   f'&StartIndex={offset}&IncludeItemTypes={include_types}' \
                   f'&Recursive=True&SortOrder=Descending&Fields=Genres,ProductionYear'
@@ -3085,7 +3090,7 @@ class MediaCoverGenerator(_PluginBase):
             if self._event.is_set():
                 logger.info("检测到停止信号，中断图片下载 ...")
                 return False
-            urls = self.__material_urls(item)
+            urls = self.__material_urls(service, item)
             if not urls:
                 continue
             number = count + 1
@@ -3189,9 +3194,9 @@ class MediaCoverGenerator(_PluginBase):
         libraries = []
         try:
             if service.type in EMBY_COMPATIBLE_TYPES:
-                url = f'[HOST]emby/Library/VirtualFolders/Query?api_key=[APIKEY]'
+                url = f'{_api_root(service)}Library/VirtualFolders/Query?api_key=[APIKEY]'
             else:
-                url = f'[HOST]emby/Library/VirtualFolders/?api_key=[APIKEY]'
+                url = f'{_api_root(service)}Library/VirtualFolders?api_key=[APIKEY]'
             res = service.instance.get_data(url=url)
             if res:
                 data = res.json()
@@ -3204,7 +3209,7 @@ class MediaCoverGenerator(_PluginBase):
     def __get_view_libraries(self, service, libraries, live_tv_only: bool = True) -> List[Dict[str, Any]]:
         """电视直播不是虚拟文件夹，VirtualFolders 接口查不到，要从用户视图里补上。"""
         try:
-            res = service.instance.get_data(url='[HOST]emby/Users/[USER]/Views?api_key=[APIKEY]')
+            res = service.instance.get_data(url=f'{_api_root(service)}Users/[USER]/Views?api_key=[APIKEY]')
             if not res:
                 return []
             known_ids = {str(library.get("Id") or library.get("ItemId")) for library in libraries}
@@ -3320,9 +3325,9 @@ class MediaCoverGenerator(_PluginBase):
         return [*tall, *wide] if self.__prefer_primary() else [*wide, *tall]
 
     @staticmethod
-    def __image_url(candidate: Tuple[Any, str, Any], sized: bool = False) -> str:
+    def __image_path(candidate: Tuple[Any, str, Any], sized: bool = False) -> str:
         item_id, image_path, tag = candidate
-        url = f'[HOST]emby/Items/{item_id}/Images/{image_path}?tag={tag}&api_key=[APIKEY]'
+        url = f'Items/{item_id}/Images/{image_path}?tag={tag}&api_key=[APIKEY]'
         if sized:
             url += f'&maxWidth={MATERIAL_MAX_SIZE}&maxHeight={MATERIAL_MAX_SIZE}'
         return url
@@ -3332,9 +3337,9 @@ class MediaCoverGenerator(_PluginBase):
         从媒体项信息中获取图片URL
         """
         candidates = self.__image_candidates(item)
-        return self.__image_url(candidates[0]) if candidates else None
+        return self.__image_path(candidates[0]) if candidates else None
 
-    def __material_urls(self, item) -> List[str]:
+    def __material_urls(self, service, item) -> List[str]:
         """
         这个条目要下载的图。第一张可用的是首选图，之后第一张可用的是另一种比例的备用图。
         用户指定只用海报或只用背景图时，只有另一种完全没有才用。
@@ -3351,7 +3356,7 @@ class MediaCoverGenerator(_PluginBase):
             ordered = tall or wide
         else:
             ordered = wide or tall
-        return [self.__image_url(candidate, sized=True) for candidate in ordered]
+        return [_api_root(service) + self.__image_path(candidate, sized=True) for candidate in ordered]
 
     def __get_item_id(self, item):
         """
@@ -3468,7 +3473,7 @@ class MediaCoverGenerator(_PluginBase):
             else:
                 library_id = library.get("ItemId")
 
-            url = f'[HOST]emby/Items/{library_id}/Images/Primary?api_key=[APIKEY]'
+            url = f'{_api_root(service)}Items/{library_id}/Images/Primary?api_key=[APIKEY]'
             # 根据 base64 前几个字节简单判断格式
             content_type = "image/png"
             extension = "png"
