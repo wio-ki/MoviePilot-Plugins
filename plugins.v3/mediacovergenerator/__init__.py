@@ -76,7 +76,7 @@ COVER_NAME_PATTERN = re.compile(
     re.IGNORECASE,
 )
 LIVE_TV_TYPE = "livetv"
-# 极影视（极空间）走 Emby 兼容接口，媒体库 ID 字段和上传方式都按 Emby 处理
+# 极影视（极空间）走 Emby 兼容接口
 EMBY_COMPATIBLE_TYPES = ("emby", "zspace")
 SUPPORTED_SERVER_TYPES = EMBY_COMPATIBLE_TYPES + ("jellyfin",)
 SERVER_TYPE_NAMES = {"emby": "Emby", "zspace": "极影视", "jellyfin": "Jellyfin", "plex": "Plex",
@@ -155,7 +155,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标（前端按地址缓存图标，换图时要换文件名）
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/animated-cover.png"
     # 插件版本
-    plugin_version = "2.2.2"
+    plugin_version = "2.2.3"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -3201,9 +3201,16 @@ class MediaCoverGenerator(_PluginBase):
             if res:
                 data = res.json()
                 libraries = data.get("Items", []) if service.type in EMBY_COMPATIBLE_TYPES else data
+                if service.type == "zspace":
+                    # 新固件可能只填 ItemId，查询条目和上传封面都需要用它作为库 Id。
+                    libraries = [
+                        {**library, "Id": library.get("Id") or library["ItemId"]}
+                        for library in libraries or []
+                        if isinstance(library, dict) and (library.get("Id") or library.get("ItemId"))
+                    ]
         except Exception as err:
             logger.error(f"获取媒体库列表失败：{str(err)}")
-        # 极影视没有实现 VirtualFolders/Query（返回 404），这时整份媒体库列表都从用户视图里取
+        # 旧版极影视返回 404。没有可用虚拟文件夹时，从用户视图读取全部媒体库。
         return [*libraries, *self.__get_view_libraries(service, libraries, live_tv_only=bool(libraries))]
 
     def __get_view_libraries(self, service, libraries, live_tv_only: bool = True) -> List[Dict[str, Any]]:
