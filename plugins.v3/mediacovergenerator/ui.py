@@ -478,7 +478,7 @@ def _reel(ctx: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         props: Dict[str, Any] = {"title": f"{name}：点这里给它换风格", "data-lib": name}
         if current and name == current:
             props["data-now"] = ""
-        elif status:
+        elif status and status.get("outcome") not in ("skipped", "local"):
             props["data-ok" if status.get("ok") else "data-fail"] = ""
         # 单独设过风格就写出来，跟随默认时写「跟随默认」
         note = (numbered_label(library["own_index"], library["own_variant"])
@@ -752,8 +752,10 @@ def _libraries_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
             tags = [span("mcg-chip", "跟随默认")]
         status = library.get("status") or {}
         if status:
-            tags.append(span("mcg-chip " + ("mcg-chip-ok" if status.get("ok") else "mcg-chip-bad"),
-                             "成功" if status.get("ok") else "失败"))
+            outcome = status.get("outcome") or ("uploaded" if status.get("ok") else "failed")
+            labels = {"uploaded": "已上传", "failed": "失败", "local": "已保存到本地", "skipped": "已跳过"}
+            tone = {"uploaded": " mcg-chip-ok", "failed": " mcg-chip-bad"}.get(outcome, "")
+            tags.append(span("mcg-chip" + tone, labels.get(outcome, outcome)))
         if not library.get("active"):
             tags.append(span("mcg-chip", "不参与批量更新"))
         if status and not status.get("ok") and status.get("message"):
@@ -771,6 +773,12 @@ def _libraries_panel(ctx: Dict[str, Any]) -> Dict[str, Any]:
         if not running:
             actions.append(button("生成", "quiet", prefix,
                                   f"generate_now?library={library['encoded_key']}&tab=libraries", size="small"))
+            if library.get("zspace"):
+                target = f"generate_now?library={library['encoded_key']}&tab=libraries"
+                actions.extend([
+                    button("仅生成 GIF", "quiet", prefix, target + "&mode=local", size="small"),
+                    button("重试上传", "quiet", prefix, target + "&mode=retry", size="small"),
+                ])
         rows.append(div(
             "mcg-lib", art,
             div("mcg-lib-info", div("mcg-lib-name", text=library["name"], title=library["name"]),
@@ -1226,6 +1234,8 @@ def _storage_tab() -> List[dict]:
                            icon_name="mdi-image-multiple-outline", min=1, max=500), 4),
                 _col(_text("covers_output", "保存目录", "留空保存到插件数据目录；清理缓存时只删除插件生成的文件",
                            icon_name="mdi-folder-download", clearable=True), 12),
+                _col(_switch("zspace_scheduled_local", "极空间暂停上传时，定时生成本地 GIF",
+                             "默认跳过这些库。开启后，定时任务会把 GIF 写入保存目录。"), 12),
             ),
         ),
     ]
@@ -1278,6 +1288,7 @@ def default_form_model() -> Dict[str, Any]:
         "clean_images": False,
         "clean_fonts": False,
         "save_recent_covers": True,
+        "zspace_scheduled_local": False,
         "covers_history_limit_per_library": 10,
         "covers_page_history_limit": 50,
         "style_naming_v2": True,

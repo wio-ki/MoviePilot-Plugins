@@ -72,7 +72,7 @@ ALL_STYLES = STATIC_STYLES | ANIMATED_STYLES
 
 # 插件保存的封面文件名：时间戳[__媒体库名].扩展名（旧版本只有时间戳）
 COVER_NAME_PATTERN = re.compile(
-    r"^(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})(?:__(.+))?\.(jpg|jpeg|png|gif|apng|webp)$",
+    r"^\d{4}(?:-\d{2}){5}(?:-\d{6}-(?P<owner>[0-9a-f]{16}))?(?:__(?P<library>.+))?\.(jpg|jpeg|png|gif|apng|webp)$",
     re.IGNORECASE,
 )
 LIVE_TV_TYPE = "livetv"
@@ -155,7 +155,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标（前端按地址缓存图标，换图时要换文件名）
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/animated-cover.png"
     # 插件版本
-    plugin_version = "2.2.3"
+    plugin_version = "2.2.4"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -238,6 +238,7 @@ class MediaCoverGenerator(_PluginBase):
     _clean_images = False
     _clean_fonts = False
     _save_recent_covers = True
+    _zspace_scheduled_local = False
     _covers_history_limit_per_library = 10
     _covers_page_history_limit = 50
     _page_tab = "style"
@@ -289,6 +290,7 @@ class MediaCoverGenerator(_PluginBase):
         self._covers_path = data_path / 'input'
         self._font_path = data_path / 'fonts'
         self._library_styles = self.__load_library_styles()
+        self._zspace_scheduled_local = bool((config or {}).get("zspace_scheduled_local", False))
         if config:
             self._enabled = config.get("enabled")
             self._update_now = config.get("update_now")
@@ -620,6 +622,7 @@ class MediaCoverGenerator(_PluginBase):
             "clean_images": self._clean_images,
             "clean_fonts": self._clean_fonts,
             "save_recent_covers": self._save_recent_covers,
+            "zspace_scheduled_local": self._zspace_scheduled_local,
             "covers_history_limit_per_library": self._covers_history_limit_per_library,
             "covers_page_history_limit": self._covers_page_history_limit,
             "style_naming_v2": True,
@@ -995,18 +998,25 @@ class MediaCoverGenerator(_PluginBase):
             logger.error(f"【MediaCoverGenerator】删除封面文件失败: {e}", exc_info=True)
             return self.__api_response(False, f"封面文件删除失败: {e}")
 
-    def api_generate_now(self, library: str = "", tab: str = ""):
+    def api_generate_now(self, library: str = "", tab: str = "", mode: str = "update"):
         """启动后台生成并立即返回，进度显示在详情页。"""
         self.__set_page_tab(tab)
-        error = self.__start_generation(library)
+        if mode not in ("update", "local", "retry"):
+            return self.__api_response(False, "未知的封面操作")
+        if mode != "update" and not any(
+            item["value"] == library and getattr((self._servers or {}).get(item["server"]), "type", "") == "zspace"
+            for item in self._all_libraries
+        ):
+            return self.__api_response(False, "请选择一个极空间媒体库")
+        error = self.__start_generation(library, mode=mode)
         return self.__api_response(not error, error or "封面生成任务已在后台启动")
 
-    def __start_generation(self, library: str = "", prepare=None) -> str:
+    def __start_generation(self, library: str = "", prepare=None, mode: str = "update") -> str:
         # 检查、批量改风格和标记任务必须连续完成，避免两个生成请求同时通过检查。
         with self._generation_lock:
-            return self.__prepare_generation(library, prepare)
+            return self.__prepare_generation(library, prepare, mode)
 
-    def __prepare_generation(self, library: str, prepare) -> str:
+    def __prepare_generation(self, library: str, prepare, mode: str) -> str:
         if not self._enabled:
             return "插件未启用，请先在设置页启用插件并保存"
         if not self._selected_servers:
@@ -1026,7 +1036,7 @@ class MediaCoverGenerator(_PluginBase):
         try:
             threading.Thread(
                 target=self.__run_in_background,
-                args=((library or "").strip() or None, task),
+                args=((library or "").strip() or None, task, mode),
                 name="MediaCoverGenerator",
                 daemon=True,
             ).start()
@@ -1073,9 +1083,9 @@ class MediaCoverGenerator(_PluginBase):
         message = f"已按 1 到 {STYLE_COUNT} 的顺序给 {len(libraries)} 个媒体库分配动态风格"
         return self.__api_response(True, message + ("，已开始生成" if generate else ""))
 
-    def __run_in_background(self, library_key: Optional[str], task: Dict[str, Any]):
+    def __run_in_background(self, library_key: Optional[str], task: Dict[str, Any], mode: str):
         try:
-            self.__update_all_libraries(library_key=library_key)
+            self.__update_all_libraries(library_key=library_key, mode=mode)
         except Exception as e:
             logger.error(f"【MediaCoverGenerator】后台生成失败: {e}", exc_info=True)
         finally:
@@ -1596,7 +1606,7 @@ class MediaCoverGenerator(_PluginBase):
             self.save_data("library_styles", styles)
             self._library_styles = styles
             logger.info(f"定时轮换风格：默认使用「{style_info(next_index).name}」，{len(styles)} 个单独设置的媒体库各进一款")
-        return self.__update_all_libraries()
+        return self.__update_all_libraries(mode="scheduled")
 
     def stop_task(self):
         """
@@ -1863,6 +1873,7 @@ class MediaCoverGenerator(_PluginBase):
                 "server": library.get("server", ""),
                 "key": key,
                 "encoded_key": quote(key, safe=""),
+                "zspace": getattr((self._servers or {}).get(library.get("server")), "type", "") == "zspace",
                 "active": self.__in_batch(key, library.get("type")),
                 "status": status_map.get(key),
                 "thumb": (self.__thumb_url(cover, 480) if anonymous else
@@ -1933,11 +1944,12 @@ class MediaCoverGenerator(_PluginBase):
                     stat = file_path.stat()
                 except OSError:
                     continue
-                library = match.group(7) or ""
+                library = match["library"] or ""
                 items.append({
                     "name": file_path.name,
                     "file": file_path,
                     "library": library,
+                    "owner": match["owner"],
                     "title": library or "历史封面",
                     "mtime_ts": float(stat.st_mtime),
                     "mtime": datetime.datetime.fromtimestamp(stat.st_mtime).strftime("%m-%d %H:%M"),
@@ -1995,7 +2007,7 @@ class MediaCoverGenerator(_PluginBase):
     def __get_saved_cover_dirs(self) -> List[Path]:
         result: List[Path] = []
         if self._covers_output:
-            result.append(Path(self._covers_output))
+            result.append(Path(self._covers_output).expanduser())
         data_path = self.get_data_path()
         default_output = data_path / "output"
         result.append(default_output)
@@ -2249,19 +2261,18 @@ class MediaCoverGenerator(_PluginBase):
         self._current_updating_items.add(update_key)
         self._task = {"running": True, "total": 1, "done": 0, "current": f"{server}：{library['Name']}（入库更新）"}
         self._failure_reason = ""
-        message = ""
+        outcome, message = "failed", "入库更新中断"
         try:
-            # 安全地获取字体和翻译
-            try:
-                self.__get_fonts()
-            except Exception as e:
-                logger.error(f"初始化字体时出错: {e}")
-            updated = self.__update_library(service, library)
+            outcome, message = self.__update_library(service, library)
+            if outcome == "uploaded":
+                self.update_cover_history(server=server, library_id=library_id, item_id=item_id)
+            if outcome in ("uploaded", "skipped"):
+                self._monitor_batch_updated.add(update_key)
         except Exception as error:
             logger.error(f"入库监控更新媒体库 {library['Name']} 失败: {error}", exc_info=True)
-            updated = False
-            message = str(error)
+            outcome, message = "failed", str(error)
         finally:
+            self.__record_library_result(server, library_id, library['Name'], outcome, message, run_style)
             self._monitor_sort = ''
             self._run_style = None
             self._current_updating_items.discard(update_key)
@@ -2269,21 +2280,10 @@ class MediaCoverGenerator(_PluginBase):
             # 停止信号只针对当前任务，不能留给下一次入库更新
             self._event.clear()
             self._update_lock.release()
-        self.__record_library_result(server, library_id, library['Name'], bool(updated),
-                                     message or self._failure_reason, run_style)
-        if updated:
-            self._monitor_batch_updated.add(update_key)
-            self.update_cover_history(
-                server=server,
-                library_id=library_id,
-                item_id=item_id,
-            )
-            logger.info(f"媒体库 {server}：{library['Name']} 封面更新成功（入库监控）")
-        else:
-            logger.warning(f"媒体库 {server}：{library['Name']} 封面更新失败（入库监控）")
-        return updated
+        logger.info(f"媒体库 {server}：{library['Name']} 入库更新：{message or '已上传'}")
+        return outcome == "uploaded"
 
-    def __record_library_result(self, server, library_id, library_name, ok: bool, message: str = "", style: str = ""):
+    def __record_library_result(self, server, library_id, library_name, outcome: str, message: str, style: str):
         """记录每个媒体库最近一次的生成结果，显示在详情页。"""
         try:
             status_map = self.get_data("library_status") or {}
@@ -2291,7 +2291,8 @@ class MediaCoverGenerator(_PluginBase):
                 status_map = {}
             variant, index = self.__get_cover_style_parts(style)
             status_map[f"{server}-{library_id}"] = {
-                "ok": ok,
+                "ok": outcome == "uploaded",
+                "outcome": outcome,
                 "name": library_name,
                 "time": datetime.datetime.now().strftime("%m-%d %H:%M"),
                 "style": style_label(index, variant),
@@ -2301,7 +2302,8 @@ class MediaCoverGenerator(_PluginBase):
         except Exception as error:
             logger.debug(f"记录媒体库生成结果失败: {error}")
 
-    def __update_all_libraries(self, library_key: Optional[str] = None, send_notification: bool = True):
+    def __update_all_libraries(self, library_key: Optional[str] = None, send_notification: bool = True,
+                               mode: str = "update"):
         """
         更新媒体库封面。library_key 为空时更新全部（受「批量更新的媒体库」限制）。
         无论结果如何都返回一句结果说明。
@@ -2323,17 +2325,9 @@ class MediaCoverGenerator(_PluginBase):
         library_styles = dict(self._library_styles)
         self._run_style = default_style
         self._task = {"running": True, "total": 0, "done": 0, "current": ""}
-        total_success = 0
-        total_fail = 0
+        counts = {"uploaded": 0, "failed": 0, "local": 0, "skipped": 0}
         stopped = False
         try:
-            logger.info("开始检查字体 ...")
-            try:
-                self.__get_fonts()
-            except Exception as e:
-                logger.error(f"初始化过程中出错: {e}")
-                logger.warning("将尝试继续执行，但可能影响封面生成质量")
-
             variant, index = self.__get_cover_style_parts(default_style)
             logger.info(f"默认风格 {style_label(index, variant)}，{len(library_styles)} 个媒体库单独设置")
             targets = []
@@ -2360,33 +2354,31 @@ class MediaCoverGenerator(_PluginBase):
                     break
                 self._task["current"] = f"{server}：{library['Name']}"
                 self._failure_reason = ""
-                message = ""
                 self._run_style = library_styles.get(f"{server}-{library_id}") or default_style
                 try:
-                    updated = self.__update_library(service, library)
+                    outcome, message = self.__update_library(service, library, mode)
                 except Exception as error:
                     logger.error(f"媒体库 {server}：{library['Name']} 更新异常: {error}", exc_info=True)
-                    updated = False
-                    message = str(error)
-                if self._event.is_set() and not updated:
+                    outcome, message = "failed", str(error)
+                if self._event.is_set() and outcome == "failed":
                     stopped = True
                     break
-                self.__record_library_result(server, library_id, library['Name'], bool(updated),
-                                             message or self._failure_reason, self._run_style)
-                if updated:
-                    logger.info(f"媒体库 {server}：{library['Name']} 封面更新成功")
-                    total_success += 1
-                else:
-                    logger.warning(f"媒体库 {server}：{library['Name']} 封面更新失败")
-                    total_fail += 1
-                self._task["done"] = total_success + total_fail
+                self.__record_library_result(server, library_id, library['Name'], outcome, message, self._run_style)
+                log = logger.warning if outcome == "failed" else logger.info
+                log(f"媒体库 {server}：{library['Name']}：{message or '封面已上传'}")
+                counts[outcome] += 1
+                self._task["done"] = sum(counts.values())
         finally:
             if stopped:
-                tips = f"封面更新已停止，已完成 {total_success + total_fail} 个媒体库"
-            elif total_success + total_fail == 0:
+                tips = f"封面更新已停止，已处理 {sum(counts.values())} 个媒体库"
+            elif not any(counts.values()):
                 tips = "没有需要更新的媒体库"
             else:
-                tips = f"封面更新结束：成功 {total_success} 个，失败 {total_fail} 个"
+                tips = f"封面更新结束：成功 {counts['uploaded']} 个，失败 {counts['failed']} 个"
+                if counts["local"]:
+                    tips += f"，仅本地保存 {counts['local']} 个"
+                if counts["skipped"]:
+                    tips += f"，已跳过 {counts['skipped']} 个"
             logger.info(tips)
             # 先写结果再释放锁，页面看到任务结束时一定能读到这一轮的结果
             try:
@@ -2418,17 +2410,115 @@ class MediaCoverGenerator(_PluginBase):
             return key in self._include_libraries
         return library_type != LIVE_TV_TYPE
 
-    def __update_library(self, service, library):
+    @staticmethod
+    def __cover_owner(service, library_id) -> str:
+        # 同名库可能来自不同服务器，重试时必须按来源取成品。
+        identity = [service.name, getattr(service.instance, "_host", ""), str(library_id)]
+        return hashlib.sha256(json.dumps(identity).encode()).hexdigest()[:16]
+
+    def __zspace_upload_state(self, service):
+        key = "zspace_upload_" + hashlib.sha256(service.name.encode()).hexdigest()[:16]
+        config = getattr(service, "config", None)
+        if hasattr(config, "model_dump"):
+            config = config.model_dump(mode="json")
+        signature = hashlib.sha256(json.dumps([config, getattr(service.instance, "_host", ""),
+                                               getattr(service.instance, "user", None)],
+                                              sort_keys=True, default=str).encode()).hexdigest()
+        state = self.get_data(key) or {}
+        if (not isinstance(state, dict) or state.get("signature") != signature
+                or not isinstance(state.get("libraries"), list)):
+            new_state = {"signature": signature, "libraries": []}
+            if state:
+                self.save_data(key, new_state)
+            state = new_state
+        return key, state
+
+    def __retry_cover(self, service, library):
+        owner = self.__cover_owner(service, library["Id"])
+        name = self.__sanitize_filename(library["Name"])
+        covers = self.__list_saved_covers()
+        for cover in covers:
+            if cover["owner"] == owner:
+                return self.__resolve_saved_cover_path(cover["name"])
+        # 旧成品没有来源标记。多服务器或同名库时重新生成，避免把另一个库的图传上去。
+        try:
+            configs = self.mediaserver_helper.get_configs(include_disabled=True)
+        except (AttributeError, TypeError):
+            return None
+        if set(configs) != {service.name}:
+            return None
+        matches = [item for item in self._all_libraries if self.__sanitize_filename(item["library"]) == name]
+        if len(matches) == 1 and matches[0]["value"] == f"{service.name}-{library['Id']}":
+            for cover in covers:
+                if not cover["owner"] and cover["library"] == name:
+                    return self.__resolve_saved_cover_path(cover["name"])
+        return None
+
+    def __confirm_zspace_404(self, service, library_id, key, state):
+        """只在真实上传返回 404 后验证同一张库封面可读，再记录这个 ID。"""
+        if str(library_id) in state["libraries"]:
+            return
+        try:
+            url = f"{_api_root(service)}Items/{library_id}/Images/Primary?maxWidth=8&api_key=[APIKEY]"
+            res = service.instance.get_data(url=url)
+            if res is not None and res.status_code == 200 and res.content:
+                if res.headers.get("Content-Type", "").lower().startswith("image/"):
+                    self.save_data(key, {**state, "libraries": [*state["libraries"], str(library_id)]})
+        except Exception as error:
+            logger.debug(f"未能确认极空间封面是否可读：{error}")
+
+    def __update_library(self, service, library, mode="update"):
         self._pending_history = []
-        image_data = self.__build_library_image(service, library)
-        if not image_data or not self.__set_library_image(service, library, image_data):
-            return False
-        # 上传成功才算这些图用过。失败时不记录，入库更新才能重试
         library_id = library.get("Id") if service.type in EMBY_COMPATIBLE_TYPES else library.get("ItemId")
+        is_zspace = service.type == "zspace"
+        saved = None
+        if is_zspace:
+            key, state = self.__zspace_upload_state(service)
+            missing = state["libraries"]
+            if mode == "retry":
+                saved = self.__retry_cover(service, library)
+            elif mode != "local" and (str(library_id) in missing or len(missing) >= 2):
+                if mode == "scheduled" and self._zspace_scheduled_local:
+                    mode = "local"
+                else:
+                    return "skipped", "已跳过生成：极空间封面上传曾返回 404，可仅生成 GIF 或重试上传"
+        if saved:
+            image_data = base64.b64encode(saved.read_bytes()).decode("ascii")
+        else:
+            if mode == "local":
+                _, index = self.__get_cover_style_parts(self._run_style)
+                self._run_style = f"animated_{index}"
+                if not shutil.which("ffmpeg"):
+                    return "failed", "生成 GIF 需要 ffmpeg"
+            try:
+                self.__get_fonts()
+            except Exception as error:
+                logger.warning(f"初始化字体失败，将尝试继续生成：{error}")
+            image_data = self.__build_library_image(service, library)
+            if not image_data:
+                return "failed", self._failure_reason or "封面生成失败"
+            if mode == "local" and not image_data.startswith("R0lG"):
+                return "failed", "未能生成 GIF，请检查动图编码日志"
+            if mode == "local" or self._save_recent_covers:
+                owner = self.__cover_owner(service, library_id) if is_zspace else ""
+                saved = self.__save_image_to_local(image_data, library["Name"], owner)
+        if mode == "local":
+            if saved:
+                return "local", f"GIF 已保存到 {saved}"
+            return "failed", "GIF 已生成，但写入本地失败，请检查保存目录和权限"
+
+        status = self.__set_library_image(service, library, image_data)
+        if status not in (200, 204):
+            if is_zspace and status == 404:
+                self.__confirm_zspace_404(service, library_id, key, state)
+            detail = f"；成品已保存到 {saved}" if saved else ""
+            return "failed", self._failure_reason + detail
+        if is_zspace and missing and (mode == "retry" or str(library_id) in missing):
+            self.save_data(key, {**state, "libraries": []})
         for item_id in reversed(self._pending_history):
             self.update_cover_history(server=service.name, library_id=library_id, item_id=item_id)
         self._pending_history = []
-        return True
+        return "uploaded", ""
 
     def __build_library_image(self, service, library):
         """准备素材并生成封面图片，不上传。"""
@@ -3420,26 +3510,40 @@ class MediaCoverGenerator(_PluginBase):
         """日志里不写密钥。"""
         return re.sub(r"(api_key=)[^&]*", r"\1***", str(url))
 
-    def __save_image_to_local(self, image_content, server_name: str, library_name: str, extension: str):
-        """
-        保存图片到本地路径
-        """
+    @staticmethod
+    def __cover_extension(image_base64: str) -> str:
+        for prefix, extension in (("R0lG", "gif"), ("UklG", "webp"), ("/9j/", "jpg")):
+            if image_base64.startswith(prefix):
+                return extension
+        return "png"
+
+    def __save_image_to_local(self, image_base64, library_name: str, owner: str) -> Optional[Path]:
+        """先写临时文件，完整写入后才使封面对历史页和重试任务可见。"""
+        temp_path = None
         try:
-            if not self._save_recent_covers:
-                return
-            # 确保目录存在
             local_path = self.__get_recent_cover_output_dir()
             local_path.mkdir(parents=True, exist_ok=True)
 
             safe_library = self.__sanitize_filename(library_name) or "library"
-            timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-            ext = extension.strip(".").lower() if extension else "jpg"
+            now = datetime.datetime.now()
+            timestamp = now.strftime("%Y-%m-%d-%H-%M-%S")
+            if owner:
+                timestamp += f"-{now.microsecond:06d}-{owner}"
+            ext = self.__cover_extension(image_base64)
             file_path = local_path / f"{timestamp}__{safe_library}.{ext}"
-            file_path.write_bytes(image_content)
+            temp_path = local_path / f".mcg-{secrets.token_hex(12)}.tmp"
+            with temp_path.open("xb") as tmp:
+                tmp.write(base64.b64decode(image_base64, validate=True))
+            temp_path.replace(file_path)
             logger.info(f"图片已保存到本地: {file_path}")
             self.__trim_saved_cover_history(local_path)
+            return file_path
         except Exception as err:
             logger.error(f"保存图片到本地失败: {str(err)}")
+            return None
+        finally:
+            if temp_path:
+                temp_path.unlink(missing_ok=True)
 
     def __trim_saved_cover_history(self, local_path: Path):
         """按媒体库分别保留最新的若干张，只处理插件生成的文件。"""
@@ -3456,7 +3560,7 @@ class MediaCoverGenerator(_PluginBase):
             for file_path in Path(local_path).iterdir():
                 match = COVER_NAME_PATTERN.match(file_path.name)
                 if match and file_path.is_file():
-                    grouped[match.group(7) or ""].append(file_path)
+                    grouped[match["owner"] or match["library"] or ""].append(file_path)
             for files in grouped.values():
                 if len(files) <= limit:
                     continue
@@ -3468,12 +3572,8 @@ class MediaCoverGenerator(_PluginBase):
             logger.warning(f"清理历史封面失败: {e}")
 
 
-    def __set_library_image(self, service, library, image_base64):
-        """
-        设置媒体库封面
-        """
-
-        """设置Emby媒体库封面"""
+    def __set_library_image(self, service, library, image_base64) -> Optional[int]:
+        """返回服务器的真实上传状态，连接失败时记录原因。"""
         try:
             if service.type in EMBY_COMPATIBLE_TYPES:
                 library_id = library.get("Id")
@@ -3481,31 +3581,11 @@ class MediaCoverGenerator(_PluginBase):
                 library_id = library.get("ItemId")
 
             url = f'{_api_root(service)}Items/{library_id}/Images/Primary?api_key=[APIKEY]'
-            # 根据 base64 前几个字节简单判断格式
-            content_type = "image/png"
-            extension = "png"
-            if image_base64.startswith("R0lG"):
-                # Emby 只把存储的 GIF 发给 Accept 明确接受 GIF 的请求，其余都压成单帧 PNG。
-                # 标成 PNG 后存为 poster.png，无需缩小时 Emby 原样返回这份 GIF 数据
-                content_type = "image/png" if service.type in EMBY_COMPATIBLE_TYPES else "image/gif"
-                extension = "gif"
-            elif image_base64.startswith("UklG"):
-                content_type = "image/webp"
-                extension = "webp"
-            elif image_base64.startswith("iVBOR"):
+            extension = self.__cover_extension(image_base64)
+            content_type = "image/jpeg" if extension == "jpg" else f"image/{extension}"
+            if extension == "gif" and service.type in EMBY_COMPATIBLE_TYPES:
+                # Emby 以 PNG 类型存放时，兼容客户端可直接取回原始动图。
                 content_type = "image/png"
-                extension = "png"
-            elif image_base64.startswith("/9j/"):
-                content_type = "image/jpeg"
-                extension = "jpg"
-
-            # 在发送前保存一份图片到本地
-            if self._save_recent_covers:
-                try:
-                    image_bytes = base64.b64decode(image_base64)
-                    self.__save_image_to_local(image_bytes, service.name, library['Name'], extension)
-                except Exception as save_err:
-                    logger.error(f"保存发送前图片失败: {str(save_err)}")
 
             res = service.instance.post_data(
                 url=url,
@@ -3515,17 +3595,18 @@ class MediaCoverGenerator(_PluginBase):
                 }
             )
 
-            if res and res.status_code in [200, 204]:
-                return True
-            else:
-                status_code = res.status_code if res is not None else '无响应'
-                self._failure_reason = f"媒体服务器拒绝了封面上传（{status_code}）"
-                logger.error(f"设置「{library['Name']}」封面失败，错误码：{status_code}")
-                return False
+            status = res.status_code if res is not None else None
+            if status not in (200, 204):
+                self._failure_reason = {
+                    None: "封面上传未收到响应，请检查连接或超时",
+                    401: "封面上传认证失败（401）",
+                    403: "当前账号无权上传封面（403）",
+                }.get(status, f"媒体服务器拒绝了封面上传（{status}）")
+            return status
         except Exception as err:
             self._failure_reason = f"上传封面时出错：{err}"
             logger.error(f"设置「{library['Name']}」封面失败：{str(err)}")
-        return False
+        return None
 
     def clean_cover_history(self, save=True):
         history = self.get_data('cover_history') or []
