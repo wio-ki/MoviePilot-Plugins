@@ -34,6 +34,28 @@ TITLE_EXAMPLE = """# 按媒体库名称配置封面标题，名称需与媒体�
 """
 
 CSS = """
+/* 弹窗级 + ID 级主题隔离：使用 #mcg-page / #mcg-form 获得 (1,0,0) ID 级特异性，永久高于宿主任意类/属性主题规则 */
+.v-overlay__content:has(#mcg-page, #mcg-form),
+.v-overlay__content:has(#mcg-page, #mcg-form) :is(.v-card, .v-card-actions, .v-card-text),
+#mcg-page,
+#mcg-form {
+  --v-theme-primary: 47, 169, 124 !important;
+  --v-theme-on-primary: 255, 255, 255 !important;
+  --v-theme-info: 47, 169, 124 !important;
+  --mp-primary-fg: #2FA97C !important;
+  --mp-primary-soft: rgba(47, 169, 124, .14) !important;
+  --mp-primary-border: rgba(47, 169, 124, .38) !important;
+  --mp-info-fg: #2FA97C !important;
+  --mp-info-soft: rgba(47, 169, 124, .12) !important;
+  --mp-info-border: rgba(47, 169, 124, .32) !important;
+}
+.v-overlay__content:has(#mcg-page, #mcg-form) .v-card-actions .v-btn.bg-primary {
+  background: #2FA97C !important; background-color: #2FA97C !important; background-image: none !important;
+  border-color: transparent !important; color: #fff !important;
+}
+.v-overlay__content:has(#mcg-page, #mcg-form) .v-card-actions .v-btn.bg-primary:hover {
+  background: #28966D !important; background-color: #28966D !important;
+}
 .mcg {
   --k-ink: rgb(var(--v-theme-on-surface));
   --k-ink-2: rgba(var(--v-theme-on-surface), .68);
@@ -146,19 +168,23 @@ CSS = """
 @keyframes mcg-pulse { 0% { box-shadow: 0 0 0 0 rgba(88,221,163,.55); } 100% { box-shadow: 0 0 0 8px rgba(88,221,163,0); } }
 .mcg-top-note { font-size: 12px; color: var(--k-ink-2); padding-top: 8px; line-height: 1.6; }
 
-/* 按钮。重复类名是为了压过主题里 html[data-theme] .v-btn.bg-primary 这类高优先级规则 */
-.mcg .v-btn.mcg-btn.mcg-btn {
-  text-transform: none; letter-spacing: 0; font-weight: 600; border-radius: 8px; box-shadow: none; backdrop-filter: none;
+/* 按钮：基于 #mcg-page / #mcg-form 的 ID 级选择器 (1,2,0)+，无论宿主未来叠加多少主题属性类都无法覆盖 */
+:is(#mcg-page, #mcg-form) .v-btn.mcg-btn {
+  text-transform: none; letter-spacing: 0; font-weight: 600; border-radius: 8px; box-shadow: none !important; backdrop-filter: none !important;
+  background-image: none !important;
   transition: transform .15s ease, filter .15s ease, background-color .15s ease;
 }
-.mcg .v-btn.mcg-btn.mcg-btn-solid.mcg-btn-solid { background-color: var(--k-mint) !important; color: var(--k-mint-ink) !important; border-color: transparent !important; }
-.mcg .v-btn.mcg-btn.mcg-btn-line.mcg-btn-line { background-color: transparent !important; color: var(--k-ink) !important; border: 1px solid var(--k-rule-2) !important; }
-.mcg .v-btn.mcg-btn.mcg-btn-line.mcg-btn-line:hover { background-color: var(--k-fill) !important; }
-.mcg .v-btn.mcg-btn.mcg-btn-quiet.mcg-btn-quiet { background-color: var(--k-fill-2) !important; color: var(--k-ink) !important; border-color: transparent !important; }
-.mcg .v-btn.mcg-btn.mcg-btn-danger.mcg-btn-danger { background-color: transparent !important; color: var(--k-bad) !important; border: 1px solid rgba(217,96,74,.45) !important; }
-.mcg .v-btn.mcg-btn.mcg-btn:hover { filter: brightness(1.06); }
-.mcg .v-btn.mcg-btn.mcg-btn:active { transform: scale(.98); }
-.mcg .v-btn.mcg-btn.mcg-btn:focus-visible { outline: 2px solid var(--k-accent); outline-offset: 2px; }
+:is(#mcg-page, #mcg-form) .v-btn.mcg-btn-solid,
+:is(#mcg-page, #mcg-form) .v-btn.mcg-btn-solid:hover { background: var(--k-mint) !important; background-color: var(--k-mint) !important; background-image: none !important; color: var(--k-mint-ink) !important; border: 1px solid transparent !important; }
+:is(#mcg-page, #mcg-form) .v-btn.mcg-btn-line { background: transparent !important; background-color: transparent !important; background-image: none !important; color: var(--k-ink) !important; border: 1px solid var(--k-rule-2) !important; }
+:is(#mcg-page, #mcg-form) .v-btn.mcg-btn-line:hover { background: var(--k-fill) !important; background-color: var(--k-fill) !important; background-image: none !important; color: var(--k-ink) !important; border-color: var(--k-rule-2) !important; }
+:is(#mcg-page, #mcg-form) .v-btn.mcg-btn-quiet,
+:is(#mcg-page, #mcg-form) .v-btn.mcg-btn-quiet:hover { background: var(--k-fill-2) !important; background-color: var(--k-fill-2) !important; background-image: none !important; color: var(--k-ink) !important; border: 1px solid transparent !important; }
+:is(#mcg-page, #mcg-form) .v-btn.mcg-btn-danger,
+:is(#mcg-page, #mcg-form) .v-btn.mcg-btn-danger:hover { background: transparent !important; background-color: transparent !important; background-image: none !important; color: var(--k-bad) !important; border: 1px solid rgba(217,96,74,.45) !important; }
+:is(#mcg-page, #mcg-form) .v-btn.mcg-btn:hover { filter: brightness(1.06); }
+:is(#mcg-page, #mcg-form) .v-btn.mcg-btn:active { transform: scale(.98); }
+:is(#mcg-page, #mcg-form) .v-btn.mcg-btn:focus-visible { outline: 2px solid var(--k-accent); outline-offset: 2px; }
 
 /* 页签：单选框 + CSS，切换无需请求后端 */
 .mcg-tabs { display: flex; gap: 24px; margin: 16px 0 24px; border-bottom: 1px solid var(--k-rule); overflow-x: auto; scrollbar-width: none; }
@@ -308,7 +334,11 @@ CSS = """
 .mcg-section-head { margin-bottom: 16px; }
 .mcg-section-title { font-size: 16px; font-weight: 700; }
 .mcg-section-note { font-size: 12px; color: var(--k-ink-2); margin-top: 4px; line-height: 1.6; max-width: 46rem; }
-.mcg-editor { border-radius: 8px; overflow: hidden; border: 1px solid var(--k-rule); }
+.mcg-editor { border-radius: 8px; overflow: hidden; border: 1px solid var(--k-rule-2) !important; }
+#mcg-form .mcg-editor .ace_editor { border: 0 !important; box-shadow: none !important; }
+#mcg-form .ace_editor .ace_marker-layer .ace_active-line,
+#mcg-form .ace_editor .ace_marker-layer .ace_selection { background: rgba(47, 169, 124, .11) !important; }
+#mcg-form .ace_editor .ace_cursor { color: #2FA97C !important; }
 .mcg-editor-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .mcg-toggle-label { font-size: 12px; color: var(--k-ink-2); margin-bottom: 8px; }
 
@@ -426,7 +456,7 @@ def recommend_badge() -> Dict[str, Any]:
 def style_name(entry) -> List[dict]:
     """卡片上的风格名：序号、名字，新增的风格带一个标记。"""
     children = [span("mcg-no", f"{entry.index:02d}"), span(None, entry.name)]
-    if entry.index >= 9:
+    if entry.index >= 13:
         children.append(span("mcg-new", "NEW"))
     return children
 
@@ -901,6 +931,7 @@ def build_page(ctx: Dict[str, Any]) -> List[dict]:
             *([node("iframe", cls="mcg-pet-frame", src=ctx["pet"]["url"], title="咔嗒", tabindex="-1",
                     **{"aria-hidden": "true", "data-state": json.dumps(ctx["pet"]["state"], ensure_ascii=False)})]
               if ctx.get("pet") else []),
+            id="mcg-page",
         )
     ]
 
@@ -1021,7 +1052,7 @@ def _basic_tab(ctx: Dict[str, Any]) -> List[dict]:
                 _col(node("VCronField", model="cron", label="定时更新", placeholder="5 位 cron 表达式，留空不启用",
                           density="comfortable", variant="outlined", color=ACCENT), 4),
                 _col(_switch("rotate_style", "定时轮换风格",
-                             "每次定时更新，默认风格换下一款；单独设置过风格的媒体库也各自换下一款，12 款轮完回到第 1 款"), 8),
+                             f"每次定时更新，默认风格换下一款；单独设置过风格的媒体库也各自换下一款，{STYLE_COUNT} 款轮完回到第 1 款"), 8),
                 _col(_switch("pet_enabled", "插件宠物「咔嗒」",
                              "一块会走路的场记板。生成时替你盯进度、拍完自动刷新页面；摸它、喂它爆米花、把它放到页头那排封面上都有反应，右键它有菜单"), 4),
             ),
@@ -1048,7 +1079,7 @@ def _style_tab(ctx: Dict[str, Any]) -> List[dict]:
     return [
         _section(
             "mdi-palette-swatch-outline", "封面风格",
-            "这里是所有媒体库的默认风格。想给某个媒体库单独设置、让各媒体库依次用 01 到 10，或一键全部恢复默认，都在插件详情页里",
+            f"这里是所有媒体库的默认风格。想给某个媒体库单独设置、让各媒体库依次用 01 到 {STYLE_COUNT:02d}，或一键全部恢复默认，都在插件详情页里",
             div(None, _toggle("cover_style_variant", "输出类型",
                               [("animated", "GIF 动态封面"), ("static", "静态图片")], recommended="animated"),
                 style="margin-bottom:16px;max-width:380px;"),
@@ -1317,5 +1348,6 @@ def build_form(ctx: Dict[str, Any]) -> List[dict]:
                 "VWindow", model="tab",
                 content=[node("VWindowItem", value=key, content=body) for key, _label, _icon, body in tabs],
             ),
+            id="mcg-form",
         )
     ]

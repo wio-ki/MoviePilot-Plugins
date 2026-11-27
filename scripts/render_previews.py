@@ -31,6 +31,8 @@ STYLE_TITLES = {
     5: ("合集", "Collections"), 6: ("收藏", "Favorites"), 7: ("电影", "Movies"), 8: ("动漫", "Anime"),
     9: ("剧场版", "Theatrical"), 10: ("动画电影", "Animation"),
     11: ("日韩剧", "Jp&Kr Drama"), 12: ("纪录片", "Documentary"),
+    13: ("悬疑", "Mystery"), 14: ("经典", "Classics"),
+    15: ("院线", "Cinema"), 16: ("暗夜", "Nocturne"),
 }
 STATIC_SIZE = (640, 360)
 MOTION_SIZE = (480, 270)
@@ -56,6 +58,10 @@ STYLE_ART = {
     10: ["howl048", "chihiro032", "totoro029", "majo001", "mononoke048", "ponyo024"],
     11: ["howl044", "mononoke033", "chihiro020", "totoro036", "ponyo049", "majo011"],
     12: ["howl048", "chihiro043", "totoro041", "mononoke010"],
+    13: ["laputa036", "howl049", "chihiro020", "mononoke048", "majo011", "totoro036"],
+    14: ["chihiro045", "howl048", "totoro029", "mononoke033", "majo024", "ponyo049"],
+    15: ["howl044", "chihiro043", "laputa038", "mononoke010", "totoro041", "majo038"],
+    16: ["chihiro020", "mononoke048", "totoro036", "laputa036"],
 }
 TYPOGRAPHY_ART = ["howl044", "totoro029", "chihiro020", "majo011"]
 ART_SOURCES = {name: GALLERY.format(name)

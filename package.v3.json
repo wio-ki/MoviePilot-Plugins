@@ -1,15 +1,16 @@
 {
     "MediaCoverGenerator": {
         "name": "动态封面工坊",
-        "description": "让媒体库封面动起来：12 款 GIF 动态风格，Hills、yamby、小幻影视都能播放，支持 Emby/Jellyfin",
+        "description": "让媒体库封面动起来：16 款 GIF 动态风格，Hills、yamby、小幻影视都能播放，支持 Emby/Jellyfin",
         "labels": "动态封面,GIF,媒体库,Emby,Jellyfin",
-        "version": "2.2.4",
+        "version": "2.3.0",
         "icon": "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/animated-cover.png",
         "author": "Kioo",
         "level": 1,
         "release": false,
         "system_version": ">=3.0.0",
         "history": {
+            "v2.3.0": "新增 4 款动态封面风格（13–16）：焦距（现代微单取景器与 2.6× 暗钛双帘快门中缝闪拍）、叠影（美术馆展墙光影与三张棱边海报错层飞旋）、胶卷（大斜角 35mm 透光齿孔胶片过片）、窥视（暗红血脉深渊与中央巨眼闭合红缝心跳切画，配指甲划刻渗血主标与高对比骨绯副标），同步新增四款静态与动态示例图。选图与取景全面升级：引入全风格 1+1>2 协同评分、单条目多张背景图择优、黑边与过曝画面过滤、同库多图色相防撞色重排，并为「窥视」杏仁眼窗加入专属防切头精准取景。同时优化插件页面主题样式隔离与场记板「咔嗒」毛玻璃气泡观感，支持 16 款风格定时轮换与一键依次分配。",
             "v2.2.4": "极空间封面可读、上传返回 404 时记住结果，后续任务跳过重复渲染。支持仅生成本地 GIF、定时本地保存和重试已有成品（#13）。",
             "v2.2.3": "修复极空间新固件只返回 ItemId 时，媒体库列表为空、无法生成封面的问题（#13）。",
             "v2.2.2": "修复 Jellyfin 12.4 媒体库列表为空、无法生成封面的问题。读取媒体库、获取素材和上传封面时使用 Jellyfin 原生接口。",

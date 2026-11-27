@@ -1295,11 +1295,14 @@ DESIGNS = {1: Gallery, 2: Titan, 3: NotFound, 4: Trailer, 5: Surround, 6: Depth,
 
 
 def design_for(index):
-    """按编号取风格。海报风格在另一个模块里，它要用这里的工具函数，所以用到时才导入。"""
+    """按编号取风格。海报风格与扩展风格在独立模块里，用到时才导入。"""
     if index in DESIGNS:
         return DESIGNS[index]
     from app.plugins.mediacovergenerator.style.poster_covers import POSTER_DESIGNS
-    return POSTER_DESIGNS[index]
+    if index in POSTER_DESIGNS:
+        return POSTER_DESIGNS[index]
+    from app.plugins.mediacovergenerator.style.extra_covers import EXTRA_DESIGNS
+    return EXTRA_DESIGNS[index]
 
 
 # ---------------------------------------------------------------- 输出

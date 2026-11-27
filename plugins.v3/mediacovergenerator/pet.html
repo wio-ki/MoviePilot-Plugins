@@ -14,7 +14,7 @@
  */
 function mcgKada(demo){
  'use strict';
- const host=window,doc=document,VERSION=13,frame=demo?null:doc.querySelector('iframe.mcg-pet-frame');
+ const host=window,doc=document,VERSION=15,frame=demo?null:doc.querySelector('iframe.mcg-pet-frame');
  if(host.__mcgPet?.version===VERSION&&host.__mcgPet.alive){host.__mcgPet.attach(frame);return;}
  host.__mcgPet?.destroy?.(true);
  const reduced=host.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -49,11 +49,12 @@ function mcgKada(demo){
  const EYES=['open','happy','sleep','wow','angry','dizzy','love','back','star','wink','squeeze','sleepy','sad'],MOUTHS=['smile','open','frown','cat','yawn','flat','wavy'];
  const MOUTH_OF={love:'cat',wink:'cat',star:'open',wow:'open',angry:'frown',sad:'frown',dizzy:'wavy',squeeze:'wavy',sleep:'flat',sleepy:'flat',back:'flat'};
  const style=doc.createElement('style');style.id='mcgk-style';
- style.textContent=`.mcgk{--mcgk-s:88px;--mcgk-mh:0px;--bb:#f7f7fa;--bt:#23262f;--bd:#1fae78;--bc:#17795a;--bct:#fff;--bp:rgba(35,38,47,.13);--bs:0 10px 28px rgba(0,0,0,.3),0 2px 6px rgba(0,0,0,.2),0 0 0 1px rgba(0,0,0,.06);position:fixed;left:0;bottom:6px;width:var(--mcgk-s);height:var(--mcgk-s);z-index:2147483000;pointer-events:none;user-select:none;-webkit-user-select:none;touch-action:none;text-align:left;letter-spacing:normal;font-family:system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif}
-.mcgk.on-light{--bb:#2c3141;--bt:#f2f2f5;--bd:#58dda3;--bc:#58dda3;--bct:#12241c;--bp:rgba(255,255,255,.17);--bs:0 10px 26px rgba(30,34,52,.24),0 2px 6px rgba(30,34,52,.16)}
-.mcgk>svg{display:block;width:100%;height:100%;overflow:visible}
+ style.textContent=`.mcgk{--mcgk-s:88px;--mcgk-mh:0px;--bb:rgba(24,29,44,.86);--bbr:rgba(255,255,255,.14);--bt:#eef2fa;--bd:#58dda3;--bc:#58dda3;--bct:#0e2018;--bp:rgba(255,255,255,.15);--bq:#f6cd78;--bs:0 14px 34px rgba(5,8,18,.48),0 3px 10px rgba(5,8,18,.32),inset 0 1px 0 rgba(255,255,255,.14);--mb:rgba(22,27,42,.9);--mbr:rgba(255,255,255,.13);--mt:#eef2fa;--mt2:#a7b1c9;--mt3:#808ba5;--msep:rgba(255,255,255,.08);--mhov:rgba(255,255,255,.08);--mact:rgba(255,255,255,.14);--mcard:rgba(255,255,255,.055);--mcardh:rgba(88,221,163,.14);--msw:#47506a;--msh:0 18px 42px rgba(4,7,16,.54),0 3px 10px rgba(4,7,16,.34),inset 0 1px 0 rgba(255,255,255,.12);position:fixed;left:0;bottom:6px;width:var(--mcgk-s);height:var(--mcgk-s);z-index:2147483000;pointer-events:none;user-select:none;-webkit-user-select:none;touch-action:none;text-align:left;letter-spacing:normal;font-family:system-ui,-apple-system,'PingFang SC','Microsoft YaHei',sans-serif}
+.mcgk.on-light{--bb:rgba(255,255,255,.9);--bbr:rgba(28,36,56,.12);--bt:#1d2436;--bd:#189e6b;--bc:#189e6b;--bct:#fff;--bp:rgba(28,36,56,.12);--bq:#9a6714;--bs:0 12px 30px rgba(24,32,54,.16),0 2px 8px rgba(24,32,54,.08),inset 0 1px 0 rgba(255,255,255,.95);--mb:rgba(255,255,255,.92);--mbr:rgba(28,36,56,.12);--mt:#1d2436;--mt2:#5a647c;--mt3:#77819a;--msep:rgba(28,36,56,.08);--mhov:rgba(28,36,56,.055);--mact:rgba(28,36,56,.1);--mcard:rgba(28,36,56,.045);--mcardh:rgba(24,158,107,.12);--msw:#c8cfdf;--msh:0 16px 38px rgba(24,32,54,.18),0 3px 10px rgba(24,32,54,.09),inset 0 1px 0 rgba(255,255,255,.95)}
+.mcgk>svg{display:block;width:100%;height:100%;overflow:visible;filter:drop-shadow(0 5px 10px rgba(7,11,22,.28))}
+.mcgk.on-light>svg{filter:drop-shadow(0 5px 9px rgba(20,28,48,.18))}
 .mcgk .k-hit{pointer-events:visiblePainted;cursor:grab}.mcgk.drag .k-hit{cursor:grabbing}
-.mcgk .k-shadow{fill:#000;opacity:.2}
+.mcgk .k-shadow{opacity:.9}
 .mcgk .k-x,.mcgk .k-m,.mcgk .k-acc,.mcgk .k-sticker,.mcgk .k-snot{display:none}
 ${EYES.map(e=>`.mcgk[data-eyes=${e}] .k-${e}`).join(',')}{display:inline}
 ${MOUTHS.map(m=>`.mcgk[data-mouth=${m}] .k-m-${m}`).join(',')}{display:inline}
@@ -62,66 +63,64 @@ ${MOUTHS.map(m=>`.mcgk[data-mouth=${m}] .k-m-${m}`).join(',')}{display:inline}
 .mcgk[data-acc=santa] .k-acc-santa,.mcgk[data-acc=beret] .k-acc-beret,.mcgk[data-acc=party] .k-acc-party{display:inline}
 .mcgk[data-lv="2"] .k-heart,.mcgk[data-lv="3"] .k-heart,.mcgk[data-lv="4"] .k-heart,.mcgk[data-lv="4"] .k-gold{display:inline}
 .mcgk[data-eyes=back] .k-sticker{display:none}
-.mcgk .k-cheek{opacity:.42;transition:opacity .3s}.mcgk[data-eyes=happy] .k-cheek,.mcgk[data-eyes=love] .k-cheek,.mcgk[data-eyes=angry] .k-cheek,.mcgk[data-eyes=wink] .k-cheek,.mcgk[data-eyes=squeeze] .k-cheek{opacity:.85}.mcgk.shy .k-cheek{opacity:1}
+.mcgk .k-cheek{opacity:.44;transition:opacity .3s}.mcgk[data-eyes=happy] .k-cheek,.mcgk[data-eyes=love] .k-cheek,.mcgk[data-eyes=angry] .k-cheek,.mcgk[data-eyes=wink] .k-cheek,.mcgk[data-eyes=squeeze] .k-cheek{opacity:.88}.mcgk.shy .k-cheek{opacity:1}
 .mcgk .k-spark{opacity:0}.mcgk.spark .k-spark{opacity:1}
-.mcgk .k-z{font:700 12px system-ui,sans-serif;fill:#aab3c8;opacity:0}.mcgk[data-eyes=sleep] .k-z{opacity:.9}
+.mcgk .k-z{font:700 12px system-ui,sans-serif;fill:#b8c4de;opacity:0}.mcgk[data-eyes=sleep] .k-z{opacity:.9}
 .mcgk .k-prog{display:none}.mcgk.busy .k-prog{display:inline}.mcgk.busy .k-dash{display:none}
 .mcgk.sit .k-shadow{display:none}
 .mcgk-live{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-.mcgk-bubble{position:absolute;bottom:calc(var(--mcgk-s) + 8px);left:0;box-sizing:border-box;width:max-content;max-width:248px;padding:9px 13px;border-radius:16px;background:var(--bb);color:var(--bt);font-size:13px;line-height:1.55;font-weight:400;box-shadow:var(--bs);opacity:0;transform:translateY(6px) scale(.94);transform-origin:var(--tail,50%) 100%;transition:opacity .16s ease,transform .26s cubic-bezier(.2,.9,.3,1.35);pointer-events:none;word-break:break-word;text-wrap:pretty}
-.mcgk-bubble::after{content:'';position:absolute;left:var(--tail,50%);bottom:-4px;width:9px;height:9px;margin-left:-4.5px;background:inherit;transform:rotate(45deg);border-radius:0 0 2px 0}
+.mcgk-bubble{position:absolute;bottom:calc(var(--mcgk-s) + 9px);left:0;box-sizing:border-box;width:max-content;max-width:252px;padding:10px 14px;border-radius:16px;background:var(--bb);border:1px solid var(--bbr);color:var(--bt);font-size:13px;line-height:1.56;font-weight:450;box-shadow:var(--bs);backdrop-filter:blur(16px) saturate(1.45);-webkit-backdrop-filter:blur(16px) saturate(1.45);opacity:0;transform:translateY(6px) scale(.94);transform-origin:var(--tail,50%) 100%;transition:opacity .16s ease,transform .26s cubic-bezier(.2,.9,.3,1.35);pointer-events:none;word-break:break-word;text-wrap:pretty}
+.mcgk-bubble::after{content:'';position:absolute;left:var(--tail,50%);bottom:-5px;width:9px;height:9px;margin-left:-4.5px;background:var(--bb);border-right:1px solid var(--bbr);border-bottom:1px solid var(--bbr);transform:rotate(45deg);border-radius:0 0 2px 0}
 .mcgk-bubble.on{opacity:1;transform:none}
 .mcgk-bubble .b-g{opacity:0}
 .mcgk-bubble.lift{bottom:calc(var(--mcgk-s) + var(--mcgk-mh) + 16px)}.mcgk-bubble.lift::after{display:none}
-.mcgk-bubble.below{bottom:auto;top:calc(var(--mcgk-s) + 8px);transform-origin:var(--tail,50%) 0}.mcgk-bubble.below::after{bottom:auto;top:-4px;transform:rotate(225deg)}
-.mcgk-bubble.side{bottom:calc(var(--mcgk-s)*.2);transform-origin:0 70%}.mcgk-bubble.side::after{left:-4px;bottom:16px;margin:0;transform:rotate(135deg)}
-.mcgk-bubble.side.sl{transform-origin:100% 70%}.mcgk-bubble.side.sl::after{left:auto;right:-4px;transform:rotate(-45deg)}
-.mcgk-bubble.st .b-t::before{content:'';display:inline-block;width:6px;height:6px;margin-right:7px;border-radius:50%;background:var(--bd);vertical-align:2px}
-.mcgk-bubble.bad .b-t::before{background:#ff6b81}
-/* 台词：引一句「星游记」时，气泡带一点暖色和一条金色短线 */
-.mcgk-bubble.warm{box-shadow:var(--bs),inset 0 0 0 1px rgba(245,185,66,.3)}
+.mcgk-bubble.below{bottom:auto;top:calc(var(--mcgk-s) + 9px);transform-origin:var(--tail,50%) 0}.mcgk-bubble.below::after{bottom:auto;top:-5px;transform:rotate(225deg)}
+.mcgk-bubble.side{bottom:calc(var(--mcgk-s)*.2);transform-origin:0 70%}.mcgk-bubble.side::after{left:-5px;bottom:16px;margin:0;transform:rotate(135deg)}
+.mcgk-bubble.side.sl{transform-origin:100% 70%}.mcgk-bubble.side.sl::after{left:auto;right:-5px;transform:rotate(-45deg)}
+.mcgk-bubble.st .b-t::before{content:'';display:inline-block;width:6px;height:6px;margin-right:7px;border-radius:50%;background:var(--bd);box-shadow:0 0 8px var(--bd);vertical-align:2px}
+.mcgk-bubble.bad .b-t::before{background:#ff6b81;box-shadow:0 0 8px rgba(255,107,129,.7)}
+/* 台词：引一句「星游记」时，玻璃气泡透出暖金微光与金薄荷渐变短线 */
+.mcgk-bubble.warm{border-color:rgba(245,185,66,.36);box-shadow:var(--bs),0 0 20px rgba(245,185,66,.12),inset 0 0 0 1px rgba(245,185,66,.16);line-height:1.7}
 .mcgk-bubble.warm .b-t{display:block}
-.mcgk-bubble.warm .b-t::before{content:'';display:block;width:16px;height:2px;margin:0 0 6px;border-radius:1px;background:linear-gradient(90deg,#f5b942,rgba(245,185,66,.12))}
-.mcgk-bubble.warm{line-height:1.7}
-/* 署名：电脑端没有高密度屏的补偿，11px 加宽字距会糊成一片，所以字号、字重和墨色都按 1x 屏来配 */
-.mcgk-bubble .b-q{display:none;margin-top:5px;text-align:right;font-size:12px;font-weight:650;letter-spacing:.05em;color:var(--bq,rgba(74,52,18,.78));white-space:nowrap}
+.mcgk-bubble.warm .b-t::before{content:'';display:block;width:22px;height:2px;margin:0 0 7px;border-radius:1px;background:linear-gradient(90deg,#f5b942,#58dda3 75%,transparent)}
+/* 署名：1x 屏清晰可读 */
+.mcgk-bubble .b-q{display:none;margin-top:6px;text-align:right;font-size:12px;font-weight:650;letter-spacing:.04em;color:var(--bq);white-space:nowrap}
 .mcgk-bubble.warm .b-q{display:block}
-.mcgk.on-light .mcgk-bubble{--bq:rgba(255,232,178,.82)}
-.mcgk-bubble i{display:none;height:3px;margin:7px 0 2px;border-radius:2px;background:var(--bp);overflow:hidden}
-.mcgk-bubble i b{display:block;width:0;height:100%;border-radius:2px;background:var(--bd);transition:width .45s ease}
-.mcgk-bubble.prog{min-width:132px}.mcgk-bubble.prog i{display:block}
-.mcgk-bubble button{all:unset;display:none;box-sizing:border-box;width:max-content;height:24px;margin:8px 0 2px;padding:0 11px;border-radius:12px;background:var(--bc);color:var(--bct);font-size:12px;font-weight:600;line-height:24px;cursor:pointer;transition:filter .15s,transform .15s}
+.mcgk-bubble i{display:none;height:3.5px;margin:8px 0 2px;border-radius:2px;background:var(--bp);overflow:hidden}
+.mcgk-bubble i b{display:block;width:0;height:100%;border-radius:2px;background:linear-gradient(90deg,var(--bd),#89f2c4);transition:width .45s ease}
+.mcgk-bubble.prog{min-width:138px}.mcgk-bubble.prog i{display:block}
+.mcgk-bubble button{all:unset;display:none;box-sizing:border-box;width:max-content;height:25px;margin:8px 0 2px;padding:0 12px;border-radius:12.5px;background:var(--bc);color:var(--bct);font-size:12px;font-weight:650;line-height:25px;cursor:pointer;transition:filter .15s,transform .15s}
 .mcgk-bubble.act button{display:block}.mcgk-bubble.act.on button{pointer-events:auto}
 .mcgk.qt .mcgk-bubble.on{pointer-events:auto;cursor:pointer}
 .mcgk-bubble button:hover{filter:brightness(1.08)}.mcgk-bubble button:active{transform:scale(.97)}.mcgk-bubble button:focus-visible{outline:2px solid var(--bd);outline-offset:2px}
-.mcgk-menu{position:absolute;bottom:calc(var(--mcgk-s) + 8px);left:0;box-sizing:border-box;width:200px;padding:6px;border-radius:14px;background:#262a38;color:#e8e9ef;font-size:13px;line-height:1;box-shadow:0 14px 36px rgba(0,0,0,.38),0 0 0 1px rgba(255,255,255,.09);pointer-events:none;visibility:hidden;opacity:0;transform:translateY(6px) scale(.97);transform-origin:50% 100%;transition:opacity .14s ease,transform .2s cubic-bezier(.2,.9,.3,1.2),visibility 0s .2s}
-.mcgk-menu.below{bottom:auto;top:calc(var(--mcgk-s) + 8px);transform:translateY(-6px) scale(.97);transform-origin:50% 0}
+.mcgk-menu{position:absolute;bottom:calc(var(--mcgk-s) + 9px);left:0;box-sizing:border-box;width:222px;padding:7px;border-radius:16px;background:var(--mb);border:1px solid var(--mbr);color:var(--mt);font-size:13px;line-height:1;box-shadow:var(--msh);backdrop-filter:blur(18px) saturate(1.5);-webkit-backdrop-filter:blur(18px) saturate(1.5);pointer-events:none;visibility:hidden;opacity:0;transform:translateY(6px) scale(.97);transform-origin:50% 100%;transition:opacity .14s ease,transform .2s cubic-bezier(.2,.9,.3,1.2),visibility 0s .2s}
+.mcgk-menu.below{bottom:auto;top:calc(var(--mcgk-s) + 9px);transform:translateY(-6px) scale(.97);transform-origin:50% 0}
 .mcgk-menu.on{pointer-events:auto;visibility:visible;opacity:1;transform:none;transition-delay:0s}
-.mcgk-menu .m-h{display:flex;align-items:center;gap:8px;height:30px;padding:0 10px;color:#aab1c5;font-size:12px}
-.mcgk-menu .m-h i{flex:none;width:7px;height:7px;border-radius:50%;background:#6b7389}
-.mcgk-menu .m-h.run i{background:#58dda3;animation:mcgk-pulse 1.6s ease-in-out infinite}.mcgk-menu .m-h.bad i{background:#ff6b81}
+.mcgk-menu .m-h{display:flex;align-items:center;gap:8px;height:30px;padding:0 10px;color:var(--mt2);font-size:12px}
+.mcgk-menu .m-h i{flex:none;width:7px;height:7px;border-radius:50%;background:var(--mt3)}
+.mcgk-menu .m-h.run i{background:var(--bd);box-shadow:0 0 8px var(--bd);animation:mcgk-pulse 1.6s ease-in-out infinite}.mcgk-menu .m-h.bad i{background:#ff6b81}
 .mcgk-menu .m-h span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mcgk-menu .m-b{display:flex;align-items:center;gap:7px;height:26px;padding:0 10px 6px;margin-bottom:6px;font-size:12px;border-bottom:1px solid rgba(255,255,255,.07)}
-.mcgk-menu .m-b b{font-weight:600;color:#e8e9ef}
-.mcgk-menu .m-b em{font-style:normal;font-size:11px;letter-spacing:1.5px;color:#4a5167}.mcgk-menu .m-b em u{text-decoration:none;color:#ff7aa2}
-.mcgk-menu .m-b small{margin-left:auto;font-size:11.5px;color:#8c93a8;font-variant-numeric:tabular-nums}
-.mcgk-menu button{all:unset;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;width:100%;height:32px;padding:0 10px;border-radius:8px;cursor:pointer;color:inherit;font:inherit;transition:background .15s}
-.mcgk-menu button:hover{background:rgba(255,255,255,.07)}.mcgk-menu button:active{background:rgba(255,255,255,.12)}
-.mcgk-menu button:focus-visible{outline:2px solid #58dda3;outline-offset:-2px}
-.mcgk-menu .m-do{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:6px}
-.mcgk-menu .m-do button{flex-direction:column;justify-content:center;gap:5px;height:56px;padding:0;font-size:11.5px;color:#cfd3e0;background:rgba(255,255,255,.05)}
-.mcgk-menu .m-do button:hover{background:rgba(255,255,255,.11);color:#fff}
+.mcgk-menu .m-b{display:flex;align-items:center;gap:6px;height:28px;padding:0 10px 7px;margin-bottom:6px;font-size:12px;border-bottom:1px solid var(--msep);white-space:nowrap}
+.mcgk-menu .m-b b{font-weight:650;color:var(--mt);white-space:nowrap}
+.mcgk-menu .m-b em{font-style:normal;font-size:11px;letter-spacing:1px;color:var(--mt3);white-space:nowrap}.mcgk-menu .m-b em u{text-decoration:none;color:#ff7aa2}
+.mcgk-menu .m-b small{margin-left:auto;font-size:11px;color:var(--mt3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.mcgk-menu button{all:unset;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;width:100%;height:32px;padding:0 10px;border-radius:9px;cursor:pointer;color:inherit;font:inherit;transition:background .15s,color .15s}
+.mcgk-menu button:hover{background:var(--mhov)}.mcgk-menu button:active{background:var(--mact)}
+.mcgk-menu button:focus-visible{outline:2px solid var(--bd);outline-offset:-2px}
+.mcgk-menu .m-do{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:7px}
+.mcgk-menu .m-do button{flex-direction:column;justify-content:center;gap:5px;height:56px;padding:0;font-size:11.5px;color:var(--mt2);background:var(--mcard);border:1px solid var(--msep);border-radius:10px}
+.mcgk-menu .m-do button:hover{background:var(--mcardh);border-color:rgba(88,221,163,.35);color:var(--mt)}
 .mcgk-menu .m-do button[disabled]{opacity:.36;cursor:default;pointer-events:none}
-.mcgk-menu .m-do svg{display:block;width:17px;height:17px;color:#58dda3}
-.mcgk-menu .m-sw{flex:none;position:relative;width:28px;height:16px;border-radius:8px;background:#4a5167;transition:background .18s}
-.mcgk-menu .m-sw::after{content:'';position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#f2f2f5;transition:transform .18s cubic-bezier(.3,.8,.3,1.2),background .18s}
-.mcgk-menu [aria-checked=true] .m-sw{background:#58dda3}.mcgk-menu [aria-checked=true] .m-sw::after{transform:translateX(12px);background:#1d2029}
+.mcgk-menu .m-do svg{display:block;width:17px;height:17px;color:var(--bd)}
+.mcgk-menu .m-sw{flex:none;position:relative;width:28px;height:16px;border-radius:8px;background:var(--msw);transition:background .18s}
+.mcgk-menu .m-sw::after{content:'';position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.22);transition:transform .18s cubic-bezier(.3,.8,.3,1.2),background .18s}
+.mcgk-menu [aria-checked=true] .m-sw{background:var(--bd)}.mcgk-menu [aria-checked=true] .m-sw::after{transform:translateX(12px);background:var(--bct)}
 .mcgk-menu .m-seg{display:flex;align-items:center;justify-content:space-between;height:32px;padding:0 4px 0 10px}
-.mcgk-menu .m-seg div{display:flex;gap:2px;padding:2px;border-radius:8px;background:rgba(255,255,255,.07)}
-.mcgk-menu .m-seg button{width:30px;height:22px;padding:0;justify-content:center;border-radius:6px;font-size:12px;color:#aab1c5}
-.mcgk-menu .m-seg button[aria-pressed=true]{background:#58dda3;color:#1d2029;font-weight:600}
-.mcgk-menu .m-sep{height:1px;margin:4px 0;background:rgba(255,255,255,.07)}
-.mcgk-menu .m-q small{font-size:11.5px;color:#8c93a8}
+.mcgk-menu .m-seg div{display:flex;gap:2px;padding:2px;border-radius:9px;background:var(--mcard);border:1px solid var(--msep)}
+.mcgk-menu .m-seg button{width:30px;height:22px;padding:0;justify-content:center;border-radius:7px;font-size:12px;color:var(--mt2)}
+.mcgk-menu .m-seg button[aria-pressed=true]{background:var(--bd);color:var(--bct);font-weight:650}
+.mcgk-menu .m-sep{height:1px;margin:4px 0;background:var(--msep)}
+.mcgk-menu .m-q small{font-size:11.5px;color:var(--mt3)}
 .mcgk-fx{position:fixed;inset:0;z-index:2147483000;pointer-events:none;overflow:hidden}
 .mcgk-fx i{position:absolute;left:0;top:0;display:block;will-change:transform,opacity;font:800 17px/1 system-ui,sans-serif;font-style:normal;text-align:center}
 .mcgk-fx svg{display:block;width:100%;height:100%}
@@ -131,63 +130,81 @@ ${MOUTHS.map(m=>`.mcgk[data-mouth=${m}] .k-m-${m}`).join(',')}{display:inline}
 @media(prefers-reduced-motion:reduce){.mcgk-bubble,.mcgk-menu{transition:opacity .16s ease;transform:none}.mcgk-menu .m-h.run i{animation:none}}`;
  doc.head.appendChild(style);
 
- // 斜条纹：拍板和底座各一条，白底上压墨色平行四边形
+ // 斜条纹：保持原版经典立体比例，融入琉璃玻璃质感
  const n2=v=>+v.toFixed(2);
  function stripes(y0,h,lean){let d='';for(let x=10;x<92;x+=13)d+=`M${x} ${y0}h7l${-lean} ${h}h-7z`;return d;}
  const heartAt=(cx,cy,s)=>`M${cx} ${n2(cy+5.2*s)}C${n2(cx-6*s)} ${n2(cy+.7*s)} ${n2(cx-5.5*s)} ${n2(cy-5.3*s)} ${n2(cx-2.4*s)} ${n2(cy-5.3*s)}C${n2(cx-1.1*s)} ${n2(cy-5.3*s)} ${n2(cx-.3*s)} ${n2(cy-4.5*s)} ${cx} ${n2(cy-3.5*s)}C${n2(cx+.3*s)} ${n2(cy-4.5*s)} ${n2(cx+1.1*s)} ${n2(cy-5.3*s)} ${n2(cx+2.4*s)} ${n2(cy-5.3*s)}C${n2(cx+5.5*s)} ${n2(cy-5.3*s)} ${n2(cx+6*s)} ${n2(cy+.7*s)} ${cx} ${n2(cy+5.2*s)}Z`;
  const star4=(cx,cy,r)=>`M${cx} ${n2(cy-r)}Q${n2(cx+r*.22)} ${n2(cy-r*.22)} ${n2(cx+r)} ${cy}Q${n2(cx+r*.22)} ${n2(cy+r*.22)} ${cx} ${n2(cy+r)}Q${n2(cx-r*.22)} ${n2(cy+r*.22)} ${n2(cx-r)} ${cy}Q${n2(cx-r*.22)} ${n2(cy-r*.22)} ${cx} ${n2(cy-r)}Z`;
  const spiral=cx=>`M${cx} 58.5m-4.6 0a4.6 4.6 0 1 0 9.2 0a3.4 3.4 0 1 0-6.8 0a2 2 0 1 0 4 0`;
  const EL=38.75,ER=61.25,squint='M34.5 54.5L42.5 58.5L34.5 62.5M65.5 54.5L57.5 58.5L65.5 62.5';
+ const GLASS_CHALK='#e4ebf7',GLASS_INK='#252d44',GLASS_RIM='rgba(255,255,255,.34)';
  const svg=`<svg viewBox="0 0 100 100" aria-hidden="true"><defs>
 <clipPath id="mcgk-cb"><rect x="17" y="29.5" width="66" height="9.5" rx="2.5"/></clipPath>
 <clipPath id="mcgk-cs"><rect x="16" y="17.5" width="69" height="10.5" rx="3"/></clipPath>
-<linearGradient id="mcgk-bd" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#353b4e"/><stop offset="1" stop-color="#272b3a"/></linearGradient></defs>
-<ellipse class="k-shadow" data-k="shadow" cx="50" cy="96.5" rx="24" ry="3.4"/>
+<clipPath id="mcgk-bclip"><rect x="17" y="37" width="66" height="52" rx="10"/></clipPath>
+<linearGradient id="mcgk-bd" x1=".12" y1="0" x2=".88" y2="1"><stop offset="0" stop-color="#3c4866" stop-opacity=".86"/><stop offset=".54" stop-color="#29324b" stop-opacity=".93"/><stop offset="1" stop-color="#192033" stop-opacity=".98"/></linearGradient>
+<linearGradient id="mcgk-sheen" x1="0" y1="0" x2=".4" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity=".24"/><stop offset=".45" stop-color="#a8d8ff" stop-opacity=".06"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></linearGradient>
+<linearGradient id="mcgk-boot" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2e3752"/><stop offset=".75" stop-color="#1a2135"/><stop offset="1" stop-color="#131929"/></linearGradient>
+<linearGradient id="mcgk-rim" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity=".44"/><stop offset=".55" stop-color="#9cb4df" stop-opacity=".2"/><stop offset="1" stop-color="#58dda3" stop-opacity=".34"/></linearGradient>
+<radialGradient id="mcgk-shd" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#070b16" stop-opacity=".38"/><stop offset=".72" stop-color="#070b16" stop-opacity=".14"/><stop offset="1" stop-color="#070b16" stop-opacity="0"/></radialGradient>
+<filter id="mcgk-eglow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="1.4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+<ellipse class="k-shadow" data-k="shadow" cx="50" cy="96.5" rx="25" ry="3.5" fill="url(#mcgk-shd)"/>
 <text class="k-z" data-k="z" x="80" y="30">z</text>
 <g data-k="sprite">
- <g data-k="legL"><rect x="35" y="83" width="10" height="13" rx="5" fill="${INK}" stroke="${RIM}" stroke-width="1.3"/></g>
- <g data-k="legR"><rect x="55" y="83" width="10" height="13" rx="5" fill="${INK}" stroke="${RIM}" stroke-width="1.3"/></g>
- <g data-k="armL"><ellipse cx="15" cy="65" rx="4.6" ry="6" fill="${INK}" stroke="${RIM}" stroke-width="1.3"/></g>
- <g data-k="armR"><ellipse cx="85" cy="65" rx="4.6" ry="6" fill="${INK}" stroke="${RIM}" stroke-width="1.3"/></g>
- <rect class="k-hit" x="17" y="37" width="66" height="52" rx="10" fill="url(#mcgk-bd)" stroke="${RIM}" stroke-width="1.5"/>
- <path d="M22.5 50.5V48Q22.5 42.5 28 42.5H38" fill="none" stroke="#fff" stroke-opacity=".1" stroke-width="1.5" stroke-linecap="round"/>
+ <g data-k="legL">
+  <rect x="35" y="83" width="10" height="13" rx="5" fill="url(#mcgk-boot)" stroke="url(#mcgk-rim)" stroke-width="1.25"/>
+  <path d="M37.5 94.3H42.5" stroke="${MINT}" stroke-opacity=".68" stroke-width="1.6" stroke-linecap="round"/>
+ </g>
+ <g data-k="legR">
+  <rect x="55" y="83" width="10" height="13" rx="5" fill="url(#mcgk-boot)" stroke="url(#mcgk-rim)" stroke-width="1.25"/>
+  <path d="M57.5 94.3H62.5" stroke="${MINT}" stroke-opacity=".68" stroke-width="1.6" stroke-linecap="round"/>
+ </g>
+ <g data-k="armL"><ellipse cx="15" cy="65" rx="4.6" ry="6" fill="url(#mcgk-boot)" stroke="url(#mcgk-rim)" stroke-width="1.2"/><path d="M13.3 62.6Q14 61 15.5 61" fill="none" stroke="#fff" stroke-opacity=".22" stroke-width="1" stroke-linecap="round"/></g>
+ <g data-k="armR"><ellipse cx="85" cy="65" rx="4.6" ry="6" fill="url(#mcgk-boot)" stroke="url(#mcgk-rim)" stroke-width="1.2"/><path d="M84.5 61Q86 61 86.7 62.6" fill="none" stroke="#fff" stroke-opacity=".22" stroke-width="1" stroke-linecap="round"/></g>
+ <rect class="k-hit" x="17" y="37" width="66" height="52" rx="10" fill="url(#mcgk-bd)" stroke="url(#mcgk-rim)" stroke-width="1.5"/>
+ <g clip-path="url(#mcgk-bclip)" pointer-events="none">
+  <path d="M17 37H83V57C67 50.5 35 58.5 17 52Z" fill="url(#mcgk-sheen)"/>
+  <rect x="17" y="81" width="66" height="8" fill="#101626" fill-opacity=".32"/>
+  <path d="M25 87.6H75" stroke="${MINT}" stroke-opacity=".26" stroke-width="1.4" stroke-linecap="round"/>
+ </g>
+ <path d="M22.5 50.5V48Q22.5 42.5 28 42.5H38" fill="none" stroke="#fff" stroke-opacity=".26" stroke-width="1.5" stroke-linecap="round"/>
  <path class="k-sticker k-heart" d="${heartAt(75,46.6,.6)}" fill="${PINK}" stroke="#fff" stroke-opacity=".6" stroke-width=".7" transform="rotate(14 75 46.6)"/>
  <path class="k-sticker k-gold" d="${star4(66.4,44.4,3.4)}" fill="${GOLD}"/>
- <path class="k-dash" d="M27 81.5H44M56 81.5H73" stroke="#fff" stroke-opacity=".13" stroke-width="1.6" stroke-linecap="round"/>
- <g class="k-prog"><path d="M27 81.5H73" stroke="#fff" stroke-opacity=".15" stroke-width="2.6" stroke-linecap="round"/><path data-k="bar" d="M27 81.5h0" stroke="${MINT}" stroke-width="2.6" stroke-linecap="round"/></g>
- <g clip-path="url(#mcgk-cb)"><rect x="17" y="29.5" width="66" height="9.5" fill="${CHALK}"/><path d="${stripes(29.5,9.5,5)}" fill="${INK}"/></g>
- <rect x="17" y="29.5" width="66" height="9.5" rx="2.5" fill="none" stroke="${RIM}" stroke-width="1.3"/>
- <g data-k="stick"><g class="k-hit" clip-path="url(#mcgk-cs)"><rect x="16" y="17.5" width="69" height="10.5" fill="${CHALK}"/><path d="${stripes(17.5,10.5,-5)}" fill="${INK}"/></g>
-  <rect x="16" y="17.5" width="69" height="10.5" rx="3" fill="none" stroke="${RIM}" stroke-width="1.3"/>
+ <path class="k-dash" d="M27 81.5H44M56 81.5H73" stroke="#cfe0ff" stroke-opacity=".18" stroke-width="1.6" stroke-linecap="round"/>
+ <g class="k-prog"><path d="M27 81.5H73" stroke="#fff" stroke-opacity=".16" stroke-width="2.6" stroke-linecap="round"/><path data-k="bar" d="M27 81.5h0" stroke="${MINT}" stroke-width="2.6" stroke-linecap="round"/></g>
+ <g clip-path="url(#mcgk-cb)"><rect x="17" y="29.5" width="66" height="9.5" fill="${GLASS_CHALK}"/><path d="${stripes(29.5,9.5,5)}" fill="${GLASS_INK}"/></g>
+ <rect x="17" y="29.5" width="66" height="9.5" rx="2.5" fill="none" stroke="${GLASS_RIM}" stroke-width="1.2"/>
+ <g data-k="stick"><g class="k-hit" clip-path="url(#mcgk-cs)"><rect x="16" y="17.5" width="69" height="10.5" fill="${GLASS_CHALK}"/><path d="${stripes(17.5,10.5,-5)}" fill="${GLASS_INK}"/><path d="M17.5 19H83.5" stroke="#fff" stroke-opacity=".42" stroke-width="1"/></g>
+  <rect x="16" y="17.5" width="69" height="10.5" rx="3" fill="none" stroke="${GLASS_RIM}" stroke-width="1.2"/>
   <g class="k-acc k-acc-santa" transform="rotate(-7 60 17)"><path d="M47.5 16.5C48 7.5 57 1.8 67.5 4.2C74.5 5.8 79.5 10 81 15L74 13.2C72.6 14.2 72 15.4 72 16.5Z" fill="#e5484d"/><path d="M47.5 16.5C48 11 51 7 55 5" fill="none" stroke="#fff" stroke-opacity=".22" stroke-width="1.6" stroke-linecap="round"/><rect x="45" y="14.4" width="29.5" height="5.6" rx="2.8" fill="#fff"/><circle cx="81.3" cy="15.4" r="3.4" fill="#fff"/></g>
   <g class="k-acc k-acc-beret"><path d="M39.5 16.4C38.5 9.6 49 6.2 60 7.2C70.5 8.2 77 12 74.5 16.4Z" fill="#c8443c"/><path d="M41 16.3H74" stroke="#8f2f29" stroke-width="2.6" stroke-linecap="round"/><path d="M58.5 7.4l1.6-3.8" stroke="#8f2f29" stroke-width="1.7" stroke-linecap="round"/></g>
   <g class="k-acc k-acc-party" transform="rotate(9 62 17)"><path d="M54 17.5L62 2L70 17.5Z" fill="${PINK}" stroke="#fff" stroke-opacity=".5" stroke-width=".8" stroke-linejoin="round"/><path d="M57.4 11.4l8.8 3.2M60 6.4l5 1.9" stroke="#fff" stroke-opacity=".85" stroke-width="1.6" stroke-linecap="round"/><circle cx="62" cy="2" r="2.5" fill="${GOLD}"/></g></g>
- <circle cx="19.5" cy="29" r="2.7" fill="#a6aec0" stroke="${RIM}" stroke-width="1"/>
- <text class="k-x k-back" x="50" y="67" text-anchor="middle" font-size="15" font-weight="700" fill="${CHALK}" fill-opacity=".85">哼</text>
+ <circle cx="19.5" cy="29" r="2.7" fill="#c7d2e8" stroke="${GLASS_INK}" stroke-width="1"/>
+ <text class="k-x k-back" x="50" y="67" text-anchor="middle" font-size="15" font-weight="700" fill="${GLASS_CHALK}" fill-opacity=".88">哼</text>
  <g data-k="face">
-  <g data-k="eyes" class="k-x k-open"><rect x="34.5" y="52" width="8.5" height="13" rx="4.25" fill="${MINT}"/><rect x="57" y="52" width="8.5" height="13" rx="4.25" fill="${MINT}"/><circle cx="37.6" cy="55.6" r="1.5" fill="#fff"/><circle cx="60.1" cy="55.6" r="1.5" fill="#fff"/><circle cx="40.3" cy="61.4" r=".8" fill="#fff" fill-opacity=".7"/><circle cx="62.8" cy="61.4" r=".8" fill="#fff" fill-opacity=".7"/></g>
-  <path class="k-x k-happy" d="M34 61.5Q38.75 54 43.5 61.5M56.5 61.5Q61.25 54 66 61.5" fill="none" stroke="${MINT}" stroke-width="3.2" stroke-linecap="round"/>
+  <g data-k="eyes" class="k-x k-open" filter="url(#mcgk-eglow)"><rect x="34.5" y="52" width="8.5" height="13" rx="4.25" fill="${MINT}"/><rect x="57" y="52" width="8.5" height="13" rx="4.25" fill="${MINT}"/><circle cx="37.6" cy="55.6" r="1.5" fill="#fff"/><circle cx="60.1" cy="55.6" r="1.5" fill="#fff"/><circle cx="40.3" cy="61.4" r=".8" fill="#fff" fill-opacity=".75"/><circle cx="62.8" cy="61.4" r=".8" fill="#fff" fill-opacity=".75"/></g>
+  <path class="k-x k-happy" d="M34 61.5Q38.75 54 43.5 61.5M56.5 61.5Q61.25 54 66 61.5" fill="none" stroke="${MINT}" stroke-width="3.2" stroke-linecap="round" filter="url(#mcgk-eglow)"/>
   <path class="k-x k-sleep" d="M34 59.5Q38.75 63 43.5 59.5M56.5 59.5Q61.25 63 66 59.5" fill="none" stroke="${MINT}" stroke-width="2.6" stroke-linecap="round"/>
-  <g class="k-x k-wow" fill="${MINT}"><circle cx="${EL}" cy="58.5" r="5.6"/><circle cx="${ER}" cy="58.5" r="5.6"/><circle cx="37" cy="56.6" r="1.7" fill="#fff"/><circle cx="59.5" cy="56.6" r="1.7" fill="#fff"/></g>
+  <g class="k-x k-wow" fill="${MINT}" filter="url(#mcgk-eglow)"><circle cx="${EL}" cy="58.5" r="5.6"/><circle cx="${ER}" cy="58.5" r="5.6"/><circle cx="37" cy="56.6" r="1.7" fill="#fff"/><circle cx="59.5" cy="56.6" r="1.7" fill="#fff"/></g>
   <g class="k-x k-angry"><path d="${squint}" fill="none" stroke="${MINT}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M73 41.5l4 4m0-4l-4 4M79 47l3 3m0-3l-3 3" stroke="#ff6b81" stroke-width="2" stroke-linecap="round"/></g>
   <path class="k-x k-squeeze" d="${squint}" fill="none" stroke="${MINT}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
   <path class="k-x k-dizzy" d="${spiral(EL)}${spiral(ER)}" fill="none" stroke="${MINT}" stroke-width="1.8" stroke-linecap="round"/>
   <path class="k-x k-love" d="${heartAt(EL,58.8,1)}${heartAt(ER,58.8,1)}" fill="${PINK}"/>
   <g class="k-x k-star"><path d="${star4(EL,58.5,6.6)}${star4(ER,58.5,6.6)}" fill="${GOLD}"/><circle cx="${EL}" cy="58.5" r="1.3" fill="#fff"/><circle cx="${ER}" cy="58.5" r="1.3" fill="#fff"/></g>
-  <g class="k-x k-wink"><rect x="34.5" y="52" width="8.5" height="13" rx="4.25" fill="${MINT}"/><circle cx="37.6" cy="55.6" r="1.5" fill="#fff"/><path d="M56.5 61.5Q61.25 54 66 61.5" fill="none" stroke="${MINT}" stroke-width="3.2" stroke-linecap="round"/></g>
+  <g class="k-x k-wink" filter="url(#mcgk-eglow)"><rect x="34.5" y="52" width="8.5" height="13" rx="4.25" fill="${MINT}"/><circle cx="37.6" cy="55.6" r="1.5" fill="#fff"/><path d="M56.5 61.5Q61.25 54 66 61.5" fill="none" stroke="${MINT}" stroke-width="3.2" stroke-linecap="round"/></g>
   <g class="k-x k-sleepy"><rect x="34.5" y="57.6" width="8.5" height="7.4" rx="3.6" fill="${MINT}"/><rect x="57" y="57.6" width="8.5" height="7.4" rx="3.6" fill="${MINT}"/><path d="M33.4 56.6H44.1M55.9 56.6H66.6" stroke="${MINT}" stroke-width="2" stroke-linecap="round"/></g>
-  <g class="k-x k-sad"><rect x="34.5" y="54.5" width="8.5" height="10" rx="4.25" fill="${MINT}"/><rect x="57" y="54.5" width="8.5" height="10" rx="4.25" fill="${MINT}"/><circle cx="37.6" cy="57.6" r="1.4" fill="#fff"/><circle cx="60.1" cy="57.6" r="1.4" fill="#fff"/><path d="M33.2 52.2L43 49.6M66.8 52.2L57 49.6" stroke="${CHALK}" stroke-opacity=".75" stroke-width="1.6" stroke-linecap="round"/><path d="M41.6 65.5q2 2.8 0 4.2q-2-1.4 0-4.2z" fill="#8fd3ff"/></g>
+  <g class="k-x k-sad"><rect x="34.5" y="54.5" width="8.5" height="10" rx="4.25" fill="${MINT}"/><rect x="57" y="54.5" width="8.5" height="10" rx="4.25" fill="${MINT}"/><circle cx="37.6" cy="57.6" r="1.4" fill="#fff"/><circle cx="60.1" cy="57.6" r="1.4" fill="#fff"/><path d="M33.2 52.2L43 49.6M66.8 52.2L57 49.6" stroke="${GLASS_CHALK}" stroke-opacity=".75" stroke-width="1.6" stroke-linecap="round"/><path d="M41.6 65.5q2 2.8 0 4.2q-2-1.4 0-4.2z" fill="#8fd3ff"/></g>
   <ellipse class="k-cheek" cx="28.5" cy="68.5" rx="4.6" ry="2.6" fill="#ff8aa0"/><ellipse class="k-cheek" cx="71.5" cy="68.5" rx="4.6" ry="2.6" fill="#ff8aa0"/>
-  <path class="k-m k-m-smile" d="M46.8 69Q50 72.4 53.2 69" fill="none" stroke="${CHALK}" stroke-width="2" stroke-linecap="round"/>
-  <path class="k-m k-m-frown" d="M47 71.4Q50 68.4 53 71.4" fill="none" stroke="${CHALK}" stroke-width="2" stroke-linecap="round"/>
-  <path class="k-m k-m-cat" d="M45 69q2.5 3.3 5 0q2.5 3.3 5 0" fill="none" stroke="${CHALK}" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
-  <path class="k-m k-m-flat" d="M47.2 70.4H52.8" stroke="${CHALK}" stroke-width="2" stroke-linecap="round"/>
-  <path class="k-m k-m-wavy" d="M45.4 70.6q1.55-2.2 3.1 0t3.1 0t3.1 0" fill="none" stroke="${CHALK}" stroke-width="1.8" stroke-linecap="round"/>
-  <ellipse class="k-m k-m-open" cx="50" cy="70.2" rx="2.8" ry="2.4" fill="${CHALK}"/>
-  <ellipse class="k-m k-m-yawn" cx="50" cy="71" rx="3.7" ry="4.6" fill="#171a22" stroke="${CHALK}" stroke-width="1.6"/>
-  <circle class="k-snot" data-k="snot" cx="56.6" cy="68.4" r="3.6" fill="#bfe6ff" fill-opacity=".32" stroke="#d6efff" stroke-width=".8"/>
+  <path class="k-m k-m-smile" d="M46.8 69Q50 72.4 53.2 69" fill="none" stroke="${GLASS_CHALK}" stroke-width="2" stroke-linecap="round"/>
+  <path class="k-m k-m-frown" d="M47 71.4Q50 68.4 53 71.4" fill="none" stroke="${GLASS_CHALK}" stroke-width="2" stroke-linecap="round"/>
+  <path class="k-m k-m-cat" d="M45 69q2.5 3.3 5 0q2.5 3.3 5 0" fill="none" stroke="${GLASS_CHALK}" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>
+  <path class="k-m k-m-flat" d="M47.2 70.4H52.8" stroke="${GLASS_CHALK}" stroke-width="2" stroke-linecap="round"/>
+  <path class="k-m k-m-wavy" d="M45.4 70.6q1.55-2.2 3.1 0t3.1 0t3.1 0" fill="none" stroke="${GLASS_CHALK}" stroke-width="1.8" stroke-linecap="round"/>
+  <ellipse class="k-m k-m-open" cx="50" cy="70.2" rx="2.8" ry="2.4" fill="${GLASS_CHALK}"/>
+  <ellipse class="k-m k-m-yawn" cx="50" cy="71" rx="3.7" ry="4.6" fill="#141928" stroke="${GLASS_CHALK}" stroke-width="1.6"/>
+  <circle class="k-snot" data-k="snot" cx="56.6" cy="68.4" r="3.6" fill="#bfe6ff" fill-opacity=".34" stroke="#d6efff" stroke-width=".8"/>
  </g>
- <path class="k-spark" d="M91 24.5l7-1.5M89.5 17.5l5.5-5.5M84 13.5l1.5-7" stroke="${CHALK}" stroke-width="2.4" stroke-linecap="round"/>
+ <path class="k-spark" d="M91 24.5l7-1.5M89.5 17.5l5.5-5.5M84 13.5l1.5-7" stroke="${GLASS_CHALK}" stroke-width="2.4" stroke-linecap="round"/>
 </g></svg>`;
  const ICON='<svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">';
  const ICON_UP=ICON+'<rect x="2.5" y="11" width="13" height="4.5" rx="1"/><path d="M5.4 13.2h.9M8.6 13.2h.9M11.8 13.2h.9M9 8V2.6M6.6 5L9 2.6L11.4 5"/></svg>',ICON_DOWN=ICON+'<rect x="2.5" y="2.5" width="13" height="4.5" rx="1"/><path d="M5.4 4.8h.9M8.6 4.8h.9M11.8 4.8h.9M9 10v5.4M6.6 13L9 15.4L11.4 13"/></svg>';
@@ -324,7 +341,7 @@ ${MOUTHS.map(m=>`.mcgk[data-mouth=${m}] .k-m-${m}`).join(',')}{display:inline}
  const text=el=>(el?.textContent||'').replace(/\s+/g,' ').trim();
  const lv0=level();
  const GREET=firstMeet?'嗨，我是咔嗒，片场场记。以后封面的事交给我盯着。':hour<6?'这么晚还在调封面？我陪你熬。':hour<11?pick(['早！今天也拍几条好封面。','早安，场记板擦好了。']):hour>=22?'夜场开始了，我在。':lv0>=2?pick(['搭档来啦！今天拍哪个库？','你来了！我刚把黑板擦干净。']):'嗨，我是咔嗒，今天拍点什么？';
- const STYLE_LINES={'序幕':'序幕：一排画幅慢慢展开，很有开场感。','巨幕':'巨幕配宋体片名，很电影院。','404':'404！其实什么都没丢，图都在。','预告':'预告这款的斜刻度我一格一格数过。','环幕':'站在环幕中间，会有点晕。','景深':'景深：前面那张飞过来的时候记得眨眼。','详情':'详情页风格，像在挑今晚看什么。','扇面':'扇面转一格，咔哒一下。','百叶':'百叶：片名在左，海报在右，叶片一翻就换片。','对开':'对开：海报往下切，颜色往上涨，每张都换一种颜色。','月洞':'月洞：一扇顶天的拱龛，画就装在龛里，换片时旧画顺着龛口滑上去。','展墙':'展墙：一根横杆上挂着一排画，慢慢往左走，片名竖着写在旁边的说明板上。'};
+ const STYLE_LINES={'序幕':'序幕：一排画幅慢慢展开，很有开场感。','巨幕':'巨幕配宋体片名，很电影院。','404':'404！其实什么都没丢，图都在。','预告':'预告这款的斜刻度我一格一格数过。','环幕':'站在环幕中间，会有点晕。','景深':'景深：前面那张飞过来的时候记得眨眼。','详情':'详情页风格，像在挑今晚看什么。','扇面':'扇面转一格，咔哒一下。','百叶':'百叶：片名在左，海报在右，叶片一翻就换片。','对开':'对开：海报往下切，颜色往上涨，每张都换一种颜色。','月洞':'月洞：一扇顶天的拱龛，画就装在龛里，换片时旧画顺着龛口滑上去。','展墙':'展墙：一根横杆上挂着一排画，慢慢往左走，片名竖着写在旁边的说明板上。','焦距':'焦距：半按快门绿框锁定，咔擦一声暗钛双帘闪拍切画！','叠影':'叠影：美术馆典藏卡堆，前卡飞旋抽回牌底，后卡迎光弹性扶正。','胶卷':'胶卷：35mm 镂空齿孔电影胶片，过片那一下太影院了。','窥视':'窥视：别一直盯着中间那只眼睛看……它一眨眼，画就换了。'};
  const PICK_LINES=['就决定是「{s}」了？好眼光！','「{s}」！我也最喜欢这款。','换成「{s}」，我去通知灯光组。'];
  const PET=['嘿嘿……再擦擦，黑板要干净。','别擦掉我的场次号啦。','舒服，拍板都软了。','再摸一下……就一下。','（眯起眼睛）'];
  const POKE=['咔！','第一场，第一条！','在呢在呢。','要拍什么？','NG！……开玩笑的。'];
@@ -1047,24 +1064,24 @@ ${MOUTHS.map(m=>`.mcgk[data-mouth=${m}] .k-m-${m}`).join(',')}{display:inline}
   else if(talking&&k.eyes!=='back'&&!(t<k.mouthUntil)&&Math.sin(t*.0165)>0)lips='open';
   // 身上的进度条：生成时底下两道粉笔线连成一条，按进度填上薄荷色；总数还没出来时来回扫
   const busy=!!k.state.running;
-  if(busy){
-   const total=k.state.total,from=k.dir>0?27:73;
-   if(total)put(P.bar,'d',`M${from} 81.5h${(k.dir*46*clamp(k.state.done/total,.03,1)).toFixed(1)}`);
-   else put(P.bar,'d',`M${(27+(Math.sin(t/420)+1)*16).toFixed(1)} 81.5h14`);
-   if(shown&&bmemo.prog!==false&&bubble.classList.contains('prog')){const w=(total?clamp(k.state.done/total,0,1)*100:0).toFixed(0)+'%';if(bubbleBar.__w!==w){bubbleBar.__w=w;bubbleBar.style.width=w;}}
-  }
-  // 写回 DOM
-  const sy=1-k.squash+bob+grow,sx=(1+k.squash*.55-bob*.5-grow*.5)*(1+k.fat);
-  const place=`translate(${k.x.toFixed(1)}px,${(-k.y-addY).toFixed(1)}px)`;if(root.__place!==place){root.__place=place;root.style.transform=place;}
-  // 空翻绕身体中心转，倾斜绕脚底转
-  put(P.sprite,'transform',`rotate(${k.spin.toFixed(1)} 50 60) translate(50 96) rotate(${k.tilt.toFixed(1)}) scale(${(sx*k.dir).toFixed(3)} ${sy.toFixed(3)}) translate(-50 -96)`);
-  put(P.stick,'transform',`rotate(${stick.toFixed(1)} 19.5 29)`);
-  put(P.face,'transform',`translate(${((k.lookX+lookBias)*k.dir).toFixed(2)} ${k.lookY.toFixed(2)})`);
-  put(P.eyes,'transform',`translate(0 58.5) scale(1 ${blink.toFixed(3)}) translate(0 -58.5)`);
-  put(P.legL,'transform',`translate(0 ${legL.toFixed(2)}) rotate(${rotL.toFixed(1)} 40 84)`);put(P.legR,'transform',`translate(0 ${legR.toFixed(2)}) rotate(${rotR.toFixed(1)} 60 84)`);
-  put(P.armL,'transform',`translate(${(-outL).toFixed(1)} 0) rotate(${(-armL).toFixed(1)} 19 60)`);put(P.armR,'transform',`translate(${outR.toFixed(1)} 0) rotate(${armR.toFixed(1)} 81 60)`);
-  const lift=clamp(1-(k.y-base+addY)/220,.35,1);put(P.shadow,'transform',`translate(50 96.5) scale(${lift.toFixed(3)} 1) translate(-50 -96.5)`);put(P.shadow,'opacity',(.2*lift).toFixed(3));
-  if(k.eyes==='sleep'){put(P.z,'transform',`translate(${(Math.sin(t/700)*2).toFixed(1)} ${(-((t/60)%14)).toFixed(1)})`);put(P.snot,'transform',`translate(56.6 68.4) scale(${(.5+.5*(Math.sin(t/950)*.5+.5)).toFixed(2)}) translate(-56.6 -68.4)`);}
+   if(busy){
+    const total=k.state.total,from=k.dir>0?27:73;
+    if(total)put(P.bar,'d',`M${from} 81.5h${(k.dir*46*clamp(k.state.done/total,.03,1)).toFixed(1)}`);
+    else put(P.bar,'d',`M${(27+(Math.sin(t/420)+1)*16).toFixed(1)} 81.5h14`);
+    if(shown&&bmemo.prog!==false&&bubble.classList.contains('prog')){const w=(total?clamp(k.state.done/total,0,1)*100:0).toFixed(0)+'%';if(bubbleBar.__w!==w){bubbleBar.__w=w;bubbleBar.style.width=w;}}
+   }
+   // 写回 DOM
+   const sy=1-k.squash+bob+grow,sx=(1+k.squash*.55-bob*.5-grow*.5)*(1+k.fat);
+   const place=`translate(${k.x.toFixed(1)}px,${(-k.y-addY).toFixed(1)}px)`;if(root.__place!==place){root.__place=place;root.style.transform=place;}
+   // 空翻绕身体中心转，倾斜绕脚底转
+   put(P.sprite,'transform',`rotate(${k.spin.toFixed(1)} 50 60) translate(50 96) rotate(${k.tilt.toFixed(1)}) scale(${(sx*k.dir).toFixed(3)} ${sy.toFixed(3)}) translate(-50 -96)`);
+   put(P.stick,'transform',`rotate(${stick.toFixed(1)} 20 29)`);
+   put(P.face,'transform',`translate(${((k.lookX+lookBias)*k.dir).toFixed(2)} ${k.lookY.toFixed(2)})`);
+   put(P.eyes,'transform',`translate(0 58.5) scale(1 ${blink.toFixed(3)}) translate(0 -58.5)`);
+   put(P.legL,'transform',`translate(0 ${legL.toFixed(2)}) rotate(${rotL.toFixed(1)} 40 83)`);put(P.legR,'transform',`translate(0 ${legR.toFixed(2)}) rotate(${rotR.toFixed(1)} 60 83)`);
+   put(P.armL,'transform',`translate(${(-outL).toFixed(1)} 0) rotate(${(-armL).toFixed(1)} 17 65)`);put(P.armR,'transform',`translate(${outR.toFixed(1)} 0) rotate(${armR.toFixed(1)} 83 65)`);
+   const lift=clamp(1-(k.y-base+addY)/220,.35,1);put(P.shadow,'transform',`translate(50 96.5) scale(${lift.toFixed(3)} 1) translate(-50 -96.5)`);put(P.shadow,'opacity',(.25*lift).toFixed(3));
+   if(k.eyes==='sleep'){put(P.z,'transform',`translate(${(Math.sin(t/700)*2).toFixed(1)} ${(-((t/60)%14)).toFixed(1)})`);put(P.snot,'transform',`translate(56.6 68.4) scale(${(.5+.5*(Math.sin(t/950)*.5+.5)).toFixed(2)}) translate(-56.6 -68.4)`);}
   put(root,'data-eyes',k.eyes);put(root,'data-mouth',lips);flag('spark',spark);flag('busy',busy);flag('shy',t<k.shyUntil);flag('sit',sitting||k.perched);
   if(k.showUntil){dim.style.setProperty('--sx',cx().toFixed(0)+'px');dim.style.setProperty('--sy',midY().toFixed(0)+'px');}
   if(shown||k.menu){

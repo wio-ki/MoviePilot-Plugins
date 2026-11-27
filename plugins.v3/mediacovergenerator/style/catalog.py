@@ -115,6 +115,27 @@ STYLE_CATALOG = [
         TypeSpec("serifblack", "dmserif", "intersemi", 236, 54,
                  main_tracking=0.02, main_tracking_latin=-0.025, sub_tracking=0.16, spacing=30, sub_upper=True),
     ),
+    # 新增 4 款精修风格（13–16）：焦距、叠影、胶卷、窥视
+    StyleInfo(
+        13, "焦距", "现代微单取景器构图：纤细四角对焦括号、中心留空十字准星、曝光标尺与镜头参数", "半按快门绿框合焦锁定，上下暗钛双帘快门 2.6× 疾速中缝合拢闪拍切出新画", 4, False, MINT,
+        TypeSpec("glowbold", "interbold", "intersemi", 206, 58,
+                 main_tracking=0.02, main_tracking_latin=-0.02, sub_tracking=0.12, spacing=28, sub_upper=True),
+    ),
+    StyleInfo(
+        14, "叠影", "美术馆典藏展墙光影与渐层粗宋体，右侧三张精装棱边海报错层悬浮带景深微光", "前卡向右上方弧线飞旋钻回牌底，后方海报弹性扶正迎光扫过镜面高光", 3, True, None,
+        TypeSpec("serifblack", "dmserif", "intersemi", 228, 56,
+                 main_tracking=0.03, main_tracking_latin=-0.01, sub_tracking=0.14, spacing=32, sub_upper=True),
+    ),
+    StyleInfo(
+        15, "胶卷", "大斜角 35mm 电影胶片带斜贯画布，镂空透光齿孔映出暗房彩色流光", "整条胶片带连同齿孔疾速斜向过片，带运动拖影与抓片回弹", 4, False, MINT,
+        TypeSpec("glowheavy", "interblack", "intersemi", 204, 56,
+                 main_tracking=0.02, main_tracking_latin=-0.02, sub_tracking=0.14, spacing=24, sub_upper=True),
+    ),
+    StyleInfo(
+        16, "窥视", "暗红血脉缠绕的漆黑深渊中央，一只巨眼透视片库剧照，底部为枯骨白指甲划刻渗血片名与高对比骨绯副标", "血脉脉动蔓延，巨眼闭合成猩红血缝切出新画再骤然睁开", 4, False, MINT,
+        TypeSpec("serifblack", "dmserif", "interbold", 184, 54,
+                 main_tracking=0.06, main_tracking_latin=0.02, sub_tracking=0.22, spacing=18, sub_upper=True),
+    ),
 ]
 STYLE_COUNT = len(STYLE_CATALOG)
 

@@ -128,7 +128,7 @@ ANIMATION_RESOLUTIONS = ("320x180", "400x225", "480x270")
 DEFAULT_ANIMATION_RESOLUTION = "400x225"
 HISTORY_PAGE_SIZE = 8
 # 选图：候选是需要数量的几倍，最多多少个，评分用的小图尺寸
-SELECTION_POOL_FACTOR = 3
+SELECTION_POOL_FACTOR = 4
 SELECTION_POOL_MAX = 36
 SELECTION_PREVIEW_SIZE = 480
 # 动画：条目的类型或媒体库的名字里有这些词。动画的背景图多是宣传图，和海报一样能用
@@ -151,11 +151,11 @@ class MediaCoverGenerator(_PluginBase):
     # 插件名称
     plugin_name = "动态封面工坊"
     # 插件描述
-    plugin_desc = "让媒体库封面动起来：12 款 GIF 动态风格，Hills、yamby、小幻影视都能播放，支持 Emby/Jellyfin"
+    plugin_desc = "让媒体库封面动起来：16 款 GIF 动态风格，Hills、yamby、小幻影视都能播放，支持 Emby/Jellyfin"
     # 插件图标（前端按地址缓存图标，换图时要换文件名）
     plugin_icon = "https://raw.githubusercontent.com/wio-ki/MoviePilot-Plugins/main/icons/animated-cover.png"
     # 插件版本
-    plugin_version = "2.2.4"
+    plugin_version = "2.3.0"
     # 插件作者
     plugin_author = "Kioo"
     # 作者主页
@@ -2753,8 +2753,12 @@ class MediaCoverGenerator(_PluginBase):
         self._anime_library = bool(ANIME_LIBRARY.search(str(library.get("Name") or "")))
         self._image_sizes = {}
         # 多拉一些候选，打分后挑最适合做封面的；按入库时间排序时只往后多看一点，保持「最新」的意思
+        # 风格 16「窥视」需严格确保人物完整头部不切头落入杏仁眼窗，额外放宽随机候选池以便精挑细选
         keep_order = self._sort_by == "DateCreated" or bool(self._monitor_sort)
-        pool_size = min(SELECTION_POOL_MAX, required_items * (2 if keep_order else SELECTION_POOL_FACTOR))
+        is_gaze = (not self._preview_mode) and (self.__current_index() == 16)
+        pool_cap = 44 if (is_gaze and not keep_order) else SELECTION_POOL_MAX
+        pool_factor = 2 if keep_order else (5 if is_gaze else SELECTION_POOL_FACTOR)
+        pool_size = min(pool_cap, required_items * pool_factor)
         # 实际查询的类型：入库监控触发时 __get_items_batch 会把整部剧换成单集
         scans_episodes = include_types == "Movie,Episode" or (bool(self._monitor_sort) and include_types == "Movie,Series")
         stale = 0
@@ -2849,8 +2853,8 @@ class MediaCoverGenerator(_PluginBase):
         genres = [str(genre).lower() for genre in (item.get("Genres") or [])]
         return any(word in genre for genre in genres for word in ANIME_GENRES)
 
-    def __assess_candidate(self, service, candidate):
-        """下载一张小图打分。失败时返回 None，按合格处理。"""
+    def __assess_candidate(self, service, candidate, style_index: Optional[int] = None):
+        """下载一张小图打分（传入当前风格编号以叠加 1+1>2 构图协同分）。失败时返回 None，按合格处理。"""
         if not candidate:
             return None
         url = (f'{_api_root(service)}Items/{candidate[0]}/Images/{candidate[1]}?tag={candidate[2]}&api_key=[APIKEY]'
@@ -2860,83 +2864,116 @@ class MediaCoverGenerator(_PluginBase):
             if response is not None and response.status_code == 200 and response.content:
                 native = self.__native_size(service, candidate)
                 with Image.open(BytesIO(response.content)) as opened:
-                    return assess(opened.convert("RGB"), key=url, requested=SELECTION_PREVIEW_SIZE, native=native)
+                    return assess(opened.convert("RGB"), key=url, requested=SELECTION_PREVIEW_SIZE,
+                                  native=native, style_index=style_index)
         except Exception as error:
             logger.debug(f"选图评分失败，按合格处理：{error}")
         return None
 
-    def __assess_item(self, service, item, wants_poster: bool):
+    def __assess_item(self, service, item, wants_poster: bool, style_index: Optional[int] = None):
         """
-        给一个条目的海报和背景图分别打分，决定这个条目用哪张，返回条目的评分。
-        海报是专门设计过的画面，几乎都能用；背景图良莠不齐，剧照、特写、暗图很多。所以：
-        - 摆海报的风格只看海报
-        - 摆横图的风格，背景图要确实好看才用；不够好就改用这个条目的海报，而不是硬用背景图
-        - 动画的背景图多是官方宣传图，没有明显毛病就用
-        - 海报本身有毛病（老剧的小图、发糊、发灰）时，背景图过得去就用背景图
-        决定写在 item["_mcg_use"] 里：tall 表示只用海报，没有这一项表示两张都下载、按画框挑。
+        结合当前封面风格，给一个条目的海报和多张候选背景图分别打分，选出与当前风格最相得益彰的一张：
+        - 摆海报的风格优先评竖版海报（校验 2:3 比例、鲜明主色相、锐度与对比度）
+        - 摆横图的风格优先从该条目多张背景图（最多 3 张 Backdrop）中择优选出最惊艳且最契合当前风格的画面；
+          若首张背景图已经非常出色则跳过多余请求，不够出彩时自动试看 Backdrop/1、Backdrop/2 择优！
+        - 全部横图都不理想时再评竖版海报兜底，并保留其完整视觉 DNA（色相/色彩丰富度）供后续 MMR 防撞色重排。
+        决定写在 item["_mcg_use"]（tall=仅用海报）与 item["_mcg_wide"]（胜出的最佳背景图候选）。
         """
+        from dataclasses import replace as _replace
+
         item.pop("_mcg_use", None)
+        item.pop("_mcg_wide", None)
         tall, wide = self.__image_sets(item)
         if not tall and not wide:
             return None
         if self._use_primary not in (None, "", "auto"):
             # 用户指定了只用海报或只用背景图
-            return self.__assess_candidate(service, ((tall or wide) if self._use_primary else (wide or tall))[0])
+            chosen_list = (tall or wide) if self._use_primary else (wide or tall)
+            return self.__assess_candidate(service, chosen_list[0], style_index=style_index)
         if wants_poster and not self._preview_mode:
-            return self.__assess_candidate(service, (tall or wide)[0])
-        wide_result = self.__assess_candidate(service, wide[0]) if wide else None
+            return self.__assess_candidate(service, (tall or wide)[0], style_index=style_index)
+
         good_wide = GOOD_WIDE_SCORE_ANIME if self.__is_animation(item) else GOOD_WIDE_SCORE
+        # 多背景图择优：先看第 1 张，若尚未达到「王牌级惊艳」则自动探查备选剧照（风格 16 窥视最多看 4 张以寻得零切头主角帧！）
+        best_wide_cand = wide[0] if wide else None
+        wide_result = self.__assess_candidate(service, wide[0], style_index=style_index) if wide else None
+        if style_index == 16:
+            ef0 = wide_result.eye_fit if wide_result is not None else None
+            already_great = bool(
+                ef0 is not None and ef0.has_face and (not ef0.head_clipped)
+                and ef0.head_vis >= 0.90 and wide_result.score >= 1.80
+            )
+            max_probe = 4
+        else:
+            already_great = bool(wide_result is not None and wide_result.score >= good_wide + 0.65)
+            max_probe = 3
+        if len(wide) > 1 and wide_result is not None and not already_great:
+            for alt_cand in wide[1:max_probe]:
+                if self._event.is_set():
+                    break
+                alt_res = self.__assess_candidate(service, alt_cand, style_index=style_index)
+                if alt_res is not None and alt_res.score > wide_result.score + 0.08:
+                    wide_result = alt_res
+                    best_wide_cand = alt_cand
+                    if style_index == 16 and alt_res.eye_fit and alt_res.eye_fit.has_face and (not alt_res.eye_fit.head_clipped) and alt_res.eye_fit.head_vis >= 0.90 and alt_res.score >= 1.90:
+                        break
+        if best_wide_cand and wide and best_wide_cand != wide[0]:
+            item["_mcg_wide"] = best_wide_cand
+
         if wide and (wide_result is None or wide_result.score >= good_wide):
             return wide_result
         if not tall:
             return wide_result
-        tall_result = self.__assess_candidate(service, tall[0])
+        tall_result = self.__assess_candidate(service, tall[0], style_index=style_index)
         if tall_result is None:
             return wide_result
+
         def poster_only(score, reasons):
             if wide:
                 item["_mcg_use"] = "tall"
-            return Assessment(score, reasons, tall_result.brightness, tall_result.sharpness, tall_result.largest_face)
+            return _replace(tall_result, score=score, reasons=reasons)
 
         poster_reasons = [f"海报{tall_result.describe()}"] if tall_result.reasons else []
         if wide_result is None:
-            # 只有海报
             return poster_only(min(tall_result.score - POSTER_BONUS, 0.0) - 0.1, poster_reasons)
         wide_note = [f"背景图{wide_result.describe() if wide_result.reasons else '平平'}"]
-        # 海报没有明显毛病：用海报。海报放进横画框要裁或者留边，所以排在背景图好看的条目后面
         if tall_result.score >= GOOD_WIDE_SCORE:
             return poster_only(min(tall_result.score - POSTER_BONUS, 0.0) - 0.1, poster_reasons + wide_note)
-        # 海报也有毛病：背景图还过得去就用背景图，两张都不行时挑分数高的
         if wide_result.score >= ACCEPT_SCORE and wide_result.score >= tall_result.score - POSTER_BONUS:
-            return Assessment(min(wide_result.score, -0.3), wide_note + poster_reasons, wide_result.brightness,
-                              wide_result.sharpness, wide_result.largest_face)
+            return _replace(wide_result, score=min(wide_result.score, -0.3), reasons=wide_note + poster_reasons)
         return poster_only(tall_result.score - POSTER_BONUS - 0.3, poster_reasons + wide_note)
 
     def __choose_items(self, service, library, items, required, keep_order):
         """
-        给每个候选下载小图打分，挑出适合做封面的：太暗、发糊的截图、脸部特写过近的往后放。
-        第一张是静态封面和动图的第一帧，放分数最高的。评分失败的条目按合格处理，不会因此少图。
+        结合当前风格几何与视觉气质给每个候选打分，并通过 MMR 色相与光影多样性重排挑出最出彩的组合：
+        - 第一张严格锁定该风格综合最高分的王牌神图（静态封面和动图首帧）；
+        - 后续轮换图兼顾高画质与鲜明色相差异，杜绝撞色发闷。
         """
-        # 风格一屏要摆的图不能少，多出来的轮换图宁可少几张；预览的全部风格共用一批，按最多的那款算
         info = style_info(self.__current_index())
+        style_index = None if self._preview_mode else info.index
         minimum = max(entry.slots for entry in STYLE_CATALOG) if self._preview_mode else info.slots
         assessed = []
         for item in items:
             if self._event.is_set():
                 break
-            assessed.append((item, self.__assess_item(service, item, info.poster)))
-        # 条目不多、没得挑时也要打分：每个条目用海报还是背景图是在打分时定的
+            assessed.append((item, self.__assess_item(service, item, info.poster, style_index=style_index)))
         if len(assessed) <= 1:
             return [item for item, _result in assessed] or items
-        chosen, skipped = rank(assessed, required, keep_order=keep_order, minimum=minimum)
+        chosen, skipped = rank(assessed, required, keep_order=keep_order, minimum=minimum, style_index=style_index)
         swapped = sum(1 for item, _result in chosen if item.get("_mcg_use") == "tall")
-        note = f"，其中 {swapped} 个背景图不够好、改用海报" if swapped else ""
+        alt_bd = sum(1 for item, _result in chosen if item.get("_mcg_wide"))
+        notes = []
+        if swapped:
+            notes.append(f"{swapped} 个背景图不够好、改用海报")
+        if alt_bd:
+            notes.append(f"{alt_bd} 个启用了更佳的备选剧照")
+        note = f"，其中{'，'.join(notes)}" if notes else ""
         dropped = [(item, result) for item, result in skipped if result is not None and result.score < ACCEPT_SCORE]
         if dropped:
             details = "；".join(f"{item.get('Name') or item.get('Id')}（{result.describe()}）" for item, result in dropped[:8])
-            logger.info(f"媒体库 {library['Name']}：从 {len(assessed)} 个候选里选了 {len(chosen)} 个{note}，没用的：{details}")
+            logger.info(f"媒体库 {library['Name']}（风格 {info.index}·{info.name}）：从 {len(assessed)} 个候选里选了 {len(chosen)} 个{note}，没用的：{details}")
         else:
-            logger.info(f"媒体库 {library['Name']}：从 {len(assessed)} 个候选里选了 {len(chosen)} 个{note}")
+            logger.info(f"媒体库 {library['Name']}（风格 {info.index}·{info.name}）：从 {len(assessed)} 个候选里选了 {len(chosen)} 个{note}")
         return [item for item, _result in chosen]
 
     def __handle_live_tv_library(self, service, library, title):
@@ -3391,8 +3428,8 @@ class MediaCoverGenerator(_PluginBase):
         own_primary = (item.get("Id"), "Primary", image_tags.get("Primary"))
         series_primary = (item.get("SeriesId"), "Primary", item.get("SeriesPrimaryImageTag"))
         wide = [
-            (item.get("Id"), "Backdrop/0", own_backdrops[0] if own_backdrops else None),
-            (item.get("ParentBackdropItemId"), "Backdrop/0", parent_tags[0] if parent_tags else None),
+            *[(item.get("Id"), f"Backdrop/{idx}", tag) for idx, tag in enumerate(own_backdrops[:4])],
+            *[(item.get("ParentBackdropItemId"), f"Backdrop/{idx}", tag) for idx, tag in enumerate(parent_tags[:2])],
             # 有些条目没有背景图，只有 16:9 的缩略图
             (item.get("Id"), "Thumb", image_tags.get("Thumb")),
             (item.get("ParentThumbItemId"), "Thumb", item.get("ParentThumbImageTag")),
@@ -3442,6 +3479,10 @@ class MediaCoverGenerator(_PluginBase):
         用户指定只用海报或只用背景图时，只有另一种完全没有才用。
         """
         tall, wide = self.__image_sets(item)
+        # 选图时若挑中了更出色的备选背景图（Backdrop/1 或 Backdrop/2），将其置顶优先下载
+        best_wide = item.get("_mcg_wide")
+        if best_wide and wide:
+            wide = [best_wide] + [cand for cand in wide if cand != best_wide]
         # 选图时已经判定这个条目的背景图不够好：只用海报
         if item.get("_mcg_use") == "tall" and tall:
             wide = []
